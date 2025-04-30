@@ -2,99 +2,73 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { toast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import Header from "@/components/Header";
 
 const Index = () => {
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const { user } = useAuth();
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!email || !password) {
-      toast({
-        title: "Error",
-        description: "Please fill in all fields",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    setIsLoading(true);
-    
-    // Simulate login (in a real app this would call an API)
-    setTimeout(() => {
-      setIsLoading(false);
-      navigate("/dashboard");
-    }, 1000);
-  };
+  // If user is logged in, redirect to dashboard
+  if (user) {
+    navigate("/dashboard");
+    return null;
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
-      <div className="max-w-md w-full space-y-8">
-        <div className="text-center">
-          <h1 className="text-4xl font-bold text-primary mb-2">SAT Practice</h1>
-          <p className="text-gray-600 mb-8">
-            Practice for the SAT with realistic test questions
-          </p>
-        </div>
-
-        <Card className="w-full">
-          <CardHeader>
-            <CardTitle>Sign In</CardTitle>
-            <CardDescription>
-              Enter your credentials to access your account
-            </CardDescription>
-          </CardHeader>
-          <form onSubmit={handleSubmit}>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <label htmlFor="email" className="text-sm font-medium">
-                  Email
-                </label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label htmlFor="password" className="text-sm font-medium">
-                  Password
-                </label>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
-              </div>
-            </CardContent>
-            <CardFooter>
-              <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? "Signing In..." : "Sign In"}
-              </Button>
-            </CardFooter>
-          </form>
-        </Card>
-        
-        <div className="text-center space-y-2">
-          <p className="text-sm text-gray-600">
-            Demo Access: Use any email and password
-          </p>
-          <p className="text-xs text-gray-500">
-            SAT is a registered trademark of the College Board, which is not affiliated with this site.
-          </p>
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      <Header showLogout={false} />
+      
+      <div className="flex-1 flex flex-col items-center justify-center p-4">
+        <div className="max-w-3xl w-full space-y-8 text-center">
+          <div>
+            <h1 className="text-5xl font-bold text-primary mb-6">SAT Practice</h1>
+            <p className="text-xl text-gray-600 mb-8">
+              Master the SAT with our comprehensive practice tests and personalized feedback
+            </p>
+          </div>
+          
+          <div className="flex flex-col sm:flex-row justify-center gap-4">
+            <Button 
+              size="lg" 
+              className="text-lg py-6 px-8"
+              onClick={() => navigate("/auth")}
+            >
+              Get Started
+            </Button>
+            
+            <Button 
+              variant="outline" 
+              size="lg" 
+              className="text-lg py-6 px-8"
+              onClick={() => navigate("/auth")}
+            >
+              Learn More
+            </Button>
+          </div>
+          
+          <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="bg-white p-6 rounded-lg shadow-sm">
+              <h3 className="text-xl font-semibold mb-3">Realistic Tests</h3>
+              <p className="text-gray-600">
+                Practice with questions that mirror the format and difficulty of the actual SAT
+              </p>
+            </div>
+            
+            <div className="bg-white p-6 rounded-lg shadow-sm">
+              <h3 className="text-xl font-semibold mb-3">Track Progress</h3>
+              <p className="text-gray-600">
+                Monitor your improvement over time with detailed performance analytics
+              </p>
+            </div>
+            
+            <div className="bg-white p-6 rounded-lg shadow-sm">
+              <h3 className="text-xl font-semibold mb-3">Targeted Practice</h3>
+              <p className="text-gray-600">
+                Focus on specific sections and topics to strengthen your weak areas
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     </div>

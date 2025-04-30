@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import Header from "@/components/Header";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface TestData {
   id: string;
@@ -16,6 +17,7 @@ interface TestData {
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const { user, profile } = useAuth();
   
   const availableTests: TestData[] = [
     {
@@ -54,7 +56,7 @@ const Dashboard = () => {
       
       <main className="flex-1 container max-w-6xl mx-auto py-8 px-4">
         <section className="mb-10 animate-fade-in">
-          <h2 className="text-3xl font-bold mb-2">Welcome Back</h2>
+          <h2 className="text-3xl font-bold mb-2">Welcome Back{profile?.first_name ? `, ${profile.first_name}` : ""}</h2>
           <p className="text-gray-600">
             Continue your SAT preparation with these practice tests
           </p>

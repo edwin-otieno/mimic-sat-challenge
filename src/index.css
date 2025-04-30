@@ -135,5 +135,4 @@
   @apply h-full bg-primary transition-all duration-300 ease-out;
 }
 
-/* Remove the circular dependency by removing this class definition 
-   since the animation is already defined in tailwind.config.ts */
+/* Removed the circular dependency in the animate-fade-in class */
