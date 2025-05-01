@@ -35,6 +35,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, currentSession) => {
+        console.log("Auth state changed:", event, !!currentSession);
         setSession(currentSession);
         setUser(currentSession?.user ?? null);
         
@@ -51,6 +52,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // THEN check for existing session
     supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
+      console.log("Initial session check:", !!currentSession);
       setSession(currentSession);
       setUser(currentSession?.user ?? null);
       
@@ -66,6 +68,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const fetchProfile = async (userId: string) => {
     try {
+      console.log("Fetching profile for user:", userId);
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -77,6 +80,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
+      console.log("Profile fetched:", data);
       setProfile(data as Profile);
     } catch (error) {
       console.error('Error in fetchProfile:', error);
@@ -157,6 +161,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const isAdmin = profile?.role === 'admin';
+  console.log("Admin status:", isAdmin, "Profile:", profile);
 
   const value = {
     session,
