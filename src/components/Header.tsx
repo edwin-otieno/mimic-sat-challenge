@@ -2,6 +2,8 @@
 import { Button } from "@/components/ui/button";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { useState, useEffect } from "react";
+import MobileNav from "./MobileNav";
 
 interface HeaderProps {
   showLogout?: boolean;
@@ -12,6 +14,13 @@ const Header = ({ showLogout = true }: HeaderProps) => {
   const location = useLocation();
   const isTestPage = location.pathname.includes('/test');
   const { user, signOut, isAdmin, profile } = useAuth();
+  const [mounted, setMounted] = useState(false);
+  
+  useEffect(() => {
+    // This ensures we have the latest profile data after component mounts
+    setMounted(true);
+    console.log("Header mounted, isAdmin:", isAdmin, "profile:", profile);
+  }, [isAdmin, profile]);
   
   const handleLogout = () => {
     signOut();
@@ -21,7 +30,8 @@ const Header = ({ showLogout = true }: HeaderProps) => {
   return (
     <header className="bg-white shadow-sm py-4 px-6">
       <div className="flex justify-between items-center max-w-7xl mx-auto">
-        <div className="flex items-center">
+        <div className="flex items-center gap-2">
+          {user && !isTestPage && <MobileNav />}
           <h1 
             className="text-2xl font-bold text-primary cursor-pointer" 
             onClick={() => navigate(user ? "/dashboard" : "/")}
