@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { 
@@ -124,6 +123,24 @@ const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
     }
   });
 
+  const addOption = () => {
+    const currentOptions = form.getValues('options');
+    form.setValue('options', [...currentOptions, { text: '', is_correct: false }]);
+  };
+
+  const removeOption = (index: number) => {
+    const currentOptions = form.getValues('options');
+    if (currentOptions.length <= 2) {
+      toast({
+        title: "Error",
+        description: "Questions must have at least 2 options",
+        variant: "destructive"
+      });
+      return;
+    }
+    form.setValue('options', currentOptions.filter((_, i) => i !== index));
+  };
+
   const handleOpenDialog = (question?: Question) => {
     if (question) {
       setIsEditing(true);
@@ -151,24 +168,6 @@ const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
     setIsDialogOpen(true);
   };
 
-  const addOption = () => {
-    const currentOptions = form.getValues('options');
-    form.setValue('options', [...currentOptions, { text: '', is_correct: false }]);
-  };
-
-  const removeOption = (index: number) => {
-    const currentOptions = form.getValues('options');
-    if (currentOptions.length <= 2) {
-      toast({
-        title: "Error",
-        description: "Questions must have at least 2 options",
-        variant: "destructive"
-      });
-      return;
-    }
-    form.setValue('options', currentOptions.filter((_, i) => i !== index));
-  };
-
   const onSubmit = async (values: z.infer<typeof questionFormSchema>) => {
     try {
       if (isEditing && currentQuestion) {
@@ -188,9 +187,12 @@ const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
           ...values,
           id: Math.random().toString(36).substr(2, 9), // Generate a random ID
           test_id: testId,
+          text: values.text, // Ensure text is explicitly set
           options: values.options.map(option => ({
             ...option,
-            id: option.id || Math.random().toString(36).substr(2, 9)
+            id: option.id || Math.random().toString(36).substr(2, 9),
+            text: option.text, // Ensure text is explicitly set
+            is_correct: option.is_correct
           }))
         };
         
