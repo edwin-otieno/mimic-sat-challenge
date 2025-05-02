@@ -175,7 +175,7 @@ const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
         // Update existing question in local state
         const updatedQuestions = questions.map(q => {
           if (q.id === currentQuestion.id) {
-            return { ...values, id: currentQuestion.id };
+            return { ...values, id: currentQuestion.id } as Question;
           }
           return q;
         });
@@ -187,7 +187,11 @@ const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
         const newQuestion: Question = {
           ...values,
           id: Math.random().toString(36).substr(2, 9), // Generate a random ID
-          test_id: testId
+          test_id: testId,
+          options: values.options.map(option => ({
+            ...option,
+            id: option.id || Math.random().toString(36).substr(2, 9)
+          }))
         };
         
         setQuestions([...questions, newQuestion]);
