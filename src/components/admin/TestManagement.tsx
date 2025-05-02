@@ -29,11 +29,17 @@ import {
   FormMessage 
 } from '@/components/ui/form';
 import { Switch } from '@/components/ui/switch';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import { useToast } from '@/hooks/use-toast';
-import { Pencil, PlusCircle } from 'lucide-react';
+import { Pencil, PlusCircle, ChevronDown } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
+import QuestionManager from './QuestionManager';
 
 // Define the test interface
 interface Test {
@@ -83,6 +89,7 @@ const TestManagement = () => {
   const [currentTest, setCurrentTest] = useState<Test | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [tests, setTests] = useState<Test[]>(sampleTests);
+  const [expandedTest, setExpandedTest] = useState<string | null>(null);
   
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -175,6 +182,10 @@ const TestManagement = () => {
     }
   };
 
+  const toggleExpandTest = (testId: string) => {
+    setExpandedTest(expandedTest === testId ? null : testId);
+  };
+
   if (isLoading) {
     return <div className="flex justify-center p-8">Loading tests...</div>;
   }
@@ -263,41 +274,49 @@ const TestManagement = () => {
       </div>
 
       {tests && tests.length > 0 ? (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Title</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {tests.map((test) => (
-              <TableRow key={test.id}>
-                <TableCell className="font-medium">{test.title}</TableCell>
-                <TableCell>{test.description}</TableCell>
-                <TableCell>
-                  <span className={`px-2 py-1 rounded-full text-xs ${
-                    test.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                  }`}>
-                    {test.is_active ? 'Active' : 'Inactive'}
-                  </span>
-                </TableCell>
-                <TableCell className="text-right">
-                  <Button 
-                    size="sm" 
-                    variant="ghost" 
-                    onClick={() => handleOpenDialog(test)}
-                  >
-                    <Pencil className="h-4 w-4" />
-                    <span className="sr-only">Edit</span>
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <div className="space-y-4">
+          {tests.map((test) => (
+            <Collapsible 
+              key={test.id}
+              open={expandedTest === test.id}
+              onOpenChange={() => toggleExpandTest(test.id)}
+              className="border rounded-md overflow-hidden"
+            >
+              <CollapsibleTrigger className="w-full">
+                <div className="flex justify-between items-center p-4 hover:bg-gray-50 cursor-pointer">
+                  <div className="flex-1 text-left">
+                    <div className="font-medium">{test.title}</div>
+                    <div className="text-sm text-gray-500 truncate">{test.description}</div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span className={`px-2 py-1 rounded-full text-xs ${
+                      test.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                    }`}>
+                      {test.is_active ? 'Active' : 'Inactive'}
+                    </span>
+                    <Button 
+                      size="sm" 
+                      variant="ghost" 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenDialog(test);
+                      }}
+                    >
+                      <Pencil className="h-4 w-4" />
+                      <span className="sr-only">Edit</span>
+                    </Button>
+                    <ChevronDown className="h-5 w-5" />
+                  </div>
+                </div>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="border-t px-4 py-6">
+                  <QuestionManager testId={test.id} testTitle={test.title} />
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+          ))}
+        </div>
       ) : (
         <div className="text-center p-8 bg-gray-50 rounded-md">
           <p className="text-gray-500">No tests found. Create your first test!</p>
