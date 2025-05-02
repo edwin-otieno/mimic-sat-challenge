@@ -18,6 +18,7 @@ export type Database = {
           last_name: string | null
           role: Database["public"]["Enums"]["user_role"]
           updated_at: string
+          user_role: Database["public"]["Enums"]["user_role"] | null
         }
         Insert: {
           created_at?: string
@@ -27,6 +28,7 @@ export type Database = {
           last_name?: string | null
           role?: Database["public"]["Enums"]["user_role"]
           updated_at?: string
+          user_role?: Database["public"]["Enums"]["user_role"] | null
         }
         Update: {
           created_at?: string
@@ -36,6 +38,7 @@ export type Database = {
           last_name?: string | null
           role?: Database["public"]["Enums"]["user_role"]
           updated_at?: string
+          user_role?: Database["public"]["Enums"]["user_role"] | null
         }
         Relationships: []
       }
@@ -44,9 +47,44 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      delete_claim: {
+        Args: { uid: string; claim: string }
+        Returns: string
+      }
+      get_all_users_with_roles: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          user_id: string
+          role: string
+        }[]
+      }
+      get_claim: {
+        Args: { uid: string; claim: string }
+        Returns: Json
+      }
+      get_claims: {
+        Args: { uid: string }
+        Returns: Json
+      }
+      get_my_claim: {
+        Args: { claim: string }
+        Returns: Json
+      }
+      get_my_claims: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
       is_admin: {
         Args: { user_id: string }
         Returns: boolean
+      }
+      is_claims_admin: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
+      set_claim: {
+        Args: { uid: string; claim: string; value: Json }
+        Returns: string
       }
     }
     Enums: {
