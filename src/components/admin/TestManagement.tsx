@@ -1,7 +1,6 @@
 
-import React, { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
+import React, { useState, useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { 
   Table, 
   TableHeader, 
@@ -52,11 +51,38 @@ const formSchema = z.object({
   is_active: z.boolean().default(true)
 });
 
+// Sample data for tests until we set up the database
+const sampleTests: Test[] = [
+  {
+    id: '1',
+    title: 'Math Practice Test',
+    description: 'A comprehensive practice test for math skills assessment',
+    is_active: true,
+    created_at: new Date().toISOString()
+  },
+  {
+    id: '2',
+    title: 'Reading Comprehension',
+    description: 'Test students reading and analytical abilities',
+    is_active: false,
+    created_at: new Date().toISOString()
+  },
+  {
+    id: '3',
+    title: 'Science Assessment',
+    description: 'Evaluate understanding of key scientific concepts',
+    is_active: true,
+    created_at: new Date().toISOString()
+  }
+];
+
 const TestManagement = () => {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [isEditing, setIsEditing] = useState(false);
   const [currentTest, setCurrentTest] = useState<Test | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [tests, setTests] = useState<Test[]>(sampleTests);
   
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -67,17 +93,17 @@ const TestManagement = () => {
     }
   });
 
-  // Fetch tests from Supabase
-  const { data: tests, isLoading, error, refetch } = useQuery({
+  // Use React Query to simulate data fetching
+  const { isLoading, error } = useQuery({
     queryKey: ['tests'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('tests')
-        .select('*')
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      return data as Test[];
+      // Simulating API call with a delay
+      await new Promise(resolve => setTimeout(resolve, 500));
+      return sampleTests;
+    },
+    initialData: sampleTests,
+    onSuccess: (data) => {
+      setTests(data);
     }
   });
 
@@ -106,34 +132,38 @@ const TestManagement = () => {
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     try {
       if (isEditing && currentTest) {
-        // Update existing test
-        const { error } = await supabase
-          .from('tests')
-          .update({
-            title: values.title,
-            description: values.description,
-            is_active: values.is_active
-          })
-          .eq('id', currentTest.id);
-
-        if (error) throw error;
+        // Update existing test in our local state
+        const updatedTests = tests.map(test => {
+          if (test.id === currentTest.id) {
+            return {
+              ...test,
+              title: values.title,
+              description: values.description,
+              is_active: values.is_active
+            };
+          }
+          return test;
+        });
+        
+        setTests(updatedTests);
         toast({ title: "Success", description: "Test updated successfully" });
       } else {
-        // Create new test
-        const { error } = await supabase
-          .from('tests')
-          .insert({
-            title: values.title,
-            description: values.description,
-            is_active: values.is_active
-          });
-
-        if (error) throw error;
+        // Create new test in our local state
+        const newTest: Test = {
+          id: Math.random().toString(36).substr(2, 9), // Generate a random ID
+          title: values.title,
+          description: values.description,
+          is_active: values.is_active,
+          created_at: new Date().toISOString()
+        };
+        
+        setTests([...tests, newTest]);
         toast({ title: "Success", description: "Test created successfully" });
       }
       
+      // Simulate refetch
+      queryClient.invalidateQueries({ queryKey: ['tests'] });
       setIsDialogOpen(false);
-      refetch();
     } catch (error: any) {
       toast({ 
         title: "Error", 

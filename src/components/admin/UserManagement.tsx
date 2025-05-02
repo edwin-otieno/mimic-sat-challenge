@@ -34,14 +34,14 @@ interface User {
   email: string;
   first_name: string | null;
   last_name: string | null;
-  role: string;
+  role: "admin" | "student";
 }
 
 const UserManagement = () => {
   const { toast } = useToast();
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [newRole, setNewRole] = useState<string>('');
+  const [newRole, setNewRole] = useState<"admin" | "student">("student");
   
   // Fetch users from Supabase
   const { data: users, isLoading, error, refetch } = useQuery({
@@ -161,7 +161,7 @@ const UserManagement = () => {
             <p className="mb-4">
               Changing role for: {selectedUser?.first_name} {selectedUser?.last_name}
             </p>
-            <Select value={newRole} onValueChange={setNewRole}>
+            <Select value={newRole} onValueChange={(value: "admin" | "student") => setNewRole(value)}>
               <SelectTrigger>
                 <SelectValue placeholder="Select a role" />
               </SelectTrigger>
