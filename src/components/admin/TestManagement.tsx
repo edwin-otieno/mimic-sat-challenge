@@ -101,11 +101,13 @@ const TestManagement = () => {
       await new Promise(resolve => setTimeout(resolve, 500));
       return sampleTests;
     },
-    initialData: sampleTests,
-    onSuccess: (data) => {
-      setTests(data);
-    }
+    initialData: sampleTests
   });
+
+  // Update tests state when query data changes
+  useEffect(() => {
+    setTests(sampleTests);
+  }, []);
 
   const handleOpenDialog = (test?: Test) => {
     if (test) {
