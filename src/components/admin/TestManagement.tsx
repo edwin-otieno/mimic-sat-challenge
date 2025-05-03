@@ -5,8 +5,9 @@ import { Button } from '@/components/ui/button';
 import { PlusCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { z } from 'zod';
-import TestDialog, { Test } from './tests/TestDialog';
+import TestDialog from './tests/TestDialog';
 import TestList from './tests/TestList';
+import { Test } from './tests/types';
 
 // Sample data for tests until we set up the database
 const sampleTests: Test[] = [
@@ -15,7 +16,12 @@ const sampleTests: Test[] = [
     title: 'Math Practice Test',
     description: 'A comprehensive practice test for math skills assessment',
     is_active: true,
-    created_at: new Date().toISOString()
+    created_at: new Date().toISOString(),
+    scaled_scoring: [
+      { correct_answers: 0, scaled_score: 0 },
+      { correct_answers: 5, scaled_score: 50 },
+      { correct_answers: 10, scaled_score: 100 }
+    ]
   },
   {
     id: '2',
@@ -37,7 +43,13 @@ const formSchema = z.object({
   id: z.string().optional(),
   title: z.string().min(3, { message: "Title must be at least 3 characters" }),
   description: z.string().min(10, { message: "Description must be at least 10 characters" }),
-  is_active: z.boolean().default(true)
+  is_active: z.boolean().default(true),
+  scaled_scoring: z.array(
+    z.object({
+      correct_answers: z.number(),
+      scaled_score: z.number()
+    })
+  ).optional()
 });
 
 const TestManagement = () => {
@@ -48,6 +60,9 @@ const TestManagement = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [tests, setTests] = useState<Test[]>(sampleTests);
   const [expandedTest, setExpandedTest] = useState<string | null>(null);
+  
+  // Use 10 as default question count - in a real app, this would come from the test configuration
+  const questionCount = 10;
 
   // Use React Query to simulate data fetching
   const { isLoading, error } = useQuery({
@@ -86,7 +101,8 @@ const TestManagement = () => {
               ...test,
               title: values.title,
               description: values.description,
-              is_active: values.is_active
+              is_active: values.is_active,
+              scaled_scoring: values.scaled_scoring
             };
           }
           return test;
@@ -101,7 +117,8 @@ const TestManagement = () => {
           title: values.title,
           description: values.description,
           is_active: values.is_active,
-          created_at: new Date().toISOString()
+          created_at: new Date().toISOString(),
+          scaled_scoring: values.scaled_scoring
         };
         
         setTests([...tests, newTest]);
@@ -159,6 +176,7 @@ const TestManagement = () => {
         isEditing={isEditing}
         currentTest={currentTest}
         onSubmit={onSubmit}
+        questionCount={questionCount}
       />
     </div>
   );

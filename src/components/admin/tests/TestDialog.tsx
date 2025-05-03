@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -22,21 +22,20 @@ import {
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-
-// Define the test interface
-export interface Test {
-  id: string;
-  title: string;
-  description: string;
-  is_active: boolean;
-  created_at: string;
-}
+import ScaledScoreTable from './ScaledScoreTable';
+import { Test, ScaledScore } from './types';
 
 const formSchema = z.object({
   id: z.string().optional(),
   title: z.string().min(3, { message: "Title must be at least 3 characters" }),
   description: z.string().min(10, { message: "Description must be at least 10 characters" }),
-  is_active: z.boolean().default(true)
+  is_active: z.boolean().default(true),
+  scaled_scoring: z.array(
+    z.object({
+      correct_answers: z.number().min(0),
+      scaled_score: z.number()
+    })
+  ).optional()
 });
 
 interface TestDialogProps {
@@ -45,6 +44,7 @@ interface TestDialogProps {
   isEditing: boolean;
   currentTest: Test | null;
   onSubmit: (values: z.infer<typeof formSchema>) => void;
+  questionCount?: number;
 }
 
 const TestDialog = ({ 
@@ -52,8 +52,13 @@ const TestDialog = ({
   onOpenChange, 
   isEditing, 
   currentTest, 
-  onSubmit 
+  onSubmit,
+  questionCount = 10 // Default question count if not provided
 }: TestDialogProps) => {
+  
+  const [scaledScores, setScaledScores] = useState<ScaledScore[]>(
+    currentTest?.scaled_scoring || []
+  );
   
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -61,17 +66,23 @@ const TestDialog = ({
       title: currentTest?.title || '',
       description: currentTest?.description || '',
       is_active: currentTest?.is_active ?? true,
-      id: currentTest?.id
+      id: currentTest?.id,
+      scaled_scoring: currentTest?.scaled_scoring || []
     }
   });
 
   const handleSubmit = (values: z.infer<typeof formSchema>) => {
-    onSubmit(values);
+    // Include the scaled scores in the form submission
+    const updatedValues = {
+      ...values,
+      scaled_scoring: scaledScores
+    };
+    onSubmit(updatedValues);
   };
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>{isEditing ? 'Edit Test' : 'Create New Test'}</DialogTitle>
         </DialogHeader>
@@ -123,6 +134,15 @@ const TestDialog = ({
                 </FormItem>
               )}
             />
+            
+            <div className="border rounded-lg p-4">
+              <ScaledScoreTable 
+                scores={scaledScores}
+                onChange={setScaledScores}
+                questionCount={questionCount}
+              />
+            </div>
+            
             <DialogFooter>
               <DialogClose asChild>
                 <Button type="button" variant="outline">Cancel</Button>

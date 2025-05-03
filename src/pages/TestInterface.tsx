@@ -8,9 +8,10 @@ import Question, { QuestionData } from "@/components/Question";
 import ProgressBar from "@/components/ProgressBar";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
+import { ScaledScore } from "@/components/admin/tests/types";
 
 // Mock test data
-const getTestQuestions = (testId: string): QuestionData[] => {
+const getTestQuestions = (testId: string): { questions: QuestionData[], scaledScoring?: ScaledScore[] } => {
   // This would typically come from an API
   const questions: QuestionData[] = [
     {
@@ -84,7 +85,16 @@ const getTestQuestions = (testId: string): QuestionData[] => {
     });
   }
 
-  return questions;
+  // Mock scaled scoring data - in a real app, this would come from the test configuration
+  const scaledScoring: ScaledScore[] = [
+    { correct_answers: 0, scaled_score: 0 },
+    { correct_answers: 3, scaled_score: 30 },
+    { correct_answers: 5, scaled_score: 50 },
+    { correct_answers: 7, scaled_score: 70 },
+    { correct_answers: 10, scaled_score: 100 }
+  ];
+
+  return { questions, scaledScoring };
 };
 
 const TestInterface = () => {
@@ -93,14 +103,16 @@ const TestInterface = () => {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [userAnswers, setUserAnswers] = useState<Record<string, string>>({});
   const [questions, setQuestions] = useState<QuestionData[]>([]);
+  const [scaledScoring, setScaledScoring] = useState<ScaledScore[]>([]);
   const [showConfirmSubmit, setShowConfirmSubmit] = useState(false);
   const [showTimeUpDialog, setShowTimeUpDialog] = useState(false);
   
   useEffect(() => {
     if (testId) {
       // In a real app, this would be an API call
-      const loadedQuestions = getTestQuestions(testId);
-      setQuestions(loadedQuestions);
+      const { questions, scaledScoring } = getTestQuestions(testId);
+      setQuestions(questions);
+      setScaledScoring(scaledScoring || []);
     }
   }, [testId]);
 
@@ -147,6 +159,7 @@ const TestInterface = () => {
         total: totalQuestions,
         answers: userAnswers,
         questions: questions,
+        scaledScoring: scaledScoring
       }
     });
   };
