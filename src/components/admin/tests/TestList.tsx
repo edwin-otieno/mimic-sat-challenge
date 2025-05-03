@@ -1,7 +1,7 @@
 
 import React from 'react';
 import TestItem from './TestItem';
-import { Test } from './TestDialog';
+import { Test } from './types';
 
 interface TestListProps {
   tests: Test[];

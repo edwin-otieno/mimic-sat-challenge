@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/collapsible';
 import { ChevronDown, Pencil } from 'lucide-react';
 import QuestionManager from '../questions/QuestionManager';
-import { Test } from './TestDialog';
+import { Test } from './types';
 
 interface TestItemProps {
   test: Test;

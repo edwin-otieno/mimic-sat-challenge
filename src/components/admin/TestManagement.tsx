@@ -7,7 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import { z } from 'zod';
 import TestDialog from './tests/TestDialog';
 import TestList from './tests/TestList';
-import { Test } from './tests/types';
+import { Test, ScaledScore } from './tests/types';
 
 // Sample data for tests until we set up the database
 const sampleTests: Test[] = [
@@ -102,7 +102,7 @@ const TestManagement = () => {
               title: values.title,
               description: values.description,
               is_active: values.is_active,
-              scaled_scoring: values.scaled_scoring
+              scaled_scoring: values.scaled_scoring as ScaledScore[] || []
             };
           }
           return test;
@@ -118,7 +118,7 @@ const TestManagement = () => {
           description: values.description,
           is_active: values.is_active,
           created_at: new Date().toISOString(),
-          scaled_scoring: values.scaled_scoring
+          scaled_scoring: values.scaled_scoring as ScaledScore[] || undefined
         };
         
         setTests([...tests, newTest]);
