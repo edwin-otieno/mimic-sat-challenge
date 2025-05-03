@@ -43,7 +43,7 @@ const UserManagement = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [newRole, setNewRole] = useState<"admin" | "student">("student");
   
-  // Fetch users from Supabase
+  // Fetch all users from Supabase profiles table
   const { data: users, isLoading, error, refetch } = useQuery({
     queryKey: ['profiles'],
     queryFn: async () => {
