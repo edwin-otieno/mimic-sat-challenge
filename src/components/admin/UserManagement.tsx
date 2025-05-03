@@ -47,12 +47,19 @@ const UserManagement = () => {
   const { data: users, isLoading, error, refetch } = useQuery({
     queryKey: ['profiles'],
     queryFn: async () => {
+      console.log('Fetching users from profiles table');
+      // Make sure we're not filtering the profiles table
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .order('created_at', { ascending: false });
       
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching users:', error);
+        throw error;
+      }
+      
+      console.log('Fetched users:', data);
       return data as User[];
     }
   });
@@ -106,6 +113,9 @@ const UserManagement = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-medium">User Management</h3>
+        <p className="text-sm text-gray-500">
+          {users ? `${users.length} users found` : 'No users found'}
+        </p>
       </div>
 
       {users && users.length > 0 ? (
