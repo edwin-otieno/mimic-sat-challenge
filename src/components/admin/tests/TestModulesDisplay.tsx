@@ -1,5 +1,6 @@
 
 import React from 'react';
+import { DEFAULT_MODULES } from './types';
 
 const TestModulesDisplay: React.FC = () => {
   return (
@@ -9,14 +10,21 @@ const TestModulesDisplay: React.FC = () => {
         This test includes 2 standard modules:
       </p>
       <div className="grid grid-cols-2 gap-3 mb-4">
-        <div className="p-3 border rounded-md bg-blue-50">
-          <h4 className="font-medium">Module 1: Reading & Writing</h4>
-          <p className="text-sm text-gray-600">Reading comprehension and language skills</p>
-        </div>
-        <div className="p-3 border rounded-md bg-purple-50">
-          <h4 className="font-medium">Module 2: Math</h4>
-          <p className="text-sm text-gray-600">Mathematics and quantitative reasoning</p>
-        </div>
+        {DEFAULT_MODULES.map((module, index) => (
+          <div 
+            key={index}
+            className={`p-3 border rounded-md ${
+              module.type === "reading_writing" ? "bg-blue-50" : "bg-purple-50"
+            }`}
+          >
+            <h4 className="font-medium">Module {index + 1}: {module.name}</h4>
+            <p className="text-sm text-gray-600">
+              {module.type === "reading_writing" 
+                ? "Reading comprehension and language skills" 
+                : "Mathematics and quantitative reasoning"}
+            </p>
+          </div>
+        ))}
       </div>
     </div>
   );
