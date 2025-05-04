@@ -17,7 +17,8 @@ import {
   DialogHeader, 
   DialogTitle, 
   DialogFooter,
-  DialogClose
+  DialogClose,
+  DialogDescription
 } from '@/components/ui/dialog';
 import { 
   Select,
@@ -27,7 +28,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from '@/hooks/use-toast';
-import { Pencil } from 'lucide-react';
+import { Pencil, Trash2 } from 'lucide-react';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
 interface User {
   id: string;
@@ -41,6 +43,7 @@ const UserManagement = () => {
   const { toast } = useToast();
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [newRole, setNewRole] = useState<"admin" | "student">("student");
   
   // Fetch all users from Supabase profiles table
@@ -70,6 +73,11 @@ const UserManagement = () => {
     setIsDialogOpen(true);
   };
 
+  const handleDeleteUser = (user: User) => {
+    setSelectedUser(user);
+    setIsDeleteDialogOpen(true);
+  };
+
   const saveRole = async () => {
     if (!selectedUser || !newRole) return;
     
@@ -92,6 +100,42 @@ const UserManagement = () => {
       toast({ 
         title: "Error", 
         description: error.message || "Failed to update user role", 
+        variant: "destructive" 
+      });
+    }
+  };
+
+  const deleteUser = async () => {
+    if (!selectedUser) return;
+    
+    try {
+      // First delete from profiles table
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', selectedUser.id);
+
+      if (profileError) throw profileError;
+      
+      // Then delete the auth user
+      const { error: authError } = await supabase.auth.admin.deleteUser(
+        selectedUser.id
+      );
+      
+      if (authError) throw authError;
+      
+      toast({ 
+        title: "Success", 
+        description: `${selectedUser.first_name || 'User'} has been deleted` 
+      });
+      
+      setIsDeleteDialogOpen(false);
+      refetch();
+    } catch (error: any) {
+      console.error('Error deleting user:', error);
+      toast({ 
+        title: "Error", 
+        description: error.message || "Failed to delete user", 
         variant: "destructive" 
       });
     }
@@ -143,14 +187,25 @@ const UserManagement = () => {
                   </span>
                 </TableCell>
                 <TableCell className="text-right">
-                  <Button 
-                    size="sm" 
-                    variant="ghost" 
-                    onClick={() => handleEditRole(user)}
-                  >
-                    <Pencil className="h-4 w-4" />
-                    <span className="sr-only">Edit</span>
-                  </Button>
+                  <div className="flex justify-end gap-2">
+                    <Button 
+                      size="sm" 
+                      variant="ghost" 
+                      onClick={() => handleEditRole(user)}
+                    >
+                      <Pencil className="h-4 w-4" />
+                      <span className="sr-only">Edit</span>
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      variant="ghost" 
+                      onClick={() => handleDeleteUser(user)}
+                      className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span className="sr-only">Delete</span>
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
@@ -189,6 +244,23 @@ const UserManagement = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete User</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete {selectedUser?.first_name} {selectedUser?.last_name}? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={deleteUser} className="bg-red-600 hover:bg-red-700">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

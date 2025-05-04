@@ -7,6 +7,7 @@ import {
   CollapsibleTrigger 
 } from '@/components/ui/collapsible';
 import { ChevronDown, Pencil } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import QuestionManager from '../questions/QuestionManager';
 import { Test } from './types';
 
@@ -59,6 +60,16 @@ const TestItem = ({
       </CollapsibleTrigger>
       <CollapsibleContent>
         <div className="border-t px-4 py-6">
+          <div className="mb-6">
+            <h3 className="text-md font-medium mb-2">Test Modules:</h3>
+            <div className="flex flex-wrap gap-2 mb-4">
+              {test.modules?.map((module, index) => (
+                <Badge key={module.id || index} variant={module.type === "reading_writing" ? "default" : "secondary"}>
+                  {index + 1}: {module.name}
+                </Badge>
+              ))}
+            </div>
+          </div>
           <QuestionManager testId={test.id} testTitle={test.title} />
         </div>
       </CollapsibleContent>

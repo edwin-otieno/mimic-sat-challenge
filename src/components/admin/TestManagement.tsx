@@ -7,7 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import { z } from 'zod';
 import TestDialog from './tests/TestDialog';
 import TestList from './tests/TestList';
-import { Test, ScaledScore } from './tests/types';
+import { Test, ScaledScore, DEFAULT_MODULES, TestModule } from './tests/types';
 
 // Sample data for tests until we set up the database
 const sampleTests: Test[] = [
@@ -21,6 +21,10 @@ const sampleTests: Test[] = [
       { correct_answers: 0, scaled_score: 0 },
       { correct_answers: 5, scaled_score: 50 },
       { correct_answers: 10, scaled_score: 100 }
+    ],
+    modules: [
+      { id: '1-1', name: 'Reading & Writing', type: 'reading_writing' },
+      { id: '1-2', name: 'Math', type: 'math' }
     ]
   },
   {
@@ -28,14 +32,22 @@ const sampleTests: Test[] = [
     title: 'Reading Comprehension',
     description: 'Test students reading and analytical abilities',
     is_active: false,
-    created_at: new Date().toISOString()
+    created_at: new Date().toISOString(),
+    modules: [
+      { id: '2-1', name: 'Reading & Writing', type: 'reading_writing' },
+      { id: '2-2', name: 'Math', type: 'math' }
+    ]
   },
   {
     id: '3',
     title: 'Science Assessment',
     description: 'Evaluate understanding of key scientific concepts',
     is_active: true,
-    created_at: new Date().toISOString()
+    created_at: new Date().toISOString(),
+    modules: [
+      { id: '3-1', name: 'Reading & Writing', type: 'reading_writing' },
+      { id: '3-2', name: 'Math', type: 'math' }
+    ]
   }
 ];
 
@@ -49,7 +61,14 @@ const formSchema = z.object({
       correct_answers: z.number(),
       scaled_score: z.number()
     })
-  ).optional()
+  ).optional(),
+  modules: z.array(
+    z.object({
+      id: z.string().optional(),
+      name: z.string(),
+      type: z.enum(["reading_writing", "math"])
+    })
+  ).default(DEFAULT_MODULES)
 });
 
 const TestManagement = () => {
@@ -72,7 +91,8 @@ const TestManagement = () => {
       await new Promise(resolve => setTimeout(resolve, 500));
       return sampleTests;
     },
-    initialData: sampleTests
+    initialData: sampleTests,
+    staleTime: Infinity // Prevent auto-refetching
   });
 
   // Update tests state when query data changes
@@ -102,13 +122,27 @@ const TestManagement = () => {
               title: values.title,
               description: values.description,
               is_active: values.is_active,
-              scaled_scoring: values.scaled_scoring as ScaledScore[] || []
+              scaled_scoring: values.scaled_scoring as ScaledScore[] || [],
+              modules: values.modules
             };
           }
           return test;
         });
         
         setTests(updatedTests);
+        // Also update our sample data so changes persist
+        const testIndex = sampleTests.findIndex(t => t.id === currentTest.id);
+        if (testIndex >= 0) {
+          sampleTests[testIndex] = {
+            ...sampleTests[testIndex],
+            title: values.title,
+            description: values.description,
+            is_active: values.is_active,
+            scaled_scoring: values.scaled_scoring as ScaledScore[] || [],
+            modules: values.modules
+          };
+        }
+        
         toast({ title: "Success", description: "Test updated successfully" });
       } else {
         // Create new test in our local state
@@ -118,10 +152,17 @@ const TestManagement = () => {
           description: values.description,
           is_active: values.is_active,
           created_at: new Date().toISOString(),
-          scaled_scoring: values.scaled_scoring as ScaledScore[] || undefined
+          scaled_scoring: values.scaled_scoring as ScaledScore[] || undefined,
+          modules: values.modules || DEFAULT_MODULES.map(module => ({
+            ...module,
+            id: Math.random().toString(36).substr(2, 9),
+          }))
         };
         
         setTests([...tests, newTest]);
+        // Also update our sample data so changes persist
+        sampleTests.push(newTest);
+        
         toast({ title: "Success", description: "Test created successfully" });
       }
       

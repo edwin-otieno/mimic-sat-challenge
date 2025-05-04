@@ -22,8 +22,9 @@ import {
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import ScaledScoreTable from './ScaledScoreTable';
-import { Test, ScaledScore } from './types';
+import { Test, ScaledScore, DEFAULT_MODULES, TestModule } from './types';
 
 const formSchema = z.object({
   id: z.string().optional(),
@@ -35,7 +36,14 @@ const formSchema = z.object({
       correct_answers: z.number().min(0),
       scaled_score: z.number()
     })
-  ).optional()
+  ).optional(),
+  modules: z.array(
+    z.object({
+      id: z.string().optional(),
+      name: z.string(),
+      type: z.enum(["reading_writing", "math"])
+    })
+  ).default(DEFAULT_MODULES)
 });
 
 interface TestDialogProps {
@@ -59,6 +67,8 @@ const TestDialog = ({
   const [scaledScores, setScaledScores] = useState<ScaledScore[]>(
     currentTest?.scaled_scoring || []
   );
+
+  const defaultModules = currentTest?.modules || DEFAULT_MODULES;
   
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -67,7 +77,8 @@ const TestDialog = ({
       description: currentTest?.description || '',
       is_active: currentTest?.is_active ?? true,
       id: currentTest?.id,
-      scaled_scoring: currentTest?.scaled_scoring || []
+      scaled_scoring: currentTest?.scaled_scoring || [],
+      modules: defaultModules
     }
   });
 
@@ -75,7 +86,8 @@ const TestDialog = ({
     // Include the scaled scores in the form submission
     const updatedValues = {
       ...values,
-      scaled_scoring: scaledScores
+      scaled_scoring: scaledScores,
+      modules: values.modules || DEFAULT_MODULES
     };
     onSubmit(updatedValues);
   };
@@ -134,6 +146,23 @@ const TestDialog = ({
                 </FormItem>
               )}
             />
+            
+            <div className="border rounded-lg p-4">
+              <h3 className="text-lg font-medium mb-4">Test Modules</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                This test includes 2 standard modules:
+              </p>
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div className="p-3 border rounded-md bg-blue-50">
+                  <h4 className="font-medium">Module 1: Reading & Writing</h4>
+                  <p className="text-sm text-gray-600">Reading comprehension and language skills</p>
+                </div>
+                <div className="p-3 border rounded-md bg-purple-50">
+                  <h4 className="font-medium">Module 2: Math</h4>
+                  <p className="text-sm text-gray-600">Mathematics and quantitative reasoning</p>
+                </div>
+              </div>
+            </div>
             
             <div className="border rounded-lg p-4">
               <ScaledScoreTable 
