@@ -123,7 +123,12 @@ const TestManagement = () => {
               description: values.description,
               is_active: values.is_active,
               scaled_scoring: values.scaled_scoring as ScaledScore[] || [],
-              modules: values.modules
+              // Ensure all modules have required properties
+              modules: values.modules.map(module => ({
+                id: module.id || Math.random().toString(36).substr(2, 9),
+                name: module.name,
+                type: module.type
+              }))
             };
           }
           return test;
@@ -139,7 +144,12 @@ const TestManagement = () => {
             description: values.description,
             is_active: values.is_active,
             scaled_scoring: values.scaled_scoring as ScaledScore[] || [],
-            modules: values.modules
+            // Ensure all modules have required properties
+            modules: values.modules.map(module => ({
+              id: module.id || Math.random().toString(36).substr(2, 9),
+              name: module.name,
+              type: module.type
+            }))
           };
         }
         
@@ -153,9 +163,11 @@ const TestManagement = () => {
           is_active: values.is_active,
           created_at: new Date().toISOString(),
           scaled_scoring: values.scaled_scoring as ScaledScore[] || undefined,
-          modules: values.modules || DEFAULT_MODULES.map(module => ({
-            ...module,
-            id: Math.random().toString(36).substr(2, 9),
+          // Ensure all modules have required properties
+          modules: values.modules.map(module => ({
+            id: module.id || Math.random().toString(36).substr(2, 9),
+            name: module.name,
+            type: module.type
           }))
         };
         
