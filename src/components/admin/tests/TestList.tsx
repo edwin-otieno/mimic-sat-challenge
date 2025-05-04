@@ -8,13 +8,15 @@ interface TestListProps {
   expandedTest: string | null;
   toggleExpandTest: (testId: string) => void;
   handleOpenDialog: (test?: Test) => void;
+  handleDeleteTest: (test: Test) => void;
 }
 
 const TestList = ({ 
   tests, 
   expandedTest, 
   toggleExpandTest, 
-  handleOpenDialog 
+  handleOpenDialog,
+  handleDeleteTest 
 }: TestListProps) => {
   if (!tests || tests.length === 0) {
     return (
@@ -33,6 +35,7 @@ const TestList = ({
           isExpanded={expandedTest === test.id}
           onToggleExpand={toggleExpandTest}
           onEditTest={handleOpenDialog}
+          onDeleteTest={handleDeleteTest}
         />
       ))}
     </div>

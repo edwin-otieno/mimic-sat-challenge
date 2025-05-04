@@ -19,7 +19,9 @@ const ScaledScoreTable: React.FC<ScaledScoreTableProps> = ({
   questionCount,
   moduleId
 }) => {
-  const addScoreRow = () => {
+  const addScoreRow = (e: React.MouseEvent) => {
+    e.preventDefault(); // Prevent form submission
+    
     // Find the next correct answer count that doesn't have a score
     let nextCorrectAnswers = 0;
     if (scores.length > 0) {
@@ -41,7 +43,8 @@ const ScaledScoreTable: React.FC<ScaledScoreTableProps> = ({
     onChange([...scores, newScore].sort((a, b) => a.correct_answers - b.correct_answers));
   };
 
-  const removeScoreRow = (index: number) => {
+  const removeScoreRow = (index: number, e: React.MouseEvent) => {
+    e.preventDefault(); // Prevent form submission
     const newScores = [...scores];
     newScores.splice(index, 1);
     onChange(newScores);
@@ -65,6 +68,7 @@ const ScaledScoreTable: React.FC<ScaledScoreTableProps> = ({
           variant="outline" 
           size="sm" 
           onClick={addScoreRow}
+          type="button" // Explicitly set type to button
           disabled={scores.length >= questionCount + 1}
         >
           <Plus className="h-4 w-4 mr-2" />
@@ -92,6 +96,7 @@ const ScaledScoreTable: React.FC<ScaledScoreTableProps> = ({
                     value={score.correct_answers}
                     onChange={(e) => updateScoreValue(index, 'correct_answers', parseInt(e.target.value) || 0)}
                     className="w-24"
+                    onClick={(e) => e.stopPropagation()} // Prevent bubbling
                   />
                 </TableCell>
                 <TableCell>
@@ -100,13 +105,15 @@ const ScaledScoreTable: React.FC<ScaledScoreTableProps> = ({
                     value={score.scaled_score}
                     onChange={(e) => updateScoreValue(index, 'scaled_score', parseInt(e.target.value) || 0)}
                     className="w-24"
+                    onClick={(e) => e.stopPropagation()} // Prevent bubbling
                   />
                 </TableCell>
                 <TableCell>
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => removeScoreRow(index)}
+                    onClick={(e) => removeScoreRow(index, e)}
+                    type="button" // Explicitly set type to button
                   >
                     <Minus className="h-4 w-4" />
                   </Button>

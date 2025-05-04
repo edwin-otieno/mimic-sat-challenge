@@ -7,13 +7,16 @@ import TestList from './TestList';
 import TestActions from './TestActions';
 import { useTests } from '@/hooks/useTests';
 import { formSchema } from './TestForm';
+import DeleteTestDialog from './DeleteTestDialog';
 
 const TestContainer = () => {
-  const { tests, isLoading, error, updateTest, createTest } = useTests();
+  const { tests, isLoading, error, updateTest, createTest, deleteTest } = useTests();
   const [isEditing, setIsEditing] = useState(false);
   const [currentTest, setCurrentTest] = useState<Test | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [expandedTest, setExpandedTest] = useState<string | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [testToDelete, setTestToDelete] = useState<Test | null>(null);
   
   // Use 10 as default question count - in a real app, this would come from the test configuration
   const questionCount = 10;
@@ -27,6 +30,19 @@ const TestContainer = () => {
       setCurrentTest(null);
     }
     setIsDialogOpen(true);
+  };
+
+  const handleOpenDeleteDialog = (test: Test) => {
+    setTestToDelete(test);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = () => {
+    if (testToDelete) {
+      deleteTest(testToDelete.id);
+      setIsDeleteDialogOpen(false);
+      setTestToDelete(null);
+    }
   };
 
   const toggleExpandTest = (testId: string) => {
@@ -107,6 +123,7 @@ const TestContainer = () => {
         expandedTest={expandedTest}
         toggleExpandTest={toggleExpandTest}
         handleOpenDialog={handleOpenDialog}
+        handleDeleteTest={handleOpenDeleteDialog}
       />
 
       <TestDialog 
@@ -116,6 +133,13 @@ const TestContainer = () => {
         currentTest={currentTest}
         onSubmit={onSubmit}
         questionCount={questionCount}
+      />
+
+      <DeleteTestDialog
+        isOpen={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+        test={testToDelete}
+        onConfirm={handleDeleteConfirm}
       />
     </div>
   );

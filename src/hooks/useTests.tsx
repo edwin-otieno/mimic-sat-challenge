@@ -97,11 +97,25 @@ export const useTests = () => {
     queryClient.invalidateQueries({ queryKey: ['tests'] });
   };
   
+  const deleteTest = (testId: string) => {
+    setTests(tests.filter(test => test.id !== testId));
+    
+    // Also update our sample data so changes persist
+    const testIndex = sampleTests.findIndex(t => t.id === testId);
+    if (testIndex >= 0) {
+      sampleTests.splice(testIndex, 1);
+    }
+    
+    toast({ title: "Success", description: "Test deleted successfully" });
+    queryClient.invalidateQueries({ queryKey: ['tests'] });
+  };
+  
   return {
     tests,
     isLoading,
     error,
     updateTest,
-    createTest
+    createTest,
+    deleteTest
   };
 };

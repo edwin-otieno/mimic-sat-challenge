@@ -6,7 +6,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger 
 } from '@/components/ui/collapsible';
-import { ChevronDown, Pencil } from 'lucide-react';
+import { ChevronDown, Pencil, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import QuestionManager from '../questions/QuestionManager';
 import { Test } from './types';
@@ -16,13 +16,15 @@ interface TestItemProps {
   isExpanded: boolean;
   onToggleExpand: (testId: string) => void;
   onEditTest: (test: Test) => void;
+  onDeleteTest: (test: Test) => void;
 }
 
 const TestItem = ({ 
   test, 
   isExpanded, 
   onToggleExpand, 
-  onEditTest 
+  onEditTest,
+  onDeleteTest 
 }: TestItemProps) => {
   return (
     <Collapsible 
@@ -53,6 +55,18 @@ const TestItem = ({
             >
               <Pencil className="h-4 w-4" />
               <span className="sr-only">Edit</span>
+            </Button>
+            <Button 
+              size="sm" 
+              variant="ghost" 
+              className="text-red-500 hover:text-red-700 hover:bg-red-50"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDeleteTest(test);
+              }}
+            >
+              <Trash2 className="h-4 w-4" />
+              <span className="sr-only">Delete</span>
             </Button>
             <ChevronDown className="h-5 w-5" />
           </div>
