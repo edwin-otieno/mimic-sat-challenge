@@ -12,6 +12,7 @@ export interface Test {
 
 // Define the scaled score interface
 export interface ScaledScore {
+  module_id?: string;
   correct_answers: number;
   scaled_score: number;
 }
