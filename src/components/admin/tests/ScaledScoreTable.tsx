@@ -10,12 +10,14 @@ interface ScaledScoreTableProps {
   scores: ScaledScore[];
   onChange: (scores: ScaledScore[]) => void;
   questionCount: number;
+  moduleId?: string;
 }
 
 const ScaledScoreTable: React.FC<ScaledScoreTableProps> = ({ 
   scores, 
   onChange,
-  questionCount
+  questionCount,
+  moduleId
 }) => {
   const addScoreRow = () => {
     // Find the next correct answer count that doesn't have a score
@@ -32,7 +34,8 @@ const ScaledScoreTable: React.FC<ScaledScoreTableProps> = ({
     
     const newScore: ScaledScore = {
       correct_answers: nextCorrectAnswers,
-      scaled_score: 0
+      scaled_score: 0,
+      module_id: moduleId
     };
     
     onChange([...scores, newScore].sort((a, b) => a.correct_answers - b.correct_answers));
@@ -48,7 +51,8 @@ const ScaledScoreTable: React.FC<ScaledScoreTableProps> = ({
     const newScores = [...scores];
     newScores[index] = {
       ...newScores[index],
-      [field]: value
+      [field]: value,
+      module_id: moduleId // Ensure module_id is set
     };
     onChange(newScores);
   };
@@ -113,7 +117,7 @@ const ScaledScoreTable: React.FC<ScaledScoreTableProps> = ({
         </Table>
       ) : (
         <div className="text-center py-4 bg-gray-50 rounded-md">
-          <p className="text-gray-500">No scaled scoring defined. Add score mappings to customize the test scoring.</p>
+          <p className="text-gray-500">No scaled scoring defined. Add score mappings to customize the module scoring.</p>
         </div>
       )}
     </div>

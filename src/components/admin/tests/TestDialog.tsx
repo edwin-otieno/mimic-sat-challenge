@@ -10,6 +10,7 @@ import {
 import { z } from 'zod';
 import { Test } from './types';
 import TestForm, { formSchema } from './TestForm';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface TestDialogProps {
   isOpen: boolean;
@@ -35,16 +36,18 @@ const TestDialog: React.FC<TestDialogProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl max-h-[85vh]">
         <DialogHeader>
           <DialogTitle>{isEditing ? 'Edit Test' : 'Create New Test'}</DialogTitle>
         </DialogHeader>
-        <TestForm 
-          currentTest={currentTest}
-          onSubmit={onSubmit}
-          onCancel={handleCloseDialog}
-          questionCount={questionCount}
-        />
+        <ScrollArea className="h-[calc(85vh-120px)] pr-4">
+          <TestForm 
+            currentTest={currentTest}
+            onSubmit={onSubmit}
+            onCancel={handleCloseDialog}
+            questionCount={questionCount}
+          />
+        </ScrollArea>
       </DialogContent>
     </Dialog>
   );

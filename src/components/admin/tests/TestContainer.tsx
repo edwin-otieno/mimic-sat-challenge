@@ -43,6 +43,7 @@ const TestContainer = () => {
           description: values.description,
           is_active: values.is_active,
           scaled_scoring: values.scaled_scoring ? values.scaled_scoring.map(item => ({
+            module_id: item.module_id,
             correct_answers: item.correct_answers,
             scaled_score: item.scaled_score
           })) : [],
@@ -64,6 +65,7 @@ const TestContainer = () => {
           is_active: values.is_active,
           created_at: new Date().toISOString(),
           scaled_scoring: values.scaled_scoring ? values.scaled_scoring.map(item => ({
+            module_id: item.module_id,
             correct_answers: item.correct_answers,
             scaled_score: item.scaled_score
           })) : [],

@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -17,6 +17,8 @@ import { Switch } from '@/components/ui/switch';
 import { Test, ScaledScore, DEFAULT_MODULES, TestModule } from './types';
 import ScaledScoreTable from './ScaledScoreTable';
 import TestModulesDisplay from './TestModulesDisplay';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 // Form schema definition
 export const formSchema = z.object({
@@ -26,6 +28,7 @@ export const formSchema = z.object({
   is_active: z.boolean().default(true),
   scaled_scoring: z.array(
     z.object({
+      module_id: z.string().optional(),
       correct_answers: z.number().min(0),
       scaled_score: z.number()
     })
@@ -52,10 +55,26 @@ const TestForm: React.FC<TestFormProps> = ({
   onCancel,
   questionCount
 }) => {
-  const [scaledScores, setScaledScores] = React.useState<ScaledScore[]>(
-    currentTest?.scaled_scoring || []
-  );
+  // Group scaled scores by module
+  const initializeModuleScores = () => {
+    const modules = currentTest?.modules || DEFAULT_MODULES;
+    const allScores = currentTest?.scaled_scoring || [];
+    
+    // Create a map for each module
+    const moduleScores = new Map();
+    
+    modules.forEach(module => {
+      // Filter scores for this module
+      const moduleId = module.id || '';
+      const scores = allScores.filter(score => score.module_id === moduleId);
+      moduleScores.set(moduleId, scores.length > 0 ? scores : []);
+    });
+    
+    return moduleScores;
+  };
 
+  const [moduleScores, setModuleScores] = useState<Map<string, ScaledScore[]>>(initializeModuleScores());
+  
   const defaultModules = currentTest?.modules || DEFAULT_MODULES;
   
   const form = useForm<z.infer<typeof formSchema>>({
@@ -70,11 +89,29 @@ const TestForm: React.FC<TestFormProps> = ({
     }
   });
 
+  const handleScoreChange = (moduleId: string, scores: ScaledScore[]) => {
+    // Update the scores for the specific module
+    const newModuleScores = new Map(moduleScores);
+    newModuleScores.set(moduleId, scores);
+    setModuleScores(newModuleScores);
+  };
+
   const handleFormSubmit = (values: z.infer<typeof formSchema>) => {
-    // Include the scaled scores in the form submission
+    // Combine all module scores into a single array
+    const allScores: ScaledScore[] = [];
+    moduleScores.forEach((scores, moduleId) => {
+      scores.forEach(score => {
+        allScores.push({
+          ...score,
+          module_id: moduleId
+        });
+      });
+    });
+
+    // Include all the scaled scores in the form submission
     const updatedValues = {
       ...values,
-      scaled_scoring: scaledScores,
+      scaled_scoring: allScores,
       modules: values.modules || DEFAULT_MODULES
     };
     onSubmit(updatedValues);
@@ -133,11 +170,38 @@ const TestForm: React.FC<TestFormProps> = ({
         <TestModulesDisplay />
         
         <div className="border rounded-lg p-4">
-          <ScaledScoreTable 
-            scores={scaledScores}
-            onChange={setScaledScores}
-            questionCount={questionCount}
-          />
+          <h3 className="text-lg font-medium mb-4">Module Scaled Scoring</h3>
+          
+          <Tabs defaultValue={defaultModules[0].id}>
+            <TabsList className="mb-4">
+              {defaultModules.map((module) => (
+                <TabsTrigger key={module.id} value={module.id || ''}>
+                  {module.name}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            
+            {defaultModules.map((module) => (
+              <TabsContent key={module.id} value={module.id || ''}>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>{module.name} Scoring</CardTitle>
+                    <CardDescription>
+                      Configure scaled scoring for the {module.name} module
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ScaledScoreTable 
+                      scores={moduleScores.get(module.id || '') || []}
+                      onChange={(scores) => handleScoreChange(module.id || '', scores)}
+                      questionCount={questionCount / 2} // Half the questions per module
+                      moduleId={module.id || ''}
+                    />
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            ))}
+          </Tabs>
         </div>
         
         <div className="flex justify-end space-x-2">
