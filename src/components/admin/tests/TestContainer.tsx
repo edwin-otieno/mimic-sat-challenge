@@ -6,26 +6,7 @@ import TestDialog from './TestDialog';
 import TestList from './TestList';
 import TestActions from './TestActions';
 import { useTests } from '@/hooks/useTests';
-
-const formSchema = z.object({
-  id: z.string().optional(),
-  title: z.string().min(3, { message: "Title must be at least 3 characters" }),
-  description: z.string().min(10, { message: "Description must be at least 10 characters" }),
-  is_active: z.boolean().default(true),
-  scaled_scoring: z.array(
-    z.object({
-      correct_answers: z.number(),
-      scaled_score: z.number()
-    })
-  ).optional(),
-  modules: z.array(
-    z.object({
-      id: z.string().optional(),
-      name: z.string(),
-      type: z.enum(["reading_writing", "math"])
-    })
-  )
-});
+import { formSchema } from './TestForm';
 
 const TestContainer = () => {
   const { tests, isLoading, error, updateTest, createTest } = useTests();
@@ -79,7 +60,7 @@ const TestContainer = () => {
           description: values.description,
           is_active: values.is_active,
           created_at: new Date().toISOString(),
-          scaled_scoring: values.scaled_scoring || undefined,
+          scaled_scoring: values.scaled_scoring || [],
           // Ensure all modules have required properties
           modules: values.modules.map(module => ({
             id: module.id || Math.random().toString(36).substr(2, 9),
