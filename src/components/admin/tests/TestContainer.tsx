@@ -42,7 +42,10 @@ const TestContainer = () => {
           title: values.title,
           description: values.description,
           is_active: values.is_active,
-          scaled_scoring: values.scaled_scoring || [],
+          scaled_scoring: values.scaled_scoring ? values.scaled_scoring.map(item => ({
+            correct_answers: item.correct_answers,
+            scaled_score: item.scaled_score
+          })) : [],
           // Ensure all modules have required properties
           modules: values.modules.map(module => ({
             id: module.id || Math.random().toString(36).substr(2, 9),
@@ -60,7 +63,10 @@ const TestContainer = () => {
           description: values.description,
           is_active: values.is_active,
           created_at: new Date().toISOString(),
-          scaled_scoring: values.scaled_scoring || [],
+          scaled_scoring: values.scaled_scoring ? values.scaled_scoring.map(item => ({
+            correct_answers: item.correct_answers,
+            scaled_score: item.scaled_score
+          })) : [],
           // Ensure all modules have required properties
           modules: values.modules.map(module => ({
             id: module.id || Math.random().toString(36).substr(2, 9),
