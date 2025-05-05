@@ -34,8 +34,8 @@ const TestList: React.FC<TestListProps> = ({
           test={test}
           isExpanded={expandedTest === test.id}
           onToggleExpand={() => toggleExpandTest(test.id)}
-          onEdit={() => handleOpenDialog(test)}
-          onDelete={() => handleDeleteTest(test)}
+          onEditTest={() => handleOpenDialog(test)}
+          onDeleteTest={() => handleDeleteTest(test)}
         />
       ))}
     </div>
