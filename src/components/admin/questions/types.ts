@@ -6,6 +6,12 @@ export interface QuestionOption {
   is_correct: boolean;
 }
 
+// Define the question type enum
+export enum QuestionType {
+  MultipleChoice = "multiple_choice",
+  TextInput = "text_input"
+}
+
 // Define the question interface
 export interface Question {
   id?: string;
@@ -13,4 +19,8 @@ export interface Question {
   text: string;
   explanation?: string;
   options: QuestionOption[];
+  module_id?: string; // ID of the module this question belongs to
+  module_type?: "reading_writing" | "math"; // Type of module
+  question_type: QuestionType; // Type of question (multiple choice or text input)
+  image_url?: string; // URL for an optional image
 }

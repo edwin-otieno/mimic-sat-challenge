@@ -69,7 +69,7 @@ const ScaledScoreTable: React.FC<ScaledScoreTableProps> = ({
           size="sm" 
           onClick={addScoreRow}
           type="button" // Explicitly set type to button
-          disabled={scores.length >= questionCount + 1}
+          disabled={scores.length >= 100} // Increased maximum to 100 rows
         >
           <Plus className="h-4 w-4 mr-2" />
           Add Score Mapping
