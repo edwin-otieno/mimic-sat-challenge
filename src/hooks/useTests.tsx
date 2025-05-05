@@ -46,10 +46,33 @@ const sampleTests: Test[] = [
   }
 ];
 
+// Store tests in localStorage to persist between page refreshes
+const saveTestsToStorage = (tests: Test[]) => {
+  try {
+    localStorage.setItem('admin_tests', JSON.stringify(tests));
+  } catch (error) {
+    console.error('Error saving tests to localStorage:', error);
+  }
+};
+
+// Get tests from localStorage
+const getTestsFromStorage = (): Test[] => {
+  try {
+    const storedTests = localStorage.getItem('admin_tests');
+    if (storedTests) {
+      return JSON.parse(storedTests);
+    }
+  } catch (error) {
+    console.error('Error loading tests from localStorage:', error);
+  }
+  return sampleTests; // Fallback to sample tests
+};
+
 export const useTests = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [tests, setTests] = useState<Test[]>(sampleTests);
+  // Initialize with tests from localStorage or sample tests
+  const [tests, setTests] = useState<Test[]>(getTestsFromStorage());
   
   // Use React Query to simulate data fetching
   const { isLoading, error } = useQuery({
@@ -57,16 +80,16 @@ export const useTests = () => {
     queryFn: async () => {
       // Simulating API call with a delay
       await new Promise(resolve => setTimeout(resolve, 500));
-      return sampleTests;
+      return getTestsFromStorage();
     },
-    initialData: sampleTests,
+    initialData: getTestsFromStorage(),
     staleTime: Infinity // Prevent auto-refetching
   });
 
-  // Update tests state when query data changes
+  // Save tests to localStorage whenever they change
   useEffect(() => {
-    setTests(sampleTests);
-  }, []);
+    saveTestsToStorage(tests);
+  }, [tests]);
 
   const updateTest = (updatedTest: Test) => {
     const updatedTests = tests.map(test => {
@@ -77,34 +100,25 @@ export const useTests = () => {
     });
     
     setTests(updatedTests);
-    
-    // Also update our sample data so changes persist
-    const testIndex = sampleTests.findIndex(t => t.id === updatedTest.id);
-    if (testIndex >= 0) {
-      sampleTests[testIndex] = updatedTest;
-    }
+    saveTestsToStorage(updatedTests);
     
     toast({ title: "Success", description: "Test updated successfully" });
     queryClient.invalidateQueries({ queryKey: ['tests'] });
   };
 
   const createTest = (newTest: Test) => {
-    setTests([...tests, newTest]);
-    // Also update our sample data so changes persist
-    sampleTests.push(newTest);
+    const updatedTests = [...tests, newTest];
+    setTests(updatedTests);
+    saveTestsToStorage(updatedTests);
     
     toast({ title: "Success", description: "Test created successfully" });
     queryClient.invalidateQueries({ queryKey: ['tests'] });
   };
   
   const deleteTest = (testId: string) => {
-    setTests(tests.filter(test => test.id !== testId));
-    
-    // Also update our sample data so changes persist
-    const testIndex = sampleTests.findIndex(t => t.id === testId);
-    if (testIndex >= 0) {
-      sampleTests.splice(testIndex, 1);
-    }
+    const updatedTests = tests.filter(test => test.id !== testId);
+    setTests(updatedTests);
+    saveTestsToStorage(updatedTests);
     
     toast({ title: "Success", description: "Test deleted successfully" });
     queryClient.invalidateQueries({ queryKey: ['tests'] });
