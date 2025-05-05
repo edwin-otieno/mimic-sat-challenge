@@ -5,20 +5,12 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage
 } from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
 import { Test, ScaledScore, DEFAULT_MODULES, TestModule } from './types';
-import ScaledScoreTable from './ScaledScoreTable';
 import TestModulesDisplay from './TestModulesDisplay';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import TestBasicInfoForm from './TestBasicInfoForm';
+import ModuleScaledScoring from './ModuleScaledScoring';
 
 // Form schema definition
 export const formSchema = z.object({
@@ -120,89 +112,16 @@ const TestForm: React.FC<TestFormProps> = ({
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-4 py-4">
-        <FormField
-          control={form.control}
-          name="title"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Title</FormLabel>
-              <FormControl>
-                <Input placeholder="Enter test title..." {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="description"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Description</FormLabel>
-              <FormControl>
-                <Input placeholder="Enter test description..." {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="is_active"
-          render={({ field }) => (
-            <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-              <div className="space-y-0.5">
-                <FormLabel className="text-base">Active Status</FormLabel>
-                <div className="text-sm text-muted-foreground">
-                  Make this test available to students
-                </div>
-              </div>
-              <FormControl>
-                <Switch
-                  checked={field.value}
-                  onCheckedChange={field.onChange}
-                />
-              </FormControl>
-            </FormItem>
-          )}
-        />
+        <TestBasicInfoForm form={form} />
         
         <TestModulesDisplay />
         
-        <div className="border rounded-lg p-4">
-          <h3 className="text-lg font-medium mb-4">Module Scaled Scoring</h3>
-          
-          <Tabs defaultValue={defaultModules[0].id}>
-            <TabsList className="mb-4">
-              {defaultModules.map((module) => (
-                <TabsTrigger key={module.id} value={module.id || ''}>
-                  {module.name}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-            
-            {defaultModules.map((module) => (
-              <TabsContent key={module.id} value={module.id || ''}>
-                <Card>
-                  <CardHeader>
-                    <CardTitle>{module.name} Scoring</CardTitle>
-                    <CardDescription>
-                      Configure scaled scoring for the {module.name} module
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ScaledScoreTable 
-                      scores={moduleScores.get(module.id || '') || []}
-                      onChange={(scores) => handleScoreChange(module.id || '', scores)}
-                      questionCount={questionCount / 2} // Half the questions per module
-                      moduleId={module.id || ''}
-                    />
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            ))}
-          </Tabs>
-        </div>
+        <ModuleScaledScoring
+          modules={defaultModules}
+          moduleScores={moduleScores}
+          onScoreChange={handleScoreChange}
+          questionCount={questionCount}
+        />
         
         <div className="flex justify-end space-x-2">
           <Button type="button" variant="outline" onClick={onCancel}>
