@@ -1,106 +1,17 @@
 
-import React, { useState } from 'react';
-import { z } from 'zod';
-import { Test } from './types';
-import TestDialog from './TestDialog';
+import React from 'react';
 import TestList from './TestList';
 import TestActions from './TestActions';
+import TestDialogManager from './TestDialogManager';
 import { useTests } from '@/hooks/useTests';
-import { formSchema } from './TestForm';
-import DeleteTestDialog from './DeleteTestDialog';
+import { TestOperationsProvider, useTestOperations } from './TestOperationsProvider';
 
-const TestContainer = () => {
-  const { tests, isLoading, error, updateTest, createTest, deleteTest } = useTests();
-  const [isEditing, setIsEditing] = useState(false);
-  const [currentTest, setCurrentTest] = useState<Test | null>(null);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [expandedTest, setExpandedTest] = useState<string | null>(null);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [testToDelete, setTestToDelete] = useState<Test | null>(null);
+const TestContainerContent = () => {
+  const { tests, isLoading, error } = useTests();
+  const { expandedTest, handleOpenDialog, handleOpenDeleteDialog, toggleExpandTest } = useTestOperations();
   
   // Use 10 as default question count - in a real app, this would come from the test configuration
   const questionCount = 10;
-
-  const handleOpenDialog = (test?: Test) => {
-    if (test) {
-      setIsEditing(true);
-      setCurrentTest(test);
-    } else {
-      setIsEditing(false);
-      setCurrentTest(null);
-    }
-    setIsDialogOpen(true);
-  };
-
-  const handleOpenDeleteDialog = (test: Test) => {
-    setTestToDelete(test);
-    setIsDeleteDialogOpen(true);
-  };
-
-  const handleDeleteConfirm = () => {
-    if (testToDelete) {
-      deleteTest(testToDelete.id);
-      setIsDeleteDialogOpen(false);
-      setTestToDelete(null);
-    }
-  };
-
-  const toggleExpandTest = (testId: string) => {
-    setExpandedTest(expandedTest === testId ? null : testId);
-  };
-
-  const onSubmit = async (values: z.infer<typeof formSchema>) => {
-    try {
-      if (isEditing && currentTest) {
-        // Update existing test
-        const updatedTest: Test = {
-          ...currentTest,
-          title: values.title,
-          description: values.description,
-          is_active: values.is_active,
-          scaled_scoring: values.scaled_scoring ? values.scaled_scoring.map(item => ({
-            module_id: item.module_id,
-            correct_answers: item.correct_answers,
-            scaled_score: item.scaled_score
-          })) : [],
-          // Ensure all modules have required properties
-          modules: values.modules.map(module => ({
-            id: module.id || Math.random().toString(36).substr(2, 9),
-            name: module.name,
-            type: module.type
-          }))
-        };
-        
-        updateTest(updatedTest);
-      } else {
-        // Create new test
-        const newTest: Test = {
-          id: Math.random().toString(36).substr(2, 9), // Generate a random ID
-          title: values.title,
-          description: values.description,
-          is_active: values.is_active,
-          created_at: new Date().toISOString(),
-          scaled_scoring: values.scaled_scoring ? values.scaled_scoring.map(item => ({
-            module_id: item.module_id,
-            correct_answers: item.correct_answers,
-            scaled_score: item.scaled_score
-          })) : [],
-          // Ensure all modules have required properties
-          modules: values.modules.map(module => ({
-            id: module.id || Math.random().toString(36).substr(2, 9),
-            name: module.name,
-            type: module.type
-          }))
-        };
-        
-        createTest(newTest);
-      }
-      
-      setIsDialogOpen(false);
-    } catch (error: any) {
-      console.error("Error submitting test:", error);
-    }
-  };
 
   if (isLoading) {
     return <div className="flex justify-center p-8">Loading tests...</div>;
@@ -126,22 +37,16 @@ const TestContainer = () => {
         handleDeleteTest={handleOpenDeleteDialog}
       />
 
-      <TestDialog 
-        isOpen={isDialogOpen}
-        onOpenChange={setIsDialogOpen}
-        isEditing={isEditing}
-        currentTest={currentTest}
-        onSubmit={onSubmit}
-        questionCount={questionCount}
-      />
-
-      <DeleteTestDialog
-        isOpen={isDeleteDialogOpen}
-        onOpenChange={setIsDeleteDialogOpen}
-        test={testToDelete}
-        onConfirm={handleDeleteConfirm}
-      />
+      <TestDialogManager questionCount={questionCount} />
     </div>
+  );
+};
+
+const TestContainer = () => {
+  return (
+    <TestOperationsProvider>
+      <TestContainerContent />
+    </TestOperationsProvider>
   );
 };
 

@@ -1,7 +1,7 @@
 
 import React from 'react';
-import TestItem from './TestItem';
 import { Test } from './types';
+import TestItem from './TestItem';
 
 interface TestListProps {
   tests: Test[];
@@ -11,31 +11,31 @@ interface TestListProps {
   handleDeleteTest: (test: Test) => void;
 }
 
-const TestList = ({ 
-  tests, 
-  expandedTest, 
-  toggleExpandTest, 
+const TestList: React.FC<TestListProps> = ({
+  tests,
+  expandedTest,
+  toggleExpandTest,
   handleOpenDialog,
-  handleDeleteTest 
-}: TestListProps) => {
-  if (!tests || tests.length === 0) {
+  handleDeleteTest
+}) => {
+  if (tests.length === 0) {
     return (
-      <div className="text-center p-8 bg-gray-50 rounded-md">
-        <p className="text-gray-500">No tests found. Create your first test!</p>
+      <div className="bg-white rounded-lg border p-6 text-center">
+        <p className="text-muted-foreground">No tests found. Create your first test to get started.</p>
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      {tests.map((test) => (
-        <TestItem 
+      {tests.map(test => (
+        <TestItem
           key={test.id}
           test={test}
           isExpanded={expandedTest === test.id}
-          onToggleExpand={toggleExpandTest}
-          onEditTest={handleOpenDialog}
-          onDeleteTest={handleDeleteTest}
+          onToggleExpand={() => toggleExpandTest(test.id)}
+          onEdit={() => handleOpenDialog(test)}
+          onDelete={() => handleDeleteTest(test)}
         />
       ))}
     </div>
