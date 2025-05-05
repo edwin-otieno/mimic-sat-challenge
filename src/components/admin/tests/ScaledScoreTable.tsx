@@ -92,7 +92,7 @@ const ScaledScoreTable: React.FC<ScaledScoreTableProps> = ({
                   <Input
                     type="number"
                     min="0"
-                    max={questionCount}
+                    max="100"
                     value={score.correct_answers}
                     onChange={(e) => updateScoreValue(index, 'correct_answers', parseInt(e.target.value) || 0)}
                     className="w-24"
