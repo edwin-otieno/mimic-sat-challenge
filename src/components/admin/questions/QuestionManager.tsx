@@ -4,7 +4,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { PlusCircle } from 'lucide-react';
 import { z } from 'zod';
-import { Question } from './types';
+import { Question, QuestionType } from './types';
 import QuestionDialog from './QuestionDialog';
 import QuestionList from './QuestionList';
 
@@ -19,7 +19,9 @@ const createSampleQuestions = (testId: string): Question[] => [
       { id: '1', text: '3', is_correct: false },
       { id: '2', text: '4', is_correct: true },
       { id: '3', text: '5', is_correct: false }
-    ]
+    ],
+    question_type: QuestionType.MultipleChoice,
+    module_type: "math"
   },
   {
     id: '2',
@@ -30,7 +32,9 @@ const createSampleQuestions = (testId: string): Question[] => [
       { id: '4', text: 'London', is_correct: false },
       { id: '5', text: 'Paris', is_correct: true },
       { id: '6', text: 'Berlin', is_correct: false }
-    ]
+    ],
+    question_type: QuestionType.MultipleChoice,
+    module_type: "reading_writing"
   }
 ];
 
@@ -53,7 +57,10 @@ const questionFormSchema = z.object({
   ).min(2, { message: "At least 2 options are required" })
   .refine((options) => options.some(option => option.is_correct), {
     message: "At least one option must be marked as correct",
-  })
+  }),
+  module_type: z.enum(["reading_writing", "math"]).default("reading_writing"),
+  question_type: z.enum([QuestionType.MultipleChoice, QuestionType.TextInput]).default(QuestionType.MultipleChoice),
+  image_url: z.string().optional()
 });
 
 const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
@@ -96,7 +103,10 @@ const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
                 id: option.id || Math.random().toString(36).substr(2, 9),
                 text: option.text,
                 is_correct: option.is_correct
-              }))
+              })),
+              question_type: values.question_type,
+              module_type: values.module_type,
+              image_url: values.image_url
             } as Question;
           }
           return q;
@@ -111,6 +121,8 @@ const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
           id: Math.random().toString(36).substr(2, 9), // Generate a random ID
           test_id: testId,
           text: values.text,
+          question_type: values.question_type,
+          module_type: values.module_type,
           options: values.options.map(option => ({
             ...option,
             id: option.id || Math.random().toString(36).substr(2, 9),
