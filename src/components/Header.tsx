@@ -1,4 +1,3 @@
-
 import { Button } from "@/components/ui/button";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
@@ -39,11 +38,8 @@ const Header = ({ showLogout = true }: HeaderProps) => {
             <img 
               src="/lovable-uploads/da648167-8058-4204-9622-df6b335e4da0.png" 
               alt="Tutors Across America Logo" 
-              className="h-8 mr-2" 
+              className="h-[70px]" 
             />
-            <h1 className="text-2xl font-bold text-primary">
-              SAT Practice
-            </h1>
           </div>
         </div>
         
