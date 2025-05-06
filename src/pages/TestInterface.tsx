@@ -8,6 +8,7 @@ import { getTestQuestions } from "@/services/testService";
 import TestContainer from "@/components/test/TestContainer";
 import TestDialogs from "@/components/test/TestDialogs";
 import { ScaledScore } from "@/components/admin/tests/types";
+import { useTests } from "@/hooks/useTests";
 
 const TestInterface = () => {
   const navigate = useNavigate();
@@ -18,15 +19,32 @@ const TestInterface = () => {
   const [scaledScoring, setScaledScoring] = useState<ScaledScore[]>([]);
   const [showConfirmSubmit, setShowConfirmSubmit] = useState(false);
   const [showTimeUpDialog, setShowTimeUpDialog] = useState(false);
+  const { tests } = useTests();
   
   useEffect(() => {
     if (testId) {
-      // In a real app, this would be an API call
-      const { questions, scaledScoring } = getTestQuestions(testId);
-      setQuestions(questions);
-      setScaledScoring(scaledScoring || []);
+      // Get the current test from the available tests
+      const currentTest = tests.find(test => test.id === testId);
+      
+      if (currentTest) {
+        console.log("Found test:", currentTest);
+        // In a real app, this would be an API call with the test id
+        const { questions: testQuestions, scaledScoring: testScoring } = getTestQuestions(testId);
+        
+        // If the test has scaled scoring, use that instead of the default
+        const finalScaledScoring = currentTest.scaled_scoring && currentTest.scaled_scoring.length > 0 
+          ? currentTest.scaled_scoring 
+          : testScoring || [];
+          
+        setQuestions(testQuestions);
+        setScaledScoring(finalScaledScoring);
+      } else {
+        // Test not found, redirect to dashboard
+        console.error("Test not found:", testId);
+        navigate("/dashboard");
+      }
     }
-  }, [testId]);
+  }, [testId, tests, navigate]);
 
   const testDuration = 1800; // 30 minutes in seconds
   

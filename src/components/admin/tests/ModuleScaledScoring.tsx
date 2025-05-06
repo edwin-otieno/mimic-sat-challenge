@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { ScaledScore, TestModule } from './types';
 import ScaledScoreTable from './ScaledScoreTable';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,11 +18,22 @@ const ModuleScaledScoring: React.FC<ModuleScaledScoringProps> = ({
   onScoreChange,
   questionCount
 }) => {
+  // Ensure each module has its own independent scores
+  useEffect(() => {
+    modules.forEach(module => {
+      const moduleId = module.id || '';
+      if (!moduleScores.has(moduleId)) {
+        // Initialize with empty array if no scores exist for this module
+        onScoreChange(moduleId, []);
+      }
+    });
+  }, [modules, moduleScores, onScoreChange]);
+
   return (
     <div className="border rounded-lg p-4">
       <h3 className="text-lg font-medium mb-4">Module Scaled Scoring</h3>
       
-      <Tabs defaultValue={modules[0].id}>
+      <Tabs defaultValue={modules[0]?.id || ''}>
         <TabsList className="mb-4">
           {modules.map((module) => (
             <TabsTrigger key={module.id} value={module.id || ''}>
@@ -44,7 +55,7 @@ const ModuleScaledScoring: React.FC<ModuleScaledScoringProps> = ({
                 <ScaledScoreTable 
                   scores={moduleScores.get(module.id || '') || []}
                   onChange={(scores) => onScoreChange(module.id || '', scores)}
-                  questionCount={questionCount / 2} // Half the questions per module
+                  questionCount={questionCount / modules.length} // Divide questions across modules
                   moduleId={module.id || ''}
                 />
               </CardContent>

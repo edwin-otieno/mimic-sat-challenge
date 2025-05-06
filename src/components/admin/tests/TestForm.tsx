@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -53,7 +53,7 @@ const TestForm: React.FC<TestFormProps> = ({
     const allScores = currentTest?.scaled_scoring || [];
     
     // Create a map for each module
-    const moduleScores = new Map();
+    const moduleScores = new Map<string, ScaledScore[]>();
     
     modules.forEach(module => {
       // Filter scores for this module
@@ -68,6 +68,11 @@ const TestForm: React.FC<TestFormProps> = ({
   const [moduleScores, setModuleScores] = useState<Map<string, ScaledScore[]>>(initializeModuleScores());
   
   const defaultModules = currentTest?.modules || DEFAULT_MODULES;
+
+  // If modules change (e.g. when editing a test), reinitialize the scores
+  useEffect(() => {
+    setModuleScores(initializeModuleScores());
+  }, [currentTest]);
   
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -82,7 +87,7 @@ const TestForm: React.FC<TestFormProps> = ({
   });
 
   const handleScoreChange = (moduleId: string, scores: ScaledScore[]) => {
-    // Update the scores for the specific module
+    // Update the scores for the specific module only
     const newModuleScores = new Map(moduleScores);
     newModuleScores.set(moduleId, scores);
     setModuleScores(newModuleScores);
