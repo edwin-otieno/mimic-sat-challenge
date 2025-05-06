@@ -94,7 +94,7 @@ const TestForm: React.FC<TestFormProps> = ({
   };
 
   const handleFormSubmit = (values: z.infer<typeof formSchema>) => {
-    // Combine all module scores into a single array
+    // Combine all module scores into a single array and ensure module_id is set
     const allScores: ScaledScore[] = [];
     moduleScores.forEach((scores, moduleId) => {
       scores.forEach(score => {
@@ -105,12 +105,15 @@ const TestForm: React.FC<TestFormProps> = ({
       });
     });
 
+    console.log("Submitting scaled scores:", allScores);
+
     // Include all the scaled scores in the form submission
     const updatedValues = {
       ...values,
       scaled_scoring: allScores,
       modules: values.modules || DEFAULT_MODULES
     };
+    
     onSubmit(updatedValues);
   };
 

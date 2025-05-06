@@ -43,6 +43,7 @@ const TestDialogManager: React.FC<TestDialogManagerProps> = ({
           title: values.title,
           description: values.description,
           is_active: values.is_active,
+          // Ensure we properly save the scaled scoring data
           scaled_scoring: values.scaled_scoring ? values.scaled_scoring.map(item => ({
             module_id: item.module_id,
             correct_answers: item.correct_answers,
@@ -56,6 +57,7 @@ const TestDialogManager: React.FC<TestDialogManagerProps> = ({
           }))
         };
         
+        console.log("Updating test with scaled scoring:", updatedTest.scaled_scoring);
         updateTest(updatedTest);
       } else {
         // Create new test
@@ -65,6 +67,7 @@ const TestDialogManager: React.FC<TestDialogManagerProps> = ({
           description: values.description,
           is_active: values.is_active,
           created_at: new Date().toISOString(),
+          // Ensure we properly save the scaled scoring data
           scaled_scoring: values.scaled_scoring ? values.scaled_scoring.map(item => ({
             module_id: item.module_id,
             correct_answers: item.correct_answers,
@@ -78,6 +81,7 @@ const TestDialogManager: React.FC<TestDialogManagerProps> = ({
           }))
         };
         
+        console.log("Creating test with scaled scoring:", newTest.scaled_scoring);
         createTest(newTest);
       }
       

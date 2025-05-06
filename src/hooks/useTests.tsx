@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
@@ -13,9 +12,12 @@ const sampleTests: Test[] = [
     is_active: true,
     created_at: new Date().toISOString(),
     scaled_scoring: [
-      { correct_answers: 0, scaled_score: 0 },
-      { correct_answers: 5, scaled_score: 50 },
-      { correct_answers: 10, scaled_score: 100 }
+      { module_id: '1-1', correct_answers: 0, scaled_score: 0 },
+      { module_id: '1-1', correct_answers: 5, scaled_score: 50 },
+      { module_id: '1-1', correct_answers: 10, scaled_score: 100 },
+      { module_id: '1-2', correct_answers: 0, scaled_score: 0 },
+      { module_id: '1-2', correct_answers: 5, scaled_score: 50 },
+      { module_id: '1-2', correct_answers: 10, scaled_score: 100 }
     ],
     modules: [
       { id: '1-1', name: 'Reading & Writing', type: 'reading_writing' },
@@ -31,7 +33,8 @@ const sampleTests: Test[] = [
     modules: [
       { id: '2-1', name: 'Reading & Writing', type: 'reading_writing' },
       { id: '2-2', name: 'Math', type: 'math' }
-    ]
+    ],
+    scaled_scoring: []
   },
   {
     id: '3',
@@ -42,7 +45,8 @@ const sampleTests: Test[] = [
     modules: [
       { id: '3-1', name: 'Reading & Writing', type: 'reading_writing' },
       { id: '3-2', name: 'Math', type: 'math' }
-    ]
+    ],
+    scaled_scoring: []
   }
 ];
 
@@ -60,7 +64,12 @@ const getTestsFromStorage = (): Test[] => {
   try {
     const storedTests = localStorage.getItem('admin_tests');
     if (storedTests) {
-      return JSON.parse(storedTests);
+      const parsedTests = JSON.parse(storedTests);
+      // Ensure scaled scoring arrays are properly initialized
+      return parsedTests.map((test: Test) => ({
+        ...test,
+        scaled_scoring: test.scaled_scoring || []
+      }));
     }
   } catch (error) {
     console.error('Error loading tests from localStorage:', error);
@@ -89,16 +98,22 @@ export const useTests = () => {
   // Save tests to localStorage whenever they change
   useEffect(() => {
     saveTestsToStorage(tests);
+    console.log("Saved tests to localStorage:", tests);
   }, [tests]);
 
   const updateTest = (updatedTest: Test) => {
     const updatedTests = tests.map(test => {
       if (test.id === updatedTest.id) {
-        return updatedTest;
+        // Ensure we keep the scaled_scoring array
+        return {
+          ...updatedTest,
+          scaled_scoring: updatedTest.scaled_scoring || []
+        };
       }
       return test;
     });
     
+    console.log("Updating test:", updatedTest);
     setTests(updatedTests);
     saveTestsToStorage(updatedTests);
     
@@ -107,7 +122,14 @@ export const useTests = () => {
   };
 
   const createTest = (newTest: Test) => {
-    const updatedTests = [...tests, newTest];
+    // Ensure scaled_scoring is initialized if not provided
+    const testWithScoring = {
+      ...newTest,
+      scaled_scoring: newTest.scaled_scoring || []
+    };
+    
+    const updatedTests = [...tests, testWithScoring];
+    console.log("Creating test:", testWithScoring);
     setTests(updatedTests);
     saveTestsToStorage(updatedTests);
     
