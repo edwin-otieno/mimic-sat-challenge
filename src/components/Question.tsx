@@ -1,6 +1,7 @@
 
 import React from "react";
 import { cn } from "@/lib/utils";
+import { X } from "lucide-react";
 
 export interface QuestionOption {
   id: string;
@@ -13,8 +14,8 @@ export interface QuestionData {
   text: string;
   options: QuestionOption[];
   explanation?: string;
-  imageUrl?: string; // Added image URL
-  questionType?: "multiple_choice" | "text_input"; // Added question type
+  imageUrl?: string;
+  questionType?: "multiple_choice" | "text_input";
 }
 
 interface QuestionProps {
@@ -24,6 +25,8 @@ interface QuestionProps {
   showExplanation?: boolean;
   textAnswer?: string;
   onTextAnswerChange?: (value: string) => void;
+  crossedOutOptions?: string[];
+  onToggleCrossOut?: (optionId: string) => void;
 }
 
 const Question = ({
@@ -33,6 +36,8 @@ const Question = ({
   showExplanation = false,
   textAnswer = "",
   onTextAnswerChange,
+  crossedOutOptions = [],
+  onToggleCrossOut,
 }: QuestionProps) => {
   const handleOptionClick = (optionId: string) => {
     onSelectOption(optionId);
@@ -60,27 +65,50 @@ const Question = ({
       {!isTextInput ? (
         // Multiple choice options
         <div className="space-y-3">
-          {question.options.map((option, index) => (
-            <label
-              key={option.id}
-              className={cn(
-                "question-option",
-                selectedOption === option.id && "selected",
-                showExplanation && option.isCorrect && "border-green-500 bg-green-50"
-              )}
-              onClick={() => handleOptionClick(option.id)}
-            >
-              <input
-                type="radio"
-                name={`question-${question.id}`}
-                value={option.id}
-                checked={selectedOption === option.id}
-                onChange={() => {}}
-              />
-              <span className="question-option-letter">{letters[index]}</span>
-              <span>{option.text}</span>
-            </label>
-          ))}
+          {question.options.map((option, index) => {
+            const isCrossedOut = crossedOutOptions.includes(option.id);
+            
+            return (
+              <div key={option.id} className="relative">
+                <label
+                  className={cn(
+                    "question-option flex items-center",
+                    selectedOption === option.id && "selected",
+                    isCrossedOut && "opacity-60",
+                    showExplanation && option.isCorrect && "border-green-500 bg-green-50"
+                  )}
+                  onClick={() => handleOptionClick(option.id)}
+                >
+                  <input
+                    type="radio"
+                    name={`question-${question.id}`}
+                    value={option.id}
+                    checked={selectedOption === option.id}
+                    onChange={() => {}}
+                  />
+                  <span className="question-option-letter">{letters[index]}</span>
+                  <span className={cn(isCrossedOut && "line-through")}>{option.text}</span>
+                </label>
+                
+                {onToggleCrossOut && (
+                  <button 
+                    type="button"
+                    className={cn(
+                      "absolute right-3 top-3 w-6 h-6 flex items-center justify-center rounded-full",
+                      isCrossedOut ? "bg-red-100 text-red-600" : "bg-gray-100 text-gray-400 hover:bg-gray-200"
+                    )}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleCrossOut(option.id);
+                    }}
+                    title={isCrossedOut ? "Remove cross-out" : "Cross out option"}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
       ) : (
         // Text input for math questions

@@ -9,6 +9,9 @@ import TestContainer from "@/components/test/TestContainer";
 import TestDialogs from "@/components/test/TestDialogs";
 import { ScaledScore } from "@/components/admin/tests/types";
 import { useTests } from "@/hooks/useTests";
+import ReviewPage from "@/components/test/ReviewPage";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 
 const TestInterface = () => {
   const navigate = useNavigate();
@@ -19,6 +22,10 @@ const TestInterface = () => {
   const [scaledScoring, setScaledScoring] = useState<ScaledScore[]>([]);
   const [showConfirmSubmit, setShowConfirmSubmit] = useState(false);
   const [showTimeUpDialog, setShowTimeUpDialog] = useState(false);
+  const [flaggedQuestions, setFlaggedQuestions] = useState<Set<string>>(new Set());
+  const [crossedOutOptions, setCrossedOutOptions] = useState<Record<string, string[]>>({});
+  const [showReviewPage, setShowReviewPage] = useState(false);
+  const [timerEnabled, setTimerEnabled] = useState(true);
   const { tests } = useTests();
   
   useEffect(() => {
@@ -66,6 +73,36 @@ const TestInterface = () => {
       setCurrentQuestionIndex(currentQuestionIndex - 1);
     }
   };
+  
+  const handleGoToQuestion = (index: number) => {
+    setCurrentQuestionIndex(index);
+  };
+
+  const handleToggleFlag = (questionId: string) => {
+    const newFlaggedQuestions = new Set(flaggedQuestions);
+    if (newFlaggedQuestions.has(questionId)) {
+      newFlaggedQuestions.delete(questionId);
+    } else {
+      newFlaggedQuestions.add(questionId);
+    }
+    setFlaggedQuestions(newFlaggedQuestions);
+  };
+  
+  const handleToggleCrossOut = (questionId: string, optionId: string) => {
+    const currentCrossedOut = crossedOutOptions[questionId] || [];
+    let newCrossedOut;
+    
+    if (currentCrossedOut.includes(optionId)) {
+      newCrossedOut = currentCrossedOut.filter(id => id !== optionId);
+    } else {
+      newCrossedOut = [...currentCrossedOut, optionId];
+    }
+    
+    setCrossedOutOptions({
+      ...crossedOutOptions,
+      [questionId]: newCrossedOut
+    });
+  };
 
   const handleSubmitTest = () => {
     // Calculate results
@@ -95,7 +132,13 @@ const TestInterface = () => {
   };
 
   const handleTimeUp = () => {
-    setShowTimeUpDialog(true);
+    if (timerEnabled) {
+      setShowTimeUpDialog(true);
+    }
+  };
+
+  const handleOpenReviewPage = () => {
+    setShowReviewPage(true);
   };
 
   if (questions.length === 0) {
@@ -113,18 +156,50 @@ const TestInterface = () => {
       <main className="flex-1 container max-w-4xl mx-auto py-6 px-4">
         <div className="flex justify-between items-center mb-6 border-b pb-4">
           <h2 className="text-2xl font-bold">Practice Test</h2>
-          <Timer initialTime={testDuration} onTimeUp={handleTimeUp} />
+          <div className="flex items-center gap-4">
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="timer-mode"
+                checked={timerEnabled}
+                onCheckedChange={setTimerEnabled}
+              />
+              <Label htmlFor="timer-mode">Timer</Label>
+            </div>
+            {timerEnabled && (
+              <Timer initialTime={testDuration} onTimeUp={handleTimeUp} />
+            )}
+          </div>
         </div>
         
-        <TestContainer
-          questions={questions}
-          currentQuestionIndex={currentQuestionIndex}
-          userAnswers={userAnswers}
-          onSelectOption={handleSelectOption}
-          onPreviousQuestion={handlePreviousQuestion}
-          onNextQuestion={handleNextQuestion}
-          onConfirmSubmit={() => setShowConfirmSubmit(true)}
-        />
+        {showReviewPage ? (
+          <ReviewPage
+            questions={questions}
+            userAnswers={userAnswers}
+            flaggedQuestions={flaggedQuestions}
+            onGoToQuestion={(index) => {
+              setCurrentQuestionIndex(index);
+              setShowReviewPage(false);
+            }}
+            onSubmitTest={() => setShowConfirmSubmit(true)}
+            onCancel={() => setShowReviewPage(false)}
+          />
+        ) : (
+          <TestContainer
+            questions={questions}
+            currentQuestionIndex={currentQuestionIndex}
+            userAnswers={userAnswers}
+            onSelectOption={handleSelectOption}
+            onPreviousQuestion={handlePreviousQuestion}
+            onNextQuestion={handleNextQuestion}
+            onConfirmSubmit={() => setShowConfirmSubmit(true)}
+            onGoToQuestion={handleGoToQuestion}
+            flaggedQuestions={flaggedQuestions}
+            onToggleFlag={handleToggleFlag}
+            crossedOutOptions={crossedOutOptions}
+            onToggleCrossOut={handleToggleCrossOut}
+            onOpenReviewPage={handleOpenReviewPage}
+          />
+        )}
       </main>
       
       <TestDialogs
