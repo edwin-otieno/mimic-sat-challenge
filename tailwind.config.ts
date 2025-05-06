@@ -26,7 +26,7 @@ export default {
 				background: 'hsl(var(--background))',
 				foreground: 'hsl(var(--foreground))',
 				primary: {
-					DEFAULT: '#9b87f5',
+					DEFAULT: '#0056b3', // Logo blue color
 					foreground: '#ffffff'
 				},
 				secondary: {
@@ -42,7 +42,7 @@ export default {
 					foreground: 'hsl(var(--muted-foreground))'
 				},
 				accent: {
-					DEFAULT: '#E5DEFF',
+					DEFAULT: '#e6f0ff', // Light blue accent to complement the primary blue
 					foreground: '#333333'
 				},
 				popover: {

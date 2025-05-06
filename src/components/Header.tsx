@@ -32,12 +32,19 @@ const Header = ({ showLogout = true }: HeaderProps) => {
       <div className="flex justify-between items-center max-w-7xl mx-auto">
         <div className="flex items-center gap-2">
           {user && !isTestPage && <MobileNav />}
-          <h1 
-            className="text-2xl font-bold text-primary cursor-pointer" 
+          <div 
+            className="flex items-center cursor-pointer" 
             onClick={() => navigate(user ? "/dashboard" : "/")}
           >
-            SAT Practice
-          </h1>
+            <img 
+              src="/lovable-uploads/da648167-8058-4204-9622-df6b335e4da0.png" 
+              alt="Tutors Across America Logo" 
+              className="h-8 mr-2" 
+            />
+            <h1 className="text-2xl font-bold text-primary">
+              SAT Practice
+            </h1>
+          </div>
         </div>
         
         {user && !isTestPage && (

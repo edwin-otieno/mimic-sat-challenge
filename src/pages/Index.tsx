@@ -21,7 +21,12 @@ const Index = () => {
       
       <div className="flex-1 flex flex-col items-center justify-center p-4">
         <div className="max-w-3xl w-full space-y-8 text-center">
-          <div>
+          <div className="flex flex-col items-center">
+            <img 
+              src="/lovable-uploads/da648167-8058-4204-9622-df6b335e4da0.png" 
+              alt="Tutors Across America Logo" 
+              className="h-36 mb-4" 
+            />
             <h1 className="text-5xl font-bold text-primary mb-6">SAT Practice</h1>
             <p className="text-xl text-gray-600 mb-8">
               Master the SAT with our comprehensive practice tests and personalized feedback
