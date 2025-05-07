@@ -1,9 +1,9 @@
 
 import React, { useState } from 'react';
-import { Question } from './types';
+import { Question, QuestionType } from './types';
 import QuestionDialog from './QuestionDialog';
 import QuestionList from './QuestionList';
-import QuestionHeader from './components/QuestionHeader';
+import QuestionHeader, { QuestionFilters } from './components/QuestionHeader';
 import { useQuestionManagement } from './hooks/useQuestionManagement';
 
 interface QuestionManagerProps {
@@ -16,6 +16,8 @@ const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
+  const [filteredQuestions, setFilteredQuestions] = useState<Question[]>([]);
+  const [filters, setFilters] = useState<QuestionFilters>({});
 
   const handleOpenDialog = (question?: Question) => {
     if (question) {
@@ -35,11 +37,53 @@ const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
     }
   };
 
+  const handleFilter = (newFilters: QuestionFilters) => {
+    setFilters(newFilters);
+    
+    let filtered = [...questions];
+    
+    if (newFilters.searchTerm) {
+      const searchLower = newFilters.searchTerm.toLowerCase();
+      filtered = filtered.filter(q => 
+        q.text.toLowerCase().includes(searchLower) ||
+        q.explanation?.toLowerCase().includes(searchLower)
+      );
+    }
+    
+    if (newFilters.moduleType) {
+      filtered = filtered.filter(q => q.module_type === newFilters.moduleType);
+    }
+    
+    if (newFilters.questionType) {
+      filtered = filtered.filter(q => q.question_type === newFilters.questionType);
+    }
+    
+    setFilteredQuestions(filtered);
+  };
+
+  // Determine which questions to show based on whether filters are applied
+  const displayQuestions = Object.keys(filters).some(key => filters[key as keyof QuestionFilters]) 
+    ? filteredQuestions
+    : questions;
+
+  const filterOptions = {
+    moduleTypes: [
+      { value: 'reading_writing', label: 'Reading & Writing' },
+      { value: 'math', label: 'Math' }
+    ],
+    questionTypes: [
+      { value: QuestionType.MultipleChoice, label: 'Multiple Choice' },
+      { value: QuestionType.TextInput, label: 'Text Input' }
+    ]
+  };
+
   return (
     <div className="space-y-4">
       <QuestionHeader 
         testTitle={testTitle} 
         onAddQuestion={() => handleOpenDialog()} 
+        onFilter={handleFilter}
+        filterOptions={filterOptions}
       />
 
       {loading ? (
@@ -48,7 +92,7 @@ const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
         </div>
       ) : (
         <QuestionList 
-          questions={questions} 
+          questions={displayQuestions} 
           onEditQuestion={handleOpenDialog}
           onDeleteQuestion={handleDeleteQuestion}
         />
