@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -96,8 +95,8 @@ const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
           test_id: question.test_id,
           text: question.text,
           explanation: question.explanation,
-          module_type: question.module_type || 'reading_writing',
-          question_type: question.question_type || QuestionType.MultipleChoice,
+          module_type: question.module_type as "reading_writing" | "math",
+          question_type: question.question_type as QuestionType,
           image_url: question.image_url,
           options: (optionsByQuestion[question.id] || []).map(option => ({
             id: option.id,
@@ -134,15 +133,22 @@ const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
 
   const handleSubmit = async (values: z.infer<typeof questionFormSchema>) => {
     try {
+      // Make sure the test_id and module_type are properly set
+      const questionData = {
+        ...values,
+        test_id: testId,
+        module_type: values.module_type || "reading_writing" as const
+      };
+      
       // Save to database
-      const savedQuestion = await saveQuestion(values);
+      const savedQuestion = await saveQuestion(questionData);
       
       if (isEditing && currentQuestion) {
         // Update existing question in local state
         const updatedQuestions = questions.map(q => {
           if (q.id === currentQuestion.id) {
             return { 
-              ...values, 
+              ...questionData, 
               id: currentQuestion.id
             } as Question;
           }
@@ -154,7 +160,7 @@ const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
       } else {
         // Create new question in local state
         const newQuestion: Question = {
-          ...values,
+          ...questionData,
           id: savedQuestion.id
         };
         

@@ -1,4 +1,3 @@
-
 import React from "react";
 import { cn } from "@/lib/utils";
 import { X } from "lucide-react";
@@ -16,6 +15,7 @@ export interface QuestionData {
   explanation?: string;
   imageUrl?: string;
   questionType?: "multiple_choice" | "text_input";
+  module_type?: "reading_writing" | "math"; // Added module_type to the interface
 }
 
 interface QuestionProps {

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { 
@@ -70,18 +69,7 @@ const StudentResults = () => {
         // Get test results based on filters
         let query = supabase
           .from('test_results')
-          .select(`
-            id,
-            test_id,
-            user_id,
-            total_score,
-            total_questions,
-            scaled_score,
-            created_at,
-            time_taken,
-            profiles!inner(first_name, last_name, email)
-          `)
-          .order('created_at', { ascending: false });
+          .select('id, test_id, user_id, total_score, total_questions, scaled_score, created_at, time_taken');
           
         if (selectedStudent !== 'all') {
           query = query.eq('user_id', selectedStudent);
@@ -97,15 +85,37 @@ const StudentResults = () => {
           throw error;
         }
         
-        // Format results with student name
-        const formattedResults = data.map(result => ({
-          ...result,
-          studentName: `${result.profiles.first_name} ${result.profiles.last_name}`,
-          studentEmail: result.profiles.email,
-          testName: tests.find(test => test.id === result.test_id)?.title || result.test_id,
-          completedAt: new Date(result.created_at).toLocaleString(),
-          score: `${result.total_score}/${result.total_questions}`,
-          percentage: Math.round((result.total_score / result.total_questions) * 100)
+        // Get user profiles for each result
+        const formattedResults = await Promise.all(data.map(async result => {
+          // Fetch the user profile separately
+          const { data: profileData, error: profileError } = await supabase
+            .from('profiles')
+            .select('first_name, last_name, email')
+            .eq('id', result.user_id)
+            .single();
+            
+          if (profileError) {
+            console.error('Error fetching profile:', profileError);
+            return {
+              ...result,
+              studentName: 'Unknown User',
+              studentEmail: 'N/A',
+              testName: tests.find(test => test.id === result.test_id)?.title || result.test_id,
+              completedAt: new Date(result.created_at).toLocaleString(),
+              score: `${result.total_score}/${result.total_questions}`,
+              percentage: Math.round((result.total_score / result.total_questions) * 100)
+            };
+          }
+          
+          return {
+            ...result,
+            studentName: `${profileData.first_name || ''} ${profileData.last_name || ''}`.trim() || 'No Name',
+            studentEmail: profileData.email || 'No Email',
+            testName: tests.find(test => test.id === result.test_id)?.title || result.test_id,
+            completedAt: new Date(result.created_at).toLocaleString(),
+            score: `${result.total_score}/${result.total_questions}`,
+            percentage: Math.round((result.total_score / result.total_questions) * 100)
+          };
         }));
         
         setResults(formattedResults);

@@ -1,6 +1,6 @@
-
 import { QuestionData } from "@/components/Question";
 import { ScaledScore } from "@/components/admin/tests/types";
+import { QuestionType } from "@/components/admin/questions/types";
 import { supabase } from "@/integrations/supabase/client";
 
 const convertDbQuestionToQuestionData = (
@@ -11,7 +11,7 @@ const convertDbQuestionToQuestionData = (
     id: question.id,
     text: question.text,
     explanation: question.explanation,
-    module_type: question.module_type,
+    module_type: question.module_type as "reading_writing" | "math",
     options: options
       .filter(option => option.question_id === question.id)
       .map(option => ({
