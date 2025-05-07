@@ -23,4 +23,5 @@ export interface Question {
   module_type: "reading_writing" | "math"; // Type of module
   question_type: QuestionType; // Type of question (multiple choice or text input)
   image_url?: string; // URL for an optional image
+  correct_answer?: string; // For text input questions
 }
