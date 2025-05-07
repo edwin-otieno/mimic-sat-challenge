@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -133,11 +134,13 @@ const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
 
   const handleSubmit = async (values: z.infer<typeof questionFormSchema>) => {
     try {
-      // Make sure the test_id and module_type are properly set
+      // Make sure the test_id, module_type, and text are properly set
       const questionData = {
         ...values,
         test_id: testId,
-        module_type: values.module_type || "reading_writing" as const
+        text: values.text, // Explicitly ensure text is set
+        module_type: values.module_type || "reading_writing" as const,
+        question_type: values.question_type || QuestionType.MultipleChoice
       };
       
       // Save to database

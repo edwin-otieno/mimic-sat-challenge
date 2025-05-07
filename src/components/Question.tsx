@@ -1,3 +1,4 @@
+
 import React from "react";
 import { cn } from "@/lib/utils";
 import { X } from "lucide-react";
@@ -15,7 +16,7 @@ export interface QuestionData {
   explanation?: string;
   imageUrl?: string;
   questionType?: "multiple_choice" | "text_input";
-  module_type?: "reading_writing" | "math"; // Added module_type to the interface
+  module_type?: "reading_writing" | "math"; // Module type property
 }
 
 interface QuestionProps {
@@ -66,7 +67,7 @@ const Question = ({
         // Multiple choice options
         <div className="space-y-3">
           {question.options.map((option, index) => {
-            const isCrossedOut = crossedOutOptions.includes(option.id);
+            const isCrossedOut = crossedOutOptions?.includes(option.id);
             
             return (
               <div key={option.id} className="relative">
