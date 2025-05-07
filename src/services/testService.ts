@@ -1,6 +1,6 @@
 import { QuestionData } from "@/components/Question";
 import { ScaledScore } from "@/components/admin/tests/types";
-import { QuestionType } from "@/components/admin/questions/types";
+import { QuestionType, QuestionOption } from "@/components/admin/questions/types";
 import { supabase } from "@/integrations/supabase/client";
 
 const convertDbQuestionToQuestionData = (
@@ -221,11 +221,11 @@ export const saveQuestion = async (question: any) => {
           .in('id', optionsToDelete);
       }
       
-      // Upsert options
+      // Upsert options - ensure each option has the required text field
       const optionsToUpsert = question.options.map(option => ({
         id: option.id || undefined,
         question_id: savedQuestion.id,
-        text: option.text,
+        text: option.text || "", // Ensure text is always provided
         is_correct: option.is_correct || false
       }));
       

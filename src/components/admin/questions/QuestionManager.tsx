@@ -134,13 +134,19 @@ const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
 
   const handleSubmit = async (values: z.infer<typeof questionFormSchema>) => {
     try {
-      // Make sure the test_id, module_type, and text are properly set
+      // Make sure all required fields are properly set
       const questionData = {
         ...values,
         test_id: testId,
         text: values.text, // Explicitly ensure text is set
         module_type: values.module_type || "reading_writing" as const,
-        question_type: values.question_type || QuestionType.MultipleChoice
+        question_type: values.question_type || QuestionType.MultipleChoice,
+        // Ensure options meet the QuestionOption interface requirements
+        options: values.options ? values.options.map(option => ({
+          id: option.id || undefined,
+          text: option.text || "", // Ensure text is always provided
+          is_correct: option.is_correct || false
+        })) : []
       };
       
       // Save to database
@@ -164,7 +170,8 @@ const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
         // Create new question in local state
         const newQuestion: Question = {
           ...questionData,
-          id: savedQuestion.id
+          id: savedQuestion.id,
+          options: questionData.options as Question['options'] // Ensure type compatibility
         };
         
         setQuestions([...questions, newQuestion]);
