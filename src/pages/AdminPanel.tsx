@@ -4,13 +4,14 @@ import Header from "@/components/Header";
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { PlusCircle, Users, TestTube, Pencil } from 'lucide-react';
+import { PlusCircle, Users, TestTube, Pencil, LineChart } from 'lucide-react';
 import TestManagement from '@/components/admin/TestManagement';
 import UserManagement from '@/components/admin/UserManagement';
+import StudentResults from '@/components/admin/StudentResults';
 
 const AdminPanel = () => {
   const { isAdmin } = useAuth();
-  const [activeSection, setActiveSection] = useState<'test' | 'user' | null>(null);
+  const [activeSection, setActiveSection] = useState<'test' | 'user' | 'results' | null>(null);
 
   if (!isAdmin) {
     return (
@@ -32,7 +33,7 @@ const AdminPanel = () => {
         <h2 className="text-3xl font-bold mb-8">Admin Panel</h2>
         
         {activeSection === null ? (
-          <div className="grid md:grid-cols-2 gap-6">
+          <div className="grid md:grid-cols-3 gap-6">
             <Card className="cursor-pointer hover:shadow-md transition-shadow" 
                   onClick={() => setActiveSection('user')}>
               <CardHeader>
@@ -76,6 +77,28 @@ const AdminPanel = () => {
                 </Button>
               </CardContent>
             </Card>
+            
+            <Card className="cursor-pointer hover:shadow-md transition-shadow"
+                  onClick={() => setActiveSection('results')}>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <LineChart className="h-5 w-5" />
+                  Student Results
+                </CardTitle>
+                <CardDescription>View all student test results</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-gray-600 mb-4">
+                  Access and analyze test results from all students to track performance trends.
+                </p>
+                <Button variant="outline" onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveSection('results');
+                }} className="w-full">
+                  View Results
+                </Button>
+              </CardContent>
+            </Card>
           </div>
         ) : (
           <div className="space-y-6">
@@ -88,15 +111,14 @@ const AdminPanel = () => {
                 ← Back
               </Button>
               <h3 className="text-2xl font-semibold">
-                {activeSection === 'test' ? 'Test Management' : 'User Management'}
+                {activeSection === 'test' ? 'Test Management' : 
+                  activeSection === 'user' ? 'User Management' : 'Student Results'}
               </h3>
             </div>
             
-            {activeSection === 'test' ? (
-              <TestManagement />
-            ) : (
-              <UserManagement />
-            )}
+            {activeSection === 'test' && <TestManagement />}
+            {activeSection === 'user' && <UserManagement />}
+            {activeSection === 'results' && <StudentResults />}
           </div>
         )}
       </main>

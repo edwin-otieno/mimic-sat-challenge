@@ -12,10 +12,15 @@ import { useTests } from "@/hooks/useTests";
 import ReviewPage from "@/components/test/ReviewPage";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 const TestInterface = () => {
   const navigate = useNavigate();
   const { testId } = useParams<{ testId: string }>();
+  const { user } = useAuth();
+  const { toast } = useToast();
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [userAnswers, setUserAnswers] = useState<Record<string, string>>({});
   const [questions, setQuestions] = useState<QuestionData[]>([]);
@@ -26,6 +31,7 @@ const TestInterface = () => {
   const [crossedOutOptions, setCrossedOutOptions] = useState<Record<string, string[]>>({});
   const [showReviewPage, setShowReviewPage] = useState(false);
   const [timerEnabled, setTimerEnabled] = useState(true);
+  const [testStartTime, setTestStartTime] = useState<Date>(new Date());
   const { tests } = useTests();
   
   useEffect(() => {
@@ -45,6 +51,7 @@ const TestInterface = () => {
           
         setQuestions(testQuestions);
         setScaledScoring(finalScaledScoring);
+        setTestStartTime(new Date());
       } else {
         // Test not found, redirect to dashboard
         console.error("Test not found:", testId);
@@ -104,7 +111,179 @@ const TestInterface = () => {
     });
   };
 
-  const handleSubmitTest = () => {
+  // Calculate module scores
+  const calculateModuleScores = () => {
+    // Group questions by module type
+    const modules: Record<string, {
+      moduleId: string,
+      moduleName: string,
+      questions: QuestionData[],
+      correctAnswers: number
+    }> = {};
+    
+    questions.forEach(question => {
+      const moduleType = question.module_type || 'reading_writing'; 
+      const moduleName = moduleType === 'reading_writing' ? 'Reading & Writing' : 'Math';
+      const moduleId = `${testId}-${moduleType}`;
+      
+      if (!modules[moduleType]) {
+        modules[moduleType] = {
+          moduleId,
+          moduleName,
+          questions: [],
+          correctAnswers: 0
+        };
+      }
+      
+      // Add question to module
+      modules[moduleType].questions.push(question);
+      
+      // Check if answer is correct
+      const userAnswer = userAnswers[question.id];
+      if (userAnswer) {
+        const selectedOption = question.options.find(option => option.id === userAnswer);
+        if (selectedOption && selectedOption.isCorrect) {
+          modules[moduleType].correctAnswers++;
+        }
+      }
+    });
+    
+    // Convert to array and calculate scaled scores
+    return Object.values(modules).map(module => {
+      const totalQuestions = module.questions.length;
+      const correctAnswers = module.correctAnswers;
+      
+      // Find the scaled score for this module's correct answers
+      let scaledScore;
+      if (scaledScoring && scaledScoring.length > 0) {
+        // Filter scaled scoring for this module
+        const moduleScoring = scaledScoring.filter(s => !s.module_id || s.module_id === module.moduleId);
+        
+        if (moduleScoring.length > 0) {
+          // Find exact match or closest lower score
+          const exactMatch = moduleScoring.find(s => s.correct_answers === correctAnswers);
+          if (exactMatch) {
+            scaledScore = exactMatch.scaled_score;
+          } else {
+            const sortedScoring = [...moduleScoring].sort((a, b) => a.correct_answers - b.correct_answers);
+            
+            // Find the closest score brackets
+            let lowerScoreBracket = null;
+            let upperScoreBracket = null;
+            
+            for (const bracket of sortedScoring) {
+              if (bracket.correct_answers <= correctAnswers) {
+                lowerScoreBracket = bracket;
+              }
+              if (bracket.correct_answers >= correctAnswers && !upperScoreBracket) {
+                upperScoreBracket = bracket;
+              }
+            }
+            
+            // Interpolate the scaled score
+            if (lowerScoreBracket && upperScoreBracket) {
+              const lowerCorrect = lowerScoreBracket.correct_answers;
+              const upperCorrect = upperScoreBracket.correct_answers;
+              const lowerScaled = lowerScoreBracket.scaled_score;
+              const upperScaled = upperScoreBracket.scaled_score;
+              
+              if (upperCorrect !== lowerCorrect) {
+                const ratio = (correctAnswers - lowerCorrect) / (upperCorrect - lowerCorrect);
+                scaledScore = Math.round(lowerScaled + ratio * (upperScaled - lowerScaled));
+              } else {
+                scaledScore = lowerScaled;
+              }
+            } else if (lowerScoreBracket) {
+              scaledScore = lowerScoreBracket.scaled_score;
+            } else if (upperScoreBracket) {
+              scaledScore = upperScoreBracket.scaled_score;
+            }
+          }
+        }
+      }
+      
+      return {
+        moduleId: module.moduleId,
+        moduleName: module.moduleName,
+        score: correctAnswers,
+        total: totalQuestions,
+        scaledScore
+      };
+    });
+  };
+
+  // Save results to database
+  const saveResults = async (
+    correctAnswers: number, 
+    totalQuestions: number, 
+    moduleScores: any[], 
+    scaledScore?: number
+  ) => {
+    if (!user) {
+      console.error("User not authenticated, can't save results");
+      return;
+    }
+    
+    try {
+      const testEndTime = new Date();
+      const timeTaken = Math.floor((testEndTime.getTime() - testStartTime.getTime()) / 1000);
+      
+      // Save test results first
+      const { data: testResult, error: testError } = await supabase
+        .from('test_results')
+        .insert({
+          user_id: user.id,
+          test_id: testId || '',
+          total_score: correctAnswers,
+          total_questions: totalQuestions,
+          scaled_score: scaledScore,
+          answers: userAnswers,
+          time_taken: timeTaken
+        })
+        .select()
+        .single();
+      
+      if (testError) {
+        console.error("Error saving test results:", testError);
+        toast({
+          title: "Error",
+          description: "There was a problem saving your results.",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      // Save module results
+      if (testResult) {
+        const moduleResultsPromises = moduleScores.map(module => {
+          return supabase
+            .from('module_results')
+            .insert({
+              test_result_id: testResult.id,
+              module_id: module.moduleId,
+              module_name: module.moduleName,
+              score: module.score,
+              total: module.total,
+              scaled_score: module.scaledScore
+            });
+        });
+        
+        // Wait for all module results to be saved
+        await Promise.all(moduleResultsPromises);
+      }
+      
+      console.log("Results saved successfully");
+    } catch (error) {
+      console.error("Error saving results:", error);
+      toast({
+        title: "Error",
+        description: "There was a problem saving your results.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleSubmitTest = async () => {
     // Calculate results
     let correctAnswers = 0;
     let totalQuestions = questions.length;
@@ -119,6 +298,34 @@ const TestInterface = () => {
       }
     });
     
+    // Calculate module scores
+    const moduleScores = calculateModuleScores();
+    
+    // Calculate overall scaled score (if available)
+    let overallScaledScore;
+    if (scaledScoring && scaledScoring.length > 0) {
+      // Filter for overall scores (ones without a module_id)
+      const overallScoring = scaledScoring.filter(s => !s.module_id);
+      if (overallScoring.length > 0) {
+        const exactMatch = overallScoring.find(s => s.correct_answers === correctAnswers);
+        if (exactMatch) {
+          overallScaledScore = exactMatch.scaled_score;
+        } else {
+          // Use closest lower score
+          const lowerScores = overallScoring
+            .filter(s => s.correct_answers <= correctAnswers)
+            .sort((a, b) => b.correct_answers - a.correct_answers);
+            
+          if (lowerScores.length > 0) {
+            overallScaledScore = lowerScores[0].scaled_score;
+          }
+        }
+      }
+    }
+    
+    // Save results to database
+    await saveResults(correctAnswers, totalQuestions, moduleScores, overallScaledScore);
+    
     // Navigate to results page with score data
     navigate("/results", {
       state: {
@@ -126,7 +333,8 @@ const TestInterface = () => {
         total: totalQuestions,
         answers: userAnswers,
         questions: questions,
-        scaledScoring: scaledScoring
+        scaledScoring: scaledScoring,
+        moduleScores: moduleScores
       }
     });
   };

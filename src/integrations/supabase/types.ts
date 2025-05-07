@@ -9,6 +9,47 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      module_results: {
+        Row: {
+          created_at: string
+          id: string
+          module_id: string
+          module_name: string
+          scaled_score: number | null
+          score: number
+          test_result_id: string
+          total: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          module_id: string
+          module_name: string
+          scaled_score?: number | null
+          score: number
+          test_result_id: string
+          total: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          module_id?: string
+          module_name?: string
+          scaled_score?: number | null
+          score?: number
+          test_result_id?: string
+          total?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "module_results_test_result_id_fkey"
+            columns: ["test_result_id"]
+            isOneToOne: false
+            referencedRelation: "test_results"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string
@@ -101,6 +142,110 @@ export type Database = {
           test_id?: string
           text?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      test_question_options: {
+        Row: {
+          created_at: string
+          id: string
+          is_correct: boolean
+          question_id: string
+          text: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_correct?: boolean
+          question_id: string
+          text: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_correct?: boolean
+          question_id?: string
+          text?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "test_question_options_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "test_questions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      test_questions: {
+        Row: {
+          created_at: string
+          explanation: string | null
+          id: string
+          image_url: string | null
+          module_type: string
+          question_type: string
+          test_id: string
+          text: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          explanation?: string | null
+          id?: string
+          image_url?: string | null
+          module_type: string
+          question_type: string
+          test_id: string
+          text: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          explanation?: string | null
+          id?: string
+          image_url?: string | null
+          module_type?: string
+          question_type?: string
+          test_id?: string
+          text?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      test_results: {
+        Row: {
+          answers: Json
+          created_at: string
+          id: string
+          scaled_score: number | null
+          test_id: string
+          time_taken: number | null
+          total_questions: number
+          total_score: number
+          user_id: string
+        }
+        Insert: {
+          answers?: Json
+          created_at?: string
+          id?: string
+          scaled_score?: number | null
+          test_id: string
+          time_taken?: number | null
+          total_questions: number
+          total_score: number
+          user_id: string
+        }
+        Update: {
+          answers?: Json
+          created_at?: string
+          id?: string
+          scaled_score?: number | null
+          test_id?: string
+          time_taken?: number | null
+          total_questions?: number
+          total_score?: number
+          user_id?: string
         }
         Relationships: []
       }

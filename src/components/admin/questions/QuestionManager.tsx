@@ -7,36 +7,9 @@ import { z } from 'zod';
 import { Question, QuestionType } from './types';
 import QuestionDialog from './QuestionDialog';
 import QuestionList from './QuestionList';
-
-// Create sample questions for now
-const createSampleQuestions = (testId: string): Question[] => [
-  {
-    id: '1',
-    test_id: testId,
-    text: 'What is 2+2?',
-    explanation: 'Basic addition',
-    options: [
-      { id: '1', text: '3', is_correct: false },
-      { id: '2', text: '4', is_correct: true },
-      { id: '3', text: '5', is_correct: false }
-    ],
-    question_type: QuestionType.MultipleChoice,
-    module_type: "math"
-  },
-  {
-    id: '2',
-    test_id: testId,
-    text: 'What is the capital of France?',
-    explanation: 'Geography question',
-    options: [
-      { id: '4', text: 'London', is_correct: false },
-      { id: '5', text: 'Paris', is_correct: true },
-      { id: '6', text: 'Berlin', is_correct: false }
-    ],
-    question_type: QuestionType.MultipleChoice,
-    module_type: "reading_writing"
-  }
-];
+import { saveQuestion, deleteQuestion } from '@/services/testService';
+import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from '@tanstack/react-query';
 
 interface QuestionManagerProps {
   testId: string;
@@ -65,16 +38,88 @@ const questionFormSchema = z.object({
 
 const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [questions, setQuestions] = useState<Question[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // Initialize with sample questions
+  // Fetch questions from database
   useEffect(() => {
-    const sampleQuestions = createSampleQuestions(testId);
-    setQuestions(sampleQuestions);
-  }, [testId]);
+    const fetchQuestions = async () => {
+      try {
+        setLoading(true);
+        
+        // Fetch questions
+        const { data: questionsData, error: questionsError } = await supabase
+          .from('test_questions')
+          .select('*')
+          .eq('test_id', testId);
+          
+        if (questionsError) {
+          toast({ 
+            title: "Error", 
+            description: `Failed to load questions: ${questionsError.message}`,
+            variant: "destructive" 
+          });
+          return;
+        }
+        
+        // Fetch options for all questions
+        const { data: optionsData, error: optionsError } = await supabase
+          .from('test_question_options')
+          .select('*')
+          .in('question_id', questionsData.map(q => q.id));
+          
+        if (optionsError) {
+          toast({ 
+            title: "Error", 
+            description: `Failed to load question options: ${optionsError.message}`,
+            variant: "destructive" 
+          });
+          return;
+        }
+        
+        // Group options by question
+        const optionsByQuestion: Record<string, any[]> = {};
+        optionsData.forEach(option => {
+          if (!optionsByQuestion[option.question_id]) {
+            optionsByQuestion[option.question_id] = [];
+          }
+          optionsByQuestion[option.question_id].push(option);
+        });
+        
+        // Map questions with their options
+        const loadedQuestions = questionsData.map(question => ({
+          id: question.id,
+          test_id: question.test_id,
+          text: question.text,
+          explanation: question.explanation,
+          module_type: question.module_type || 'reading_writing',
+          question_type: question.question_type || QuestionType.MultipleChoice,
+          image_url: question.image_url,
+          options: (optionsByQuestion[question.id] || []).map(option => ({
+            id: option.id,
+            text: option.text,
+            is_correct: option.is_correct
+          }))
+        }));
+        
+        setQuestions(loadedQuestions);
+      } catch (error: any) {
+        toast({ 
+          title: "Error", 
+          description: `Failed to load questions: ${error.message}`,
+          variant: "destructive" 
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchQuestions();
+  }, [testId, toast]);
 
   const handleOpenDialog = (question?: Question) => {
     if (question) {
@@ -87,26 +132,18 @@ const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
     setIsDialogOpen(true);
   };
 
-  const handleSubmit = (values: z.infer<typeof questionFormSchema>) => {
+  const handleSubmit = async (values: z.infer<typeof questionFormSchema>) => {
     try {
+      // Save to database
+      const savedQuestion = await saveQuestion(values);
+      
       if (isEditing && currentQuestion) {
         // Update existing question in local state
         const updatedQuestions = questions.map(q => {
           if (q.id === currentQuestion.id) {
             return { 
               ...values, 
-              id: currentQuestion.id,
-              test_id: testId,
-              text: values.text,
-              options: values.options.map(option => ({
-                ...option,
-                id: option.id || Math.random().toString(36).substr(2, 9),
-                text: option.text,
-                is_correct: option.is_correct
-              })),
-              question_type: values.question_type,
-              module_type: values.module_type,
-              image_url: values.image_url
+              id: currentQuestion.id
             } as Question;
           }
           return q;
@@ -118,17 +155,7 @@ const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
         // Create new question in local state
         const newQuestion: Question = {
           ...values,
-          id: Math.random().toString(36).substr(2, 9), // Generate a random ID
-          test_id: testId,
-          text: values.text,
-          question_type: values.question_type,
-          module_type: values.module_type,
-          options: values.options.map(option => ({
-            ...option,
-            id: option.id || Math.random().toString(36).substr(2, 9),
-            text: option.text,
-            is_correct: option.is_correct
-          }))
+          id: savedQuestion.id
         };
         
         setQuestions([...questions, newQuestion]);
@@ -136,6 +163,7 @@ const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
       }
       
       setIsDialogOpen(false);
+      queryClient.invalidateQueries({ queryKey: ['questions', testId] });
     } catch (error: any) {
       toast({ 
         title: "Error", 
@@ -145,9 +173,19 @@ const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
     }
   };
 
-  const deleteQuestion = (questionId: string) => {
-    setQuestions(questions.filter(q => q.id !== questionId));
-    toast({ title: "Success", description: "Question deleted successfully" });
+  const handleDeleteQuestion = async (questionId: string) => {
+    try {
+      await deleteQuestion(questionId);
+      setQuestions(questions.filter(q => q.id !== questionId));
+      toast({ title: "Success", description: "Question deleted successfully" });
+      queryClient.invalidateQueries({ queryKey: ['questions', testId] });
+    } catch (error: any) {
+      toast({ 
+        title: "Error", 
+        description: error.message || "An error occurred", 
+        variant: "destructive" 
+      });
+    }
   };
 
   return (
@@ -160,11 +198,17 @@ const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
         </Button>
       </div>
 
-      <QuestionList 
-        questions={questions} 
-        onEditQuestion={handleOpenDialog}
-        onDeleteQuestion={deleteQuestion}
-      />
+      {loading ? (
+        <div className="text-center py-8 bg-gray-50 rounded-md">
+          <p className="text-gray-500">Loading questions...</p>
+        </div>
+      ) : (
+        <QuestionList 
+          questions={questions} 
+          onEditQuestion={handleOpenDialog}
+          onDeleteQuestion={handleDeleteQuestion}
+        />
+      )}
 
       <QuestionDialog 
         isOpen={isDialogOpen}
