@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { z } from 'zod';
 import { Test } from './types';
@@ -7,14 +6,14 @@ import DeleteTestDialog from './DeleteTestDialog';
 import { formSchema } from './TestForm';
 import { useTestOperations } from './TestOperationsProvider';
 import { useTests } from '@/hooks/useTests';
+import { useToast } from '@/components/ui/use-toast';
+import { generateUUID } from '@/utils/uuid';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface TestDialogManagerProps {
-  questionCount?: number;
 }
 
-const TestDialogManager: React.FC<TestDialogManagerProps> = ({ 
-  questionCount = 10 // Default question count
-}) => {
+const TestDialogManager: React.FC<TestDialogManagerProps> = () => {
   const { 
     isEditing, 
     currentTest, 
@@ -26,6 +25,7 @@ const TestDialogManager: React.FC<TestDialogManagerProps> = ({
   } = useTestOperations();
   
   const { updateTest, createTest, deleteTest } = useTests();
+  const { user } = useAuth();
 
   const handleDeleteConfirm = () => {
     if (testToDelete) {
@@ -34,15 +34,30 @@ const TestDialogManager: React.FC<TestDialogManagerProps> = ({
     }
   };
 
+  const { toast } = useToast();
+
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     try {
+      if (!user) {
+        toast({
+          title: 'Error',
+          description: 'You must be logged in to update tests',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      console.log("Form submission values:", JSON.stringify(values, null, 2));
+      console.log("Current editing state:", { isEditing, currentTest });
+
       if (isEditing && currentTest) {
         // Update existing test
         const updatedTest: Test = {
-          ...currentTest,
+          id: currentTest.id, // Explicitly set the ID from currentTest
           title: values.title,
           description: values.description,
           is_active: values.is_active,
+          created_at: currentTest.created_at, // Preserve the original creation date
           // Ensure we properly save the scaled scoring data
           scaled_scoring: values.scaled_scoring ? values.scaled_scoring.map(item => ({
             module_id: item.module_id,
@@ -51,18 +66,47 @@ const TestDialogManager: React.FC<TestDialogManagerProps> = ({
           })) : [],
           // Ensure all modules have required properties
           modules: values.modules.map(module => ({
-            id: module.id || Math.random().toString(36).substr(2, 9),
+            id: module.id || module.type, // Use module type as ID if not provided
             name: module.name,
-            type: module.type
+            type: module.type,
+            time: module.time,
+            questionCount: module.questionCount
           }))
         };
         
-        console.log("Updating test with scaled scoring:", updatedTest.scaled_scoring);
-        updateTest(updatedTest);
+        console.log("Updating test with full details:", JSON.stringify(updatedTest, null, 2));
+        console.log("Test ID being updated:", updatedTest.id);
+        
+        if (!updatedTest.id) {
+          throw new Error('Test ID is missing from the update data');
+        }
+        
+        try {
+          const result = await updateTest(updatedTest);
+          console.log("Update test result:", result);
+          toast({
+            title: 'Success',
+            description: 'Test updated successfully'
+          });
+          setIsDialogOpen(false);
+        } catch (updateError: any) {
+          console.error("Failed to update test:", updateError);
+          console.error("Error details:", {
+            message: updateError.message,
+            code: updateError.code,
+            details: updateError.details
+          });
+          toast({
+            title: 'Error',
+            description: updateError.message || 'Failed to update test',
+            variant: 'destructive'
+          });
+          throw updateError;
+        }
       } else {
         // Create new test
         const newTest: Test = {
-          id: Math.random().toString(36).substr(2, 9), // Generate a random ID
+          id: generateUUID(),
           title: values.title,
           description: values.description,
           is_active: values.is_active,
@@ -75,19 +119,52 @@ const TestDialogManager: React.FC<TestDialogManagerProps> = ({
           })) : [],
           // Ensure all modules have required properties
           modules: values.modules.map(module => ({
-            id: module.id || Math.random().toString(36).substr(2, 9),
+            id: module.id || module.type, // Use module type as ID if not provided
             name: module.name,
-            type: module.type
+            type: module.type,
+            time: module.time,
+            questionCount: module.questionCount
           }))
         };
         
-        console.log("Creating test with scaled scoring:", newTest.scaled_scoring);
-        createTest(newTest);
+        console.log("Creating test with full details:", JSON.stringify(newTest, null, 2));
+        
+        try {
+          const result = await createTest(newTest);
+          console.log("Create test result:", result);
+          toast({
+            title: 'Success',
+            description: 'Test created successfully'
+          });
+          setIsDialogOpen(false);
+        } catch (createError: any) {
+          console.error("Failed to create test:", createError);
+          console.error("Error details:", {
+            message: createError.message,
+            code: createError.code,
+            details: createError.details
+          });
+          toast({
+            title: 'Error',
+            description: createError.message || 'Failed to create test',
+            variant: 'destructive'
+          });
+          throw createError;
+        }
       }
-      
-      setIsDialogOpen(false);
     } catch (error: any) {
       console.error("Error submitting test:", error);
+      console.error("Error details:", {
+        message: error.message,
+        code: error.code,
+        details: error.details
+      });
+      // Show error toast to user
+      toast({
+        title: "Error",
+        description: error.message || "Failed to save test",
+        variant: "destructive"
+      });
     }
   };
 
@@ -99,7 +176,6 @@ const TestDialogManager: React.FC<TestDialogManagerProps> = ({
         isEditing={isEditing}
         currentTest={currentTest}
         onSubmit={onSubmit}
-        questionCount={questionCount}
       />
 
       <DeleteTestDialog

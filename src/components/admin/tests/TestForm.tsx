@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -29,7 +28,9 @@ export const formSchema = z.object({
     z.object({
       id: z.string().optional(),
       name: z.string(),
-      type: z.enum(["reading_writing", "math"])
+      type: z.enum(["reading_writing", "math"]),
+      time: z.number().min(1, { message: "Time must be at least 1 minute" }),
+      questionCount: z.number({ required_error: "Question count is required" }).min(1, { message: "Question count is required" })
     })
   ).default(DEFAULT_MODULES)
 });
@@ -77,10 +78,10 @@ const TestForm: React.FC<TestFormProps> = ({
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
+      id: currentTest?.id,
       title: currentTest?.title || '',
       description: currentTest?.description || '',
       is_active: currentTest?.is_active ?? true,
-      id: currentTest?.id,
       scaled_scoring: currentTest?.scaled_scoring || [],
       modules: defaultModules
     }
@@ -106,14 +107,17 @@ const TestForm: React.FC<TestFormProps> = ({
     });
 
     console.log("Submitting scaled scores:", allScores);
+    console.log("Current test ID:", currentTest?.id);
 
     // Include all the scaled scores in the form submission
     const updatedValues = {
       ...values,
+      id: currentTest?.id,
       scaled_scoring: allScores,
       modules: values.modules || DEFAULT_MODULES
     };
     
+    console.log("Submitting form with values:", JSON.stringify(updatedValues, null, 2));
     onSubmit(updatedValues);
   };
 
@@ -122,13 +126,58 @@ const TestForm: React.FC<TestFormProps> = ({
       <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-4 py-4">
         <TestBasicInfoForm form={form} />
         
+        {/* Module time editing UI */}
+        <div className="border rounded-lg p-4">
+          <h3 className="text-lg font-medium mb-4">Module Timing</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {form.watch('modules').map((module, idx) => (
+              <div key={module.id || idx} className="flex flex-col gap-2 p-3 border rounded-md">
+                <div className="font-medium">{module.name}</div>
+                <div className="text-sm text-gray-500 mb-1">Type: {module.type === 'reading_writing' ? 'Reading & Writing' : 'Math'}</div>
+                <label className="text-sm font-medium">Time (minutes):</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={module.time || ''}
+                  onChange={e => {
+                    const value = parseInt(e.target.value, 10);
+                    const modules = [...form.getValues('modules')];
+                    modules[idx].time = isNaN(value) ? undefined : value;
+                    form.setValue('modules', modules);
+                  }}
+                  className="border rounded px-2 py-1 w-24"
+                />
+                {form.formState.errors.modules?.[idx]?.time && (
+                  <span className="text-xs text-red-500">{form.formState.errors.modules[idx].time.message}</span>
+                )}
+                <label className="text-sm font-medium mt-2">Question Count:</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={module.questionCount || ''}
+                  onChange={e => {
+                    const value = parseInt(e.target.value, 10);
+                    const modules = [...form.getValues('modules')];
+                    modules[idx].questionCount = isNaN(value) ? undefined : value;
+                    form.setValue('modules', modules);
+                  }}
+                  className="border rounded px-2 py-1 w-24"
+                />
+                {form.formState.errors.modules?.[idx]?.questionCount && (
+                  <span className="text-xs text-red-500">{form.formState.errors.modules[idx].questionCount.message}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+        
         <TestModulesDisplay />
         
         <ModuleScaledScoring
           modules={defaultModules}
           moduleScores={moduleScores}
           onScoreChange={handleScoreChange}
-          questionCount={questionCount}
+          questionCounts={form.watch('modules').reduce((acc, m) => { acc[m.id || m.name] = m.questionCount; return acc; }, {})}
         />
         
         <div className="flex justify-end space-x-2">

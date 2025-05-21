@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import Header from "@/components/Header";
 import { useAuth } from '@/contexts/AuthContext';
@@ -8,6 +7,7 @@ import { PlusCircle, Users, TestTube, Pencil, LineChart } from 'lucide-react';
 import TestManagement from '@/components/admin/TestManagement';
 import UserManagement from '@/components/admin/UserManagement';
 import StudentResults from '@/components/admin/StudentResults';
+import Footer from "@/components/Footer";
 
 const AdminPanel = () => {
   const { isAdmin } = useAuth();
@@ -122,6 +122,7 @@ const AdminPanel = () => {
           </div>
         )}
       </main>
+      <Footer />
     </div>
   );
 };

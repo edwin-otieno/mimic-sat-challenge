@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -7,6 +6,7 @@ import Header from "@/components/Header";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTests } from "@/hooks/useTests";
 import { Test } from "@/components/admin/tests/types";
+import Footer from "@/components/Footer";
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -21,7 +21,12 @@ const Dashboard = () => {
   }, [tests]);
 
   const startTest = (testId: string) => {
-    navigate(`/test/${testId}`);
+    const test = availableTests.find(t => t.id === testId);
+    if (test?.permalink) {
+      navigate(`/test/${test.permalink}`);
+    } else {
+      navigate(`/test/${testId}`);
+    }
   };
 
   return (
@@ -31,11 +36,17 @@ const Dashboard = () => {
       <main className="flex-1 container max-w-6xl mx-auto py-8 px-4">
         <section className="mb-10 animate-fade-in">
           <h2 className="text-3xl font-bold mb-2">Welcome Back{profile?.first_name ? `, ${profile.first_name}` : ""}</h2>
-          <p className="text-gray-600">
+          <p className="text-gray-600" style={{ fontSize: '20px' }}>
             Continue your SAT preparation with these practice tests
           </p>
         </section>
         
+        <section className="space-y-8">
+          <h3 className="text-xl font-semibold mb-4">Tests Directions & Resources</h3>
+          <p className="text-gray-600" style={{ marginBottom: '30px', fontSize: '20px' }}>
+            Please read the following directions and resources before starting the tests. <a href="/docs/directions.pdf" target="_blank" rel="noopener noreferrer" style={{ color: '#C52A30' }}>Test Directions (Opens in new tab)</a> and <a href="https://www.calculator.net/math-calculator.html" target="_blank" rel="noopener noreferrer" style={{ color: '#C52A30' }}>Calculator - For Math Section (Opens in new tab)</a>
+          </p>
+        </section>
         <section className="space-y-8">
           <h3 className="text-xl font-semibold mb-4">Available Tests</h3>
           
@@ -81,6 +92,7 @@ const Dashboard = () => {
           )}
         </section>
       </main>
+      <Footer />
     </div>
   );
 };

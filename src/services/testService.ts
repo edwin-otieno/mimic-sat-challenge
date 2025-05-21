@@ -1,7 +1,17 @@
 import { QuestionData } from "@/components/Question";
 import { ScaledScore } from "@/components/admin/tests/types";
 import { QuestionType, QuestionOption } from "@/components/admin/questions/types";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from '@/integrations/supabase/client';
+import { Test } from '@/types/Test';
+
+// Polyfill for generating UUID if not natively supported
+const generateUUID = () => {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+};
 
 const convertDbQuestionToQuestionData = (
   question: any, 
@@ -12,6 +22,9 @@ const convertDbQuestionToQuestionData = (
     text: question.text,
     explanation: question.explanation,
     module_type: question.module_type as "reading_writing" | "math",
+    imageUrl: question.image_url,
+    question_type: question.question_type,
+    correct_answer: question.correct_answer,
     options: options
       .filter(option => option.question_id === question.id)
       .map(option => ({
@@ -28,16 +41,26 @@ export const getTestQuestionsFromDb = async (testId: string): Promise<{
   scaledScoring?: ScaledScore[] 
 }> => {
   try {
+    console.log('Fetching questions for test ID:', testId);
+    
     // Get questions for the test
     const { data: questionsData, error: questionsError } = await supabase
       .from('test_questions')
       .select('*')
-      .eq('test_id', testId);
+      .eq('test_id', testId)
+      .order('question_order', { ascending: true });
       
     if (questionsError) {
       console.error('Error fetching questions:', questionsError);
       throw questionsError;
     }
+
+    if (!questionsData || questionsData.length === 0) {
+      console.error('No questions found for test ID:', testId);
+      return { questions: [] };
+    }
+    
+    console.log('Found questions:', questionsData);
     
     // Get options for all questions
     const questionIds = questionsData.map(q => q.id);
@@ -51,10 +74,14 @@ export const getTestQuestionsFromDb = async (testId: string): Promise<{
       throw optionsError;
     }
     
+    console.log('Found options:', optionsData);
+    
     // Convert to QuestionData format
     const questions: QuestionData[] = questionsData.map(question => 
-      convertDbQuestionToQuestionData(question, optionsData)
+      convertDbQuestionToQuestionData(question, optionsData || [])
     );
+    
+    console.log('Converted questions:', questions);
     
     return { questions };
   } catch (error) {
@@ -63,116 +90,24 @@ export const getTestQuestionsFromDb = async (testId: string): Promise<{
   }
 };
 
-// Mock test data service (fallback)
-export const getTestQuestions = (testId: string): { questions: QuestionData[], scaledScoring?: ScaledScore[] } => {
-  // Try to get questions from DB first
-  getTestQuestionsFromDb(testId)
-    .then(result => {
-      console.log('Got questions from DB:', result);
-      if (result.questions.length > 0) {
-        return result;
-      }
-    })
-    .catch(error => {
-      console.error('Failed to get questions from DB, using mock data:', error);
-    });
-
-  // This would typically come from an API
-  const questions: QuestionData[] = [
-    {
-      id: "q1",
-      text: "The author's primary purpose in the passage is to:",
-      options: [
-        { id: "q1-a", text: "argue against a popular scientific theory", isCorrect: false },
-        { id: "q1-b", text: "explain the historical development of an idea", isCorrect: true },
-        { id: "q1-c", text: "compare competing interpretations of evidence", isCorrect: false },
-        { id: "q1-d", text: "challenge a conventional understanding", isCorrect: false },
-      ],
-      explanation: "The passage primarily tracks how the concept evolved over time, making B the correct answer.",
-      module_type: "reading_writing"
-    },
-    {
-      id: "q2",
-      text: "According to the passage, which of the following is true about the experiment?",
-      options: [
-        { id: "q2-a", text: "It confirmed the researchers' initial hypothesis", isCorrect: false },
-        { id: "q2-b", text: "It yielded unexpected results that challenged existing theories", isCorrect: true },
-        { id: "q2-c", text: "It failed to produce statistically significant data", isCorrect: false },
-        { id: "q2-d", text: "It was criticized for methodological flaws", isCorrect: false },
-      ],
-      explanation: "The passage mentions that the results surprised researchers and contradicted established theories.",
-      module_type: "reading_writing"
-    },
-    {
-      id: "q3",
-      text: "In the equation 3x + 5 = 17, what is the value of x?",
-      options: [
-        { id: "q3-a", text: "4", isCorrect: true },
-        { id: "q3-b", text: "6", isCorrect: false },
-        { id: "q3-c", text: "7", isCorrect: false },
-        { id: "q3-d", text: "12", isCorrect: false },
-      ],
-      explanation: "3x + 5 = 17 → 3x = 12 → x = 4",
-      module_type: "math"
-    },
-    {
-      id: "q4",
-      text: "Which of the following best describes the function f(x) = x² - 3x + 2?",
-      options: [
-        { id: "q4-a", text: "Linear with y-intercept at (0, 2)", isCorrect: false },
-        { id: "q4-b", text: "Quadratic with minimum value at x = 1.5", isCorrect: true },
-        { id: "q4-c", text: "Quadratic with maximum value at x = 1.5", isCorrect: false },
-        { id: "q4-d", text: "Exponential with horizontal asymptote at y = 2", isCorrect: false },
-      ],
-      explanation: "This is a quadratic function. The vertex form is f(x) = (x - 1.5)² - 0.25, which has a minimum at x = 1.5.",
-      module_type: "math"
-    },
-    {
-      id: "q5",
-      text: "The main rhetorical strategy used in the third paragraph is:",
-      options: [
-        { id: "q5-a", text: "Comparison and contrast", isCorrect: true },
-        { id: "q5-b", text: "Definition and example", isCorrect: false },
-        { id: "q5-c", text: "Problem and solution", isCorrect: false },
-        { id: "q5-d", text: "Cause and effect", isCorrect: false },
-      ],
-      explanation: "The paragraph primarily contrasts two different approaches or viewpoints.",
-      module_type: "reading_writing"
-    },
-  ];
-  
-  // Add more questions for a complete test
-  for (let i = 6; i <= 10; i++) {
-    questions.push({
-      id: `q${i}`,
-      text: `Sample question ${i} for test ${testId}`,
-      module_type: i % 2 === 0 ? "math" : "reading_writing",
-      options: [
-        { id: `q${i}-a`, text: "Option A", isCorrect: i % 4 === 0 },
-        { id: `q${i}-b`, text: "Option B", isCorrect: i % 4 === 1 },
-        { id: `q${i}-c`, text: "Option C", isCorrect: i % 4 === 2 },
-        { id: `q${i}-d`, text: "Option D", isCorrect: i % 4 === 3 },
-      ],
-    });
+// Get test questions from database
+export const getTestQuestions = async (testId: string): Promise<{ 
+  questions: QuestionData[], 
+  scaledScoring?: ScaledScore[] 
+}> => {
+  try {
+    console.log('Getting test questions for test ID:', testId);
+    const result = await getTestQuestionsFromDb(testId);
+    console.log('Test questions result:', result);
+    return result;
+  } catch (error) {
+    console.error('Error getting test questions:', error);
+    // Return empty arrays instead of mock data
+    return { 
+      questions: [],
+      scaledScoring: []
+    };
   }
-
-  // Mock scaled scoring data - in a real app, this would come from the test configuration
-  const scaledScoring: ScaledScore[] = [
-    { correct_answers: 0, scaled_score: 0 },
-    { correct_answers: 3, scaled_score: 30 },
-    { correct_answers: 5, scaled_score: 50 },
-    { correct_answers: 7, scaled_score: 70 },
-    { correct_answers: 10, scaled_score: 100 },
-    // Module-specific scoring
-    { module_id: `${testId}-reading_writing`, correct_answers: 0, scaled_score: 0 },
-    { module_id: `${testId}-reading_writing`, correct_answers: 2, scaled_score: 50 },
-    { module_id: `${testId}-reading_writing`, correct_answers: 5, scaled_score: 100 },
-    { module_id: `${testId}-math`, correct_answers: 0, scaled_score: 0 },
-    { module_id: `${testId}-math`, correct_answers: 2, scaled_score: 50 },
-    { module_id: `${testId}-math`, correct_answers: 5, scaled_score: 100 }
-  ];
-
-  return { questions, scaledScoring };
 };
 
 // Save a question to the database
@@ -182,13 +117,24 @@ export const saveQuestion = async (question: any) => {
     const { data: savedQuestion, error: questionError } = await supabase
       .from('test_questions')
       .upsert({
-        id: question.id || undefined, // If ID is present, it's an update
+        id: question.id || undefined,
         test_id: question.test_id,
         text: question.text,
         explanation: question.explanation || null,
         module_type: question.module_type || 'reading_writing',
         question_type: question.question_type || 'multiple_choice',
-        image_url: question.image_url || null
+        image_url: question.image_url || null,
+        correct_answer: question.correct_answer || null,
+        question_order: question.id 
+          ? question.question_order // Keep existing order for updates
+          : (await supabase
+              .from('test_questions')
+              .select('question_order')
+              .eq('test_id', question.test_id)
+              .order('question_order', { ascending: false })
+              .limit(1)
+              .single()
+            ).data?.question_order + 1 || 0 // Get max order + 1 for new questions
       })
       .select()
       .single();
@@ -223,7 +169,7 @@ export const saveQuestion = async (question: any) => {
       
       // Upsert options - ensure each option has the required text field
       const optionsToUpsert = question.options.map(option => ({
-        id: option.id || undefined,
+        id: option.id || generateUUID(), // Generate UUID for new options
         question_id: savedQuestion.id,
         text: option.text || "", // Ensure text is always provided
         is_correct: option.is_correct || false
@@ -265,4 +211,207 @@ export const deleteQuestion = async (questionId: string) => {
     console.error('Error in deleteQuestion:', error);
     throw error;
   }
+};
+
+// --- TEST CRUD LOGIC ---
+
+// Get all tests from the database
+export const getTests = async () => {
+  const { data, error } = await supabase
+    .from('tests')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data;
+};
+
+// Create a new test in the database
+export const createTestInDb = async (test: Test): Promise<Test> => {
+  try {
+    console.log('Creating test in database:', test);
+    
+    // Generate permalink from title
+    const permalink = test.title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-') // Replace non-alphanumeric chars with hyphens
+      .replace(/^-+|-+$/g, '') // Remove leading/trailing hyphens
+      .substring(0, 50); // Limit length to 50 chars
+    
+    console.log('Generated permalink:', permalink);
+    
+    const { data, error } = await supabase
+      .from('tests')
+      .insert([{
+        ...test,
+        permalink,
+        created_at: new Date().toISOString()
+      }])
+      .select()
+      .single();
+      
+    if (error) {
+      console.error('Error creating test:', error);
+      throw error;
+    }
+    
+    console.log('Test created successfully:', data);
+    return data;
+  } catch (error) {
+    console.error('Error in createTestInDb:', error);
+    throw error;
+  }
+};
+
+// Update an existing test in the database
+export const updateTestInDb = async (test) => {
+  // Get the current authenticated user
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  
+  if (authError || !user) {
+    console.error('Authentication Error:', authError);
+    throw new Error('User must be authenticated to update tests');
+  }
+
+  // Validate test ID
+  if (!test.id) {
+    throw new Error('Test ID is required for updates');
+  }
+
+  console.log('Attempting to update test with ID:', test.id);
+
+  // First, check if the test exists
+  const { data: existingTest, error: findError } = await supabase
+    .from('tests')
+    .select('*')
+    .eq('id', test.id)
+    .single();
+
+  if (findError) {
+    console.error('Error finding test:', findError);
+    console.error('Test ID that failed:', test.id);
+    throw new Error('Test not found');
+  }
+
+  if (!existingTest) {
+    console.error('No test found with ID:', test.id);
+    throw new Error('Test not found');
+  }
+
+  // Prepare the test object for Supabase
+  const preparedTest = {
+    ...test,
+    // Ensure modules and scaled_scoring are properly stringified
+    modules: test.modules ? JSON.stringify(test.modules) : null,
+    scaled_scoring: test.scaled_scoring ? JSON.stringify(test.scaled_scoring) : null,
+    // Add user_id for Row Level Security
+    user_id: user.id,
+  };
+
+  console.log('Updating test with data:', JSON.stringify(preparedTest, null, 2));
+
+  // Update the existing test
+  const { data: updatedTest, error: updateError } = await supabase
+    .from('tests')
+    .update(preparedTest)
+    .eq('id', test.id)
+    .select()
+    .single();
+
+  if (updateError) {
+    console.error('Error updating test:', updateError);
+    console.error('Update error details:', {
+      code: updateError.code,
+      message: updateError.message,
+      details: updateError.details
+    });
+    // Provide more specific error message based on the error code
+    if (updateError.code === '23505') {
+      throw new Error('A test with this ID already exists');
+    } else if (updateError.code === '22P02') {
+      throw new Error('Invalid data format');
+    } else if (updateError.code === '42501') {
+      throw new Error('Permission denied. You may not have the right to update this test.');
+    } else {
+      throw new Error(`Failed to update test: ${updateError.message}`);
+    }
+  }
+
+  if (!updatedTest) {
+    console.error('No test returned after update');
+    throw new Error('Failed to update test: No data returned');
+  }
+
+  console.log('Successfully updated test:', JSON.stringify(updatedTest, null, 2));
+  return updatedTest;
+};
+
+// Utility function to validate UUID
+function isValidUUID(uuid: string): boolean {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(uuid);
+};
+
+// Delete a test from the database
+export const deleteTestInDb = async (testId) => {
+  const { error } = await supabase
+    .from('tests')
+    .delete()
+    .eq('id', testId);
+  if (error) throw error;
+  return true;
+};
+
+// Migrate existing tests to use UUID
+export const migrateTestsToUUID = async () => {
+  // Fetch all existing tests
+  const { data: tests, error: fetchError } = await supabase
+    .from('tests')
+    .select('*');
+
+  if (fetchError) {
+    console.error('Error fetching tests:', fetchError);
+    throw fetchError;
+  }
+
+  // Migrate each test
+  const migrationPromises = tests.map(async (test) => {
+    // Generate a new UUID if the current ID is not valid
+    const validUUID = isValidUUID(test.id) ? test.id : generateUUID();
+
+    // Update the test with the new UUID
+    const { error: updateError } = await supabase
+      .from('tests')
+      .update({ 
+        id: validUUID,
+        // Ensure other fields are properly formatted
+        modules: test.modules ? JSON.stringify(test.modules) : null,
+        scaled_scoring: test.scaled_scoring ? JSON.stringify(test.scaled_scoring) : null,
+      })
+      .eq('id', test.id);
+
+    if (updateError) {
+      console.error(`Error migrating test ${test.id}:`, updateError);
+    }
+
+    return updateError;
+  });
+
+  // Wait for all migrations to complete
+  const migrationResults = await Promise.allSettled(migrationPromises);
+
+  // Log migration summary
+  const successCount = migrationResults.filter(
+    result => result.status === 'fulfilled'
+  ).length;
+  const failureCount = migrationResults.filter(
+    result => result.status === 'rejected'
+  ).length;
+
+  console.log(`Migration complete. Successful: ${successCount}, Failed: ${failureCount}`);
+
+  return {
+    successCount,
+    failureCount,
+    totalTests: tests.length
+  };
 };

@@ -1,4 +1,3 @@
-
 import React from "react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -33,7 +32,10 @@ const TestDialogs: React.FC<TestDialogsProps> = ({
             <Button variant="outline" onClick={() => setShowConfirmSubmit(false)}>
               Cancel
             </Button>
-            <Button onClick={onSubmitTest}>
+            <Button onClick={() => {
+              setShowConfirmSubmit(false);
+              onSubmitTest();
+            }}>
               Submit
             </Button>
           </DialogFooter>

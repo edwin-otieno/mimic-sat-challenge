@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -13,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import Footer from "@/components/Footer";
 
 interface ModuleScore {
   moduleId: string;
@@ -20,6 +20,8 @@ interface ModuleScore {
   score: number;
   total: number;
   scaledScore?: number;
+  correctAnswers: number;
+  totalQuestions: number;
 }
 
 interface ResultsState {
@@ -29,6 +31,7 @@ interface ResultsState {
   questions: QuestionData[];
   scaledScoring?: ScaledScore[];
   moduleScores?: ModuleScore[];
+  overallScaledScore?: number;
 }
 
 interface TestResult {
@@ -112,8 +115,8 @@ const Results = () => {
     fetchResults();
   }, [user]);
   
-  // If no results data and not viewing history, redirect to dashboard
-  if (!state && !viewingHistory) {
+  // If no results data and no saved results, redirect to dashboard
+  if (!state && savedResults.length === 0) {
     React.useEffect(() => {
       navigate("/dashboard");
     }, [navigate]);
@@ -123,11 +126,28 @@ const Results = () => {
   
   // Calculate total scaled score from module scores
   const calculateTotalScaledScore = (moduleScores: ModuleScore[]) => {
-    const totalScaledScore = moduleScores.reduce((sum, module) => {
-      return sum + (module.scaledScore || 0);
-    }, 0);
+    if (!state.scaledScoring || state.scaledScoring.length === 0) {
+      return null;
+    }
+
+    // Find scaled scoring entries without module_id (for overall score)
+    const overallScoring = state.scaledScoring.filter(s => !s.module_id);
+    if (overallScoring.length === 0) return null;
+
+    // Calculate total correct answers from all modules
+    const totalCorrect = moduleScores.reduce((sum, module) => sum + module.correctAnswers, 0);
+
+    // Find exact match or closest lower score
+    const exactMatch = overallScoring.find(s => s.correct_answers === totalCorrect);
+    if (exactMatch) {
+      return exactMatch.scaled_score;
+    }
+
+    // Sort by correct_answers in descending order and find the first that's less than the score
+    const sortedScoring = [...overallScoring].sort((a, b) => b.correct_answers - a.correct_answers);
+    const closestLower = sortedScoring.find(s => s.correct_answers < totalCorrect);
     
-    return totalScaledScore;
+    return closestLower ? closestLower.scaled_score : sortedScoring[sortedScoring.length - 1].scaled_score;
   };
   
   // Toggle between current result and history
@@ -137,7 +157,7 @@ const Results = () => {
   
   let content;
   
-  if (viewingHistory) {
+  if (!state || viewingHistory) {
     // Show saved results history
     const currentResult = savedResults.find(r => r.testResult.id === selectedResult);
     
@@ -145,9 +165,11 @@ const Results = () => {
       <>
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-xl font-semibold">Test Results History</h2>
-          <Button variant="outline" onClick={toggleHistory}>
-            {state ? "Return to Current Result" : "Go to Dashboard"}
-          </Button>
+          {state && (
+            <Button variant="outline" onClick={toggleHistory}>
+              Return to Current Result
+            </Button>
+          )}
         </div>
         
         {savedResults.length > 0 ? (
@@ -158,7 +180,7 @@ const Results = () => {
               </CardHeader>
               <CardContent>
                 <Tabs value={selectedResult || undefined} onValueChange={setSelectedResult}>
-                  <TabsList className="mb-4 flex-wrap">
+                  <TabsList className="mb-4 flex-wrap overflow-x-auto max-h-[200px]">
                     {savedResults.map(result => (
                       <TabsTrigger key={result.testResult.id} value={result.testResult.id}>
                         {new Date(result.testResult.created_at).toLocaleDateString()}
@@ -262,7 +284,12 @@ const Results = () => {
         </div>
         
         <div className="grid md:grid-cols-2 gap-6 mb-10">
-          <ScoreCard score={score} total={total} scaledScoring={state.scaledScoring} />
+          <ScoreCard 
+            score={score} 
+            total={total} 
+            scaledScoring={state.scaledScoring}
+            scaledScore={state.overallScaledScore || (state.scaledScoring ? calculateTotalScaledScore(moduleScores || []) : null)} 
+          />
           <SummaryCard 
             score={score} 
             total={total} 
@@ -291,34 +318,30 @@ const Results = () => {
                       <div className="bg-white rounded-lg p-4 border">
                         <h3 className="text-lg font-medium mb-2">{module.moduleName} Score</h3>
                         <div className="text-3xl font-bold">
-                          {module.score} / {module.total}
+                          {module.correctAnswers} / {module.totalQuestions}
                         </div>
                         <div className="text-sm text-gray-500 mt-1">
-                          {Math.round((module.score / module.total) * 100)}%
+                          {module.totalQuestions > 0 ? Math.round((module.correctAnswers / module.totalQuestions) * 100) : 0}%
                         </div>
                       </div>
                       
-                      {module.scaledScore !== undefined && (
-                        <div className="bg-white rounded-lg p-4 border">
-                          <h3 className="text-lg font-medium mb-2">Scaled Score</h3>
-                          <div className="text-3xl font-bold">
-                            {module.scaledScore}
-                          </div>
+                      <div className="bg-white rounded-lg p-4 border">
+                        <h3 className="text-lg font-medium mb-2">Scaled Score</h3>
+                        <div className="text-3xl font-bold">
+                          {module.scaledScore !== undefined && module.scaledScore !== null ? module.scaledScore : 'N/A'}
                         </div>
-                      )}
+                      </div>
                     </div>
                   </TabsContent>
                 ))}
               </Tabs>
               
-              {moduleScores.length > 0 && (
-                <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-                  <h3 className="text-lg font-medium mb-2">Total Scaled Score</h3>
-                  <div className="text-3xl font-bold">
-                    {calculateTotalScaledScore(moduleScores)}
-                  </div>
+              <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+                <h3 className="text-lg font-medium mb-2">Total Scaled Score</h3>
+                <div className="text-3xl font-bold">
+                  {state.overallScaledScore || calculateTotalScaledScore(moduleScores) || 'N/A'}
                 </div>
-              )}
+              </div>
             </CardContent>
           </Card>
         )}
@@ -350,6 +373,7 @@ const Results = () => {
           </Button>
         </div>
       </main>
+      <Footer />
     </div>
   );
 };

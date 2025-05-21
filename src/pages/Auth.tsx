@@ -1,3 +1,4 @@
+// This file has been deprecated. Use Login.tsx and Register.tsx instead for authentication pages.
 
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';

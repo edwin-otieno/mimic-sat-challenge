@@ -1,4 +1,3 @@
-
 import React, { useEffect } from 'react';
 import { ScaledScore, TestModule } from './types';
 import ScaledScoreTable from './ScaledScoreTable';
@@ -9,14 +8,14 @@ interface ModuleScaledScoringProps {
   modules: TestModule[];
   moduleScores: Map<string, ScaledScore[]>;
   onScoreChange: (moduleId: string, scores: ScaledScore[]) => void;
-  questionCount: number;
+  questionCounts: { [moduleId: string]: number | undefined };
 }
 
 const ModuleScaledScoring: React.FC<ModuleScaledScoringProps> = ({
   modules,
   moduleScores,
   onScoreChange,
-  questionCount
+  questionCounts
 }) => {
   // Ensure each module has its own independent scores
   useEffect(() => {
@@ -33,18 +32,19 @@ const ModuleScaledScoring: React.FC<ModuleScaledScoringProps> = ({
     <div className="border rounded-lg p-4">
       <h3 className="text-lg font-medium mb-4">Module Scaled Scoring</h3>
       
-      <Tabs defaultValue={modules[0]?.id || ''} className="w-full">
+      <Tabs defaultValue={modules[0]?.id || 'default'} className="w-full">
         <TabsList className="mb-4">
-          {modules.map((module) => (
-            <TabsTrigger key={module.id} value={module.id || ''}>
+          {modules.map((module, index) => (
+            <TabsTrigger key={module.id || `module-${index}`} value={module.id || `module-${index}`}>
               {module.name}
             </TabsTrigger>
           ))}
         </TabsList>
         
-        {modules.map((module) => {
-          const moduleId = module.id || '';
+        {modules.map((module, index) => {
+          const moduleId = module.id || `module-${index}`;
           const moduleScoreData = moduleScores.get(moduleId) || [];
+          const questionCount = questionCounts[moduleId] ?? 0;
           
           return (
             <TabsContent key={moduleId} value={moduleId}>
@@ -52,14 +52,14 @@ const ModuleScaledScoring: React.FC<ModuleScaledScoringProps> = ({
                 <CardHeader>
                   <CardTitle>{module.name} Scoring</CardTitle>
                   <CardDescription>
-                    Configure scaled scoring for the {module.name} module
+                    Configure scaled scoring for the {module.name} module. Each module has its own independent scoring table.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <ScaledScoreTable 
                     scores={moduleScoreData}
                     onChange={(scores) => onScoreChange(moduleId, scores)}
-                    questionCount={questionCount / modules.length} // Divide questions across modules
+                    questionCount={questionCount}
                     moduleId={moduleId}
                   />
                 </CardContent>

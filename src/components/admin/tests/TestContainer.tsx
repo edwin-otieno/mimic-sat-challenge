@@ -1,4 +1,3 @@
-
 import React from 'react';
 import TestList from './TestList';
 import TestActions from './TestActions';
@@ -10,9 +9,6 @@ const TestContainerContent = () => {
   const { tests, isLoading, error } = useTests();
   const { expandedTest, handleOpenDialog, handleOpenDeleteDialog, toggleExpandTest } = useTestOperations();
   
-  // Use 10 as default question count - in a real app, this would come from the test configuration
-  const questionCount = 10;
-
   if (isLoading) {
     return <div className="flex justify-center p-8">Loading tests...</div>;
   }
@@ -37,7 +33,7 @@ const TestContainerContent = () => {
         handleDeleteTest={handleOpenDeleteDialog}
       />
 
-      <TestDialogManager questionCount={questionCount} />
+      <TestDialogManager />
     </div>
   );
 };

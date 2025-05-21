@@ -1,46 +1,43 @@
-
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from 'react';
 
 interface TimerProps {
-  initialTime: number; // in seconds
+  initialTime: number;
   onTimeUp: () => void;
 }
 
-const Timer = ({ initialTime, onTimeUp }: TimerProps) => {
+const Timer: React.FC<TimerProps> = ({ initialTime, onTimeUp }) => {
   const [timeLeft, setTimeLeft] = useState(initialTime);
-  const [isWarning, setIsWarning] = useState(false);
 
   useEffect(() => {
-    const warningThreshold = initialTime * 0.2; // 20% of time left
+    setTimeLeft(initialTime);
+  }, [initialTime]);
+
+  useEffect(() => {
+    if (timeLeft <= 0) {
+      onTimeUp();
+      return;
+    }
+
     const timer = setInterval(() => {
-      setTimeLeft((prevTime) => {
-        if (prevTime <= 1) {
+      setTimeLeft(prev => {
+        if (prev <= 1) {
           clearInterval(timer);
           onTimeUp();
           return 0;
         }
-        
-        // Set warning when less than 20% time left
-        if (prevTime <= warningThreshold && !isWarning) {
-          setIsWarning(true);
-        }
-        
-        return prevTime - 1;
+        return prev - 1;
       });
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [initialTime, onTimeUp, isWarning]);
+  }, [timeLeft, onTimeUp]);
 
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-  };
+  const minutes = Math.floor(timeLeft / 60);
+  const seconds = timeLeft % 60;
 
   return (
-    <div className={`text-2xl font-mono font-bold ${isWarning ? "timer-warning" : ""}`}>
-      {formatTime(timeLeft)}
+    <div className="text-[2rem] font-bold">
+      {String(minutes).padStart(2, '0')}:{String(seconds).padStart(2, '0')}
     </div>
   );
 };

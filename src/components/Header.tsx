@@ -65,6 +65,17 @@ const Header = ({ showLogout = true }: HeaderProps) => {
                 Dashboard
               </Button>
               
+              {/* Show Results tab for students only */}
+              {!isAdmin && (
+                <Button 
+                  variant="ghost" 
+                  onClick={() => navigate("/results")}
+                  className={location.pathname === "/results" ? "bg-accent" : ""}
+                >
+                  Results
+                </Button>
+              )}
+              
               {isAdmin && (
                 <Button 
                   variant="ghost" 
@@ -74,14 +85,6 @@ const Header = ({ showLogout = true }: HeaderProps) => {
                   Admin Panel
                 </Button>
               )}
-              
-              <Button 
-                variant="ghost" 
-                onClick={() => navigate("/results")}
-                className={location.pathname === "/results" ? "bg-accent" : ""}
-              >
-                Results
-              </Button>
             </div>
             
             {showLogout && (

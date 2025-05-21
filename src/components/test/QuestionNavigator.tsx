@@ -1,8 +1,9 @@
-
 import React from "react";
 import { QuestionData } from "@/components/Question";
 import { cn } from "@/lib/utils";
 import { Check, Flag } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface QuestionNavigatorProps {
   questions: QuestionData[];
@@ -19,14 +20,27 @@ const QuestionNavigator: React.FC<QuestionNavigatorProps> = ({
   flaggedQuestions,
   onQuestionClick,
 }) => {
-  return (
-    <div className="border rounded-lg p-4 bg-white">
-      <h3 className="text-sm font-medium mb-3">Question Navigator</h3>
+  // Group questions by module type
+  const readingWritingQuestions = questions.filter(q => q.module_type === "reading_writing");
+  const mathQuestions = questions.filter(q => q.module_type === "math");
+
+  // Find the current module type
+  const currentQuestion = questions[currentIndex];
+  const currentModuleType = currentQuestion?.module_type || "reading_writing";
+
+  // Create a map of question IDs to their global indices
+  const questionIdToGlobalIndex = new Map(
+    questions.map((q, index) => [q.id, index])
+  );
+
+  const renderQuestionButtons = (moduleQuestions: QuestionData[], moduleType: string) => {
+    return (
       <div className="flex flex-wrap gap-2">
-        {questions.map((question, index) => {
+        {moduleQuestions.map((question, moduleIndex) => {
+          const globalIndex = questionIdToGlobalIndex.get(question.id) ?? 0;
           const isAnswered = !!userAnswers[question.id];
           const isFlagged = flaggedQuestions.has(question.id);
-          const isCurrent = index === currentIndex;
+          const isCurrent = globalIndex === currentIndex;
           
           return (
             <button
@@ -37,10 +51,10 @@ const QuestionNavigator: React.FC<QuestionNavigatorProps> = ({
                 isAnswered ? "bg-green-100 border-green-300" : "bg-gray-50",
                 isFlagged && "bg-amber-100 border-amber-300"
               )}
-              onClick={() => onQuestionClick(index)}
+              onClick={() => onQuestionClick(globalIndex)}
             >
               <span className="relative">
-                {index + 1}
+                {moduleIndex + 1}
                 {isAnswered && (
                   <Check className="absolute -top-1 -right-2 w-3 h-3 text-green-600" />
                 )}
@@ -52,6 +66,45 @@ const QuestionNavigator: React.FC<QuestionNavigatorProps> = ({
           );
         })}
       </div>
+    );
+  };
+
+  return (
+    <div className="border rounded-lg p-4 bg-white">
+      <h3 className="text-sm font-medium mb-3">Question Navigator</h3>
+      
+      <Tabs defaultValue={currentModuleType} className="w-full">
+        <TabsList className="mb-4">
+          <TabsTrigger value="reading_writing">
+            Reading & Writing ({readingWritingQuestions.length} questions)
+          </TabsTrigger>
+          <TabsTrigger value="math">
+            Math ({mathQuestions.length} questions)
+          </TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value="reading_writing">
+          <Card>
+            <CardHeader>
+              <CardTitle>Reading & Writing Questions</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {renderQuestionButtons(readingWritingQuestions, "reading_writing")}
+            </CardContent>
+          </Card>
+        </TabsContent>
+        
+        <TabsContent value="math">
+          <Card>
+            <CardHeader>
+              <CardTitle>Math Questions</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {renderQuestionButtons(mathQuestions, "math")}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };

@@ -1,4 +1,3 @@
-
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -8,7 +7,8 @@ import { AuthProvider } from "./contexts/AuthContext";
 import AuthGuard from "./components/AuthGuard";
 
 import Index from "./pages/Index";
-import Auth from "./pages/Auth";
+import Login from "./pages/Login";
+import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 import TestInterface from "./pages/TestInterface";
 import Results from "./pages/Results";
@@ -28,10 +28,18 @@ const App = () => (
             {/* Public routes */}
             <Route path="/" element={<Index />} />
             <Route 
-              path="/auth" 
+              path="/login" 
               element={
                 <AuthGuard requireAuth={false}>
-                  <Auth />
+                  <Login />
+                </AuthGuard>
+              } 
+            />
+            <Route 
+              path="/register" 
+              element={
+                <AuthGuard requireAuth={false}>
+                  <Register />
                 </AuthGuard>
               } 
             />
@@ -46,7 +54,7 @@ const App = () => (
               } 
             />
             <Route 
-              path="/test/:testId" 
+              path="/test/:permalink" 
               element={
                 <AuthGuard>
                   <TestInterface />

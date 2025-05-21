@@ -6,7 +6,7 @@ import { QuestionData } from "@/components/Question";
 import { getTestQuestions } from "@/services/testService";
 import TestContainer from "@/components/test/TestContainer";
 import TestDialogs from "@/components/test/TestDialogs";
-import { ScaledScore } from "@/components/admin/tests/types";
+import { ScaledScore, TestModule } from "@/components/admin/tests/types";
 import { useTests } from "@/hooks/useTests";
 import ReviewPage from "@/components/test/ReviewPage";
 import { Switch } from "@/components/ui/switch";
@@ -14,10 +14,13 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import Footer from "@/components/Footer";
+import { QuestionType } from "@/components/admin/questions/types";
+import { useTestAutoSave } from '@/hooks/useTestAutoSave';
 
 const TestInterface = () => {
   const navigate = useNavigate();
-  const { testId } = useParams<{ testId: string }>();
+  const { permalink } = useParams<{ permalink: string }>();
   const { user } = useAuth();
   const { toast } = useToast();
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -32,40 +35,140 @@ const TestInterface = () => {
   const [timerEnabled, setTimerEnabled] = useState(true);
   const [testStartTime, setTestStartTime] = useState<Date>(new Date());
   const { tests } = useTests();
+  const [currentTest, setCurrentTest] = useState<any>(null);
+  const [currentModuleStartTime, setCurrentModuleStartTime] = useState<Date>(new Date());
+  const [currentModuleTimeLeft, setCurrentModuleTimeLeft] = useState<number>(0);
+  const [isSaving, setIsSaving] = useState(false);
   
+  const { saveTestState, loadTestState, clearTestState, isRestoring, setIsRestoring } = useTestAutoSave(permalink || '');
+
   useEffect(() => {
-    if (testId) {
-      // Get the current test from the available tests
-      const currentTest = tests.find(test => test.id === testId);
-      
-      if (currentTest) {
-        console.log("Found test:", currentTest);
-        // In a real app, this would be an API call with the test id
-        const { questions: testQuestions, scaledScoring: testScoring } = getTestQuestions(testId);
+    const loadTest = async () => {
+      if (!user) {
+        console.log('No user found, returning');
+        return;
+      }
+
+      console.log('Loading test with permalink:', permalink);
+      console.log('Available tests:', tests);
+
+      try {
+        // Find the test by permalink or ID
+        const foundTest = tests.find(test => 
+          test.permalink === permalink || test.id === permalink
+        );
         
-        // If the test has scaled scoring, use that instead of the default
-        const finalScaledScoring = currentTest.scaled_scoring && currentTest.scaled_scoring.length > 0 
-          ? currentTest.scaled_scoring 
-          : testScoring || [];
+        console.log('Found test:', foundTest);
+        
+        if (foundTest) {
+          setCurrentTest(foundTest);
+          console.log('Fetching test questions for test ID:', foundTest.id);
+          const testQuestions = await getTestQuestions(foundTest.id);
+          console.log('Received test questions:', testQuestions);
           
-        setQuestions(testQuestions);
-        setScaledScoring(finalScaledScoring);
-        setTestStartTime(new Date());
-      } else {
-        // Test not found, redirect to dashboard
-        console.error("Test not found:", testId);
+          if (!testQuestions || !testQuestions.questions || testQuestions.questions.length === 0) {
+            console.error('No questions found for test:', foundTest.id);
+            toast({
+              title: "Error",
+              description: "No questions found for this test. Please contact support.",
+              variant: "destructive"
+            });
+            navigate("/dashboard");
+            return;
+          }
+
+          setQuestions(testQuestions.questions);
+          setScaledScoring(foundTest.scaled_scoring || []);
+          
+          // Initialize the module timer for the first question
+          if (testQuestions.questions.length > 0) {
+            const firstModuleType = testQuestions.questions[0]?.module_type || 'reading_writing';
+            const firstModule = foundTest.modules?.find((m: any) => m.type === firstModuleType);
+            const initialTime = (firstModule?.time || 0) * 60; // Convert minutes to seconds
+            setCurrentModuleTimeLeft(initialTime);
+            setCurrentModuleStartTime(new Date());
+          }
+        } else {
+          // Test not found, redirect to dashboard
+          console.error("Test not found:", permalink);
+          toast({
+            title: "Error",
+            description: "Test not found. Please try again.",
+            variant: "destructive"
+          });
+          navigate("/dashboard");
+        }
+      } catch (error) {
+        console.error("Error loading test questions:", error);
+        toast({
+          title: "Error",
+          description: "Failed to load test questions. Please try again.",
+          variant: "destructive"
+        });
         navigate("/dashboard");
       }
+    };
+    
+    loadTest();
+  }, [user, permalink, tests, navigate, toast]);
+
+  // Calculate total test duration from modules
+  const totalTestDuration = currentTest?.modules?.reduce((total: number, module: TestModule) => 
+    total + (module.time || 0), 0) * 60 || 0; // Convert minutes to seconds
+
+  // Helper to get current module time
+  const getCurrentModuleTime = () => {
+    if (!currentTest || questions.length === 0) return 0;
+    const currentModuleType = questions[currentQuestionIndex]?.module_type || 'reading_writing';
+    const module = currentTest.modules?.find((m: any) => m.type === currentModuleType);
+    return (module?.time || 0) * 60; // Convert minutes to seconds
+  };
+
+  // Update module timer when question changes
+  useEffect(() => {
+    if (questions.length > 0 && currentTest) {
+      const currentModuleType = questions[currentQuestionIndex]?.module_type || 'reading_writing';
+      const module = currentTest.modules?.find((m: any) => m.type === currentModuleType);
+      const newModuleTime = (module?.time || 0) * 60; // Convert minutes to seconds
+      
+      // Only reset the timer if we're changing modules
+      const previousModuleType = currentQuestionIndex > 0 
+        ? questions[currentQuestionIndex - 1]?.module_type 
+        : null;
+      
+      if (previousModuleType !== currentModuleType) {
+        console.log('Changing module, setting new time:', newModuleTime);
+        setCurrentModuleTimeLeft(newModuleTime);
+        setCurrentModuleStartTime(new Date());
+      }
     }
-  }, [testId, tests, navigate]);
+  }, [currentQuestionIndex, questions, currentTest]);
+
+  // Update module time left
+  useEffect(() => {
+    if (!timerEnabled || currentModuleTimeLeft <= 0) return;
+
+    const timer = setInterval(() => {
+      setCurrentModuleTimeLeft(prev => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          handleTimeUp();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [timerEnabled, currentModuleTimeLeft]);
 
   const testDuration = 1800; // 30 minutes in seconds
   
-  const handleSelectOption = (optionId: string) => {
-    setUserAnswers({
-      ...userAnswers,
-      [questions[currentQuestionIndex].id]: optionId
-    });
+  const handleSelectOption = (questionId: string, answer: string) => {
+    setUserAnswers(prev => ({
+      ...prev,
+      [questionId]: answer
+    }));
   };
 
   const handleNextQuestion = () => {
@@ -123,7 +226,8 @@ const TestInterface = () => {
     questions.forEach(question => {
       const moduleType = question.module_type || 'reading_writing'; 
       const moduleName = moduleType === 'reading_writing' ? 'Reading & Writing' : 'Math';
-      const moduleId = `${testId}-${moduleType}`;
+      // Use the module type as the ID to match with scaled scoring
+      const moduleId = moduleType;
       
       if (!modules[moduleType]) {
         modules[moduleType] = {
@@ -140,9 +244,17 @@ const TestInterface = () => {
       // Check if answer is correct
       const userAnswer = userAnswers[question.id];
       if (userAnswer) {
-        const selectedOption = question.options.find(option => option.id === userAnswer);
-        if (selectedOption && selectedOption.isCorrect) {
-          modules[moduleType].correctAnswers++;
+        if (question.question_type === QuestionType.TextInput) {
+          // For text input questions, check if the answer matches exactly
+          if (userAnswer.toLowerCase() === question.correct_answer?.toLowerCase()) {
+            modules[moduleType].correctAnswers++;
+          }
+        } else {
+          // For multiple choice questions, check if the selected option is correct
+          const selectedOption = question.options?.find(option => option.id === userAnswer);
+          if (selectedOption && selectedOption.isCorrect) {
+            modules[moduleType].correctAnswers++;
+          }
         }
       }
     });
@@ -155,57 +267,35 @@ const TestInterface = () => {
       // Find the scaled score for this module's correct answers
       let scaledScore;
       if (scaledScoring && scaledScoring.length > 0) {
-        // Filter scaled scoring for this module
-        const moduleScoring = scaledScoring.filter(s => !s.module_id || s.module_id === module.moduleId);
+        // Filter scaled scoring for this specific module
+        const moduleScoring = scaledScoring.filter(s => {
+          // Match by module_id or module type
+          const moduleIdMatch = s.module_id === module.moduleId;
+          const moduleTypeMatch = s.module_type === module.moduleId;
+          return moduleIdMatch || moduleTypeMatch;
+        });
         
         if (moduleScoring.length > 0) {
-          // Find exact match or closest lower score
-          const exactMatch = moduleScoring.find(s => s.correct_answers === correctAnswers);
-          if (exactMatch) {
-            scaledScore = exactMatch.scaled_score;
+          // Find exact match for the number of correct answers
+          const matchingScore = moduleScoring.find(s => s.correct_answers === correctAnswers);
+          
+          if (matchingScore) {
+            scaledScore = matchingScore.scaled_score;
           } else {
-            const sortedScoring = [...moduleScoring].sort((a, b) => a.correct_answers - b.correct_answers);
-            
-            // Find the closest score brackets
-            let lowerScoreBracket = null;
-            let upperScoreBracket = null;
-            
-            for (const bracket of sortedScoring) {
-              if (bracket.correct_answers <= correctAnswers) {
-                lowerScoreBracket = bracket;
-              }
-              if (bracket.correct_answers >= correctAnswers && !upperScoreBracket) {
-                upperScoreBracket = bracket;
-              }
-            }
-            
-            // Interpolate the scaled score
-            if (lowerScoreBracket && upperScoreBracket) {
-              const lowerCorrect = lowerScoreBracket.correct_answers;
-              const upperCorrect = upperScoreBracket.correct_answers;
-              const lowerScaled = lowerScoreBracket.scaled_score;
-              const upperScaled = upperScoreBracket.scaled_score;
-              
-              if (upperCorrect !== lowerCorrect) {
-                const ratio = (correctAnswers - lowerCorrect) / (upperCorrect - lowerCorrect);
-                scaledScore = Math.round(lowerScaled + ratio * (upperScaled - lowerScaled));
-              } else {
-                scaledScore = lowerScaled;
-              }
-            } else if (lowerScoreBracket) {
-              scaledScore = lowerScoreBracket.scaled_score;
-            } else if (upperScoreBracket) {
-              scaledScore = upperScoreBracket.scaled_score;
+            // If no exact match, find the closest lower score
+            const sortedScoring = [...moduleScoring].sort((a, b) => b.correct_answers - a.correct_answers);
+            const closestLower = sortedScoring.find(s => s.correct_answers < correctAnswers);
+            if (closestLower) {
+              scaledScore = closestLower.scaled_score;
             }
           }
         }
       }
       
       return {
-        moduleId: module.moduleId,
-        moduleName: module.moduleName,
-        score: correctAnswers,
-        total: totalQuestions,
+        ...module,
+        totalQuestions,
+        correctAnswers,
         scaledScore
       };
     });
@@ -232,12 +322,13 @@ const TestInterface = () => {
         .from('test_results')
         .insert({
           user_id: user.id,
-          test_id: testId || '',
+          test_id: currentTest?.id || permalink || '',
           total_score: correctAnswers,
           total_questions: totalQuestions,
           scaled_score: scaledScore,
           answers: userAnswers,
-          time_taken: timeTaken
+          time_taken: timeTaken,
+          created_at: new Date().toISOString()
         })
         .select()
         .single();
@@ -246,7 +337,7 @@ const TestInterface = () => {
         console.error("Error saving test results:", testError);
         toast({
           title: "Error",
-          description: "There was a problem saving your results.",
+          description: "There was a problem saving your results. Please contact support.",
           variant: "destructive"
         });
         return;
@@ -261,9 +352,10 @@ const TestInterface = () => {
               test_result_id: testResult.id,
               module_id: module.moduleId,
               module_name: module.moduleName,
-              score: module.score,
-              total: module.total,
-              scaled_score: module.scaledScore
+              score: module.correctAnswers,
+              total: module.totalQuestions,
+              scaled_score: module.scaledScore,
+              created_at: new Date().toISOString()
             });
         });
         
@@ -276,70 +368,94 @@ const TestInterface = () => {
       console.error("Error saving results:", error);
       toast({
         title: "Error",
-        description: "There was a problem saving your results.",
+        description: "There was a problem saving your results. Please contact support.",
         variant: "destructive"
       });
     }
   };
 
   const handleSubmitTest = async () => {
-    // Calculate results
-    let correctAnswers = 0;
-    let totalQuestions = questions.length;
-    
-    questions.forEach(question => {
-      const userAnswer = userAnswers[question.id];
-      if (userAnswer) {
-        const selectedOption = question.options.find(option => option.id === userAnswer);
-        if (selectedOption && selectedOption.isCorrect) {
-          correctAnswers++;
-        }
-      }
-    });
-    
-    // Calculate module scores
-    const moduleScores = calculateModuleScores();
-    
-    // Calculate overall scaled score (if available)
-    let overallScaledScore;
-    if (scaledScoring && scaledScoring.length > 0) {
-      // Filter for overall scores (ones without a module_id)
-      const overallScoring = scaledScoring.filter(s => !s.module_id);
-      if (overallScoring.length > 0) {
-        const exactMatch = overallScoring.find(s => s.correct_answers === correctAnswers);
-        if (exactMatch) {
-          overallScaledScore = exactMatch.scaled_score;
-        } else {
-          // Use closest lower score
-          const lowerScores = overallScoring
-            .filter(s => s.correct_answers <= correctAnswers)
-            .sort((a, b) => b.correct_answers - a.correct_answers);
-            
-          if (lowerScores.length > 0) {
-            overallScaledScore = lowerScores[0].scaled_score;
+    try {
+      // Save state before submission
+      await saveTestState({
+        currentQuestionIndex,
+        userAnswers,
+        flaggedQuestions,
+        crossedOutOptions,
+        testStartTime,
+        currentModuleStartTime,
+        currentModuleTimeLeft,
+      });
+      
+      // Clear saved state after successful submission
+      clearTestState();
+      
+      // Calculate results
+      let correctAnswers = 0;
+      let totalQuestions = questions.length;
+      
+      questions.forEach(question => {
+        const userAnswer = userAnswers[question.id];
+        if (userAnswer) {
+          if (question.question_type === QuestionType.TextInput) {
+            if (userAnswer.toLowerCase() === question.correct_answer?.toLowerCase()) {
+              correctAnswers++;
+            }
+          } else {
+            const selectedOption = question.options?.find(option => option.id === userAnswer);
+            if (selectedOption && selectedOption.isCorrect) {
+              correctAnswers++;
+            }
           }
         }
+      });
+      
+      // Calculate module scores
+      const moduleScores = calculateModuleScores();
+      
+      // Calculate overall scaled score (if available)
+      let overallScaledScore;
+      if (moduleScores.length > 0) {
+        // Sum the scaled scores of the two modules
+        overallScaledScore = moduleScores.reduce((sum, module) => sum + (module.scaledScore || 0), 0);
       }
+      
+      // Save results to database
+      await saveResults(correctAnswers, totalQuestions, moduleScores, overallScaledScore);
+      
+      // Navigate to results page with score data
+      navigate("/results", {
+        state: {
+          score: correctAnswers,
+          total: totalQuestions,
+          answers: userAnswers,
+          questions: questions,
+          scaledScoring: scaledScoring,
+          moduleScores: moduleScores.map(module => ({
+            moduleId: module.moduleId,
+            moduleName: module.moduleName,
+            score: module.correctAnswers,
+            total: module.totalQuestions,
+            correctAnswers: module.correctAnswers,
+            totalQuestions: module.totalQuestions,
+            scaledScore: module.scaledScore
+          })),
+          overallScaledScore: overallScaledScore
+        }
+      });
+    } catch (error) {
+      console.error("Error submitting test:", error);
+      toast({
+        title: "Error",
+        description: "Failed to submit test. Please try again.",
+        variant: "destructive"
+      });
     }
-    
-    // Save results to database
-    await saveResults(correctAnswers, totalQuestions, moduleScores, overallScaledScore);
-    
-    // Navigate to results page with score data
-    navigate("/results", {
-      state: {
-        score: correctAnswers,
-        total: totalQuestions,
-        answers: userAnswers,
-        questions: questions,
-        scaledScoring: scaledScoring,
-        moduleScores: moduleScores
-      }
-    });
   };
 
   const handleTimeUp = () => {
     if (timerEnabled) {
+      console.log('Time up for current module');
       setShowTimeUpDialog(true);
     }
   };
@@ -348,10 +464,34 @@ const TestInterface = () => {
     setShowReviewPage(true);
   };
 
-  if (questions.length === 0) {
+  // Add a loading state check
+  const isLoading = !currentTest || questions.length === 0;
+
+  // Initialize module timer when test loads
+  useEffect(() => {
+    if (currentTest && questions.length > 0) {
+      const firstModuleType = questions[0]?.module_type || 'reading_writing';
+      const firstModule = currentTest.modules?.find((m: any) => m.type === firstModuleType);
+      const initialTime = (firstModule?.time || 0) * 60; // Convert minutes to seconds
+      
+      console.log('Initializing module timer:', {
+        moduleType: firstModuleType,
+        moduleTime: firstModule?.time,
+        initialTime
+      });
+      
+      setCurrentModuleTimeLeft(initialTime);
+      setCurrentModuleStartTime(new Date());
+    }
+  }, [currentTest, questions]);
+
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-lg">Loading test...</p>
+        <div className="text-center">
+          <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p className="text-lg">Loading test...</p>
+        </div>
       </div>
     );
   }
@@ -366,28 +506,46 @@ const TestInterface = () => {
           <div className="flex items-center gap-4">
             <div className="flex items-center space-x-2">
               <Switch
-                id="timer-mode"
                 checked={timerEnabled}
                 onCheckedChange={setTimerEnabled}
               />
-              <Label htmlFor="timer-mode">Timer</Label>
+              <span className="text-sm">Timer</span>
             </div>
             {timerEnabled && (
-              <Timer initialTime={testDuration} onTimeUp={handleTimeUp} />
+              <div className="flex items-center gap-4">
+                <div className="text-sm text-gray-600">
+                  Total: {Math.floor(totalTestDuration / 60)}m
+                </div>
+                <div className="flex items-center gap-2">
+                  <Timer 
+                    initialTime={currentModuleTimeLeft} 
+                    onTimeUp={handleTimeUp} 
+                  />
+                </div>
+              </div>
             )}
           </div>
         </div>
+        
+        {/* Display current module info */}
+        {currentTest && questions.length > 0 && (
+          <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded text-blue-900">
+            <div className="text-lg font-semibold text-center">
+              {currentTest.modules?.find((m: any) => m.type === questions[currentQuestionIndex]?.module_type)?.name || 'Current Module'}
+            </div>
+            <div className="text-sm text-center">
+              Time: {Math.floor(currentModuleTimeLeft / 60)}m {currentModuleTimeLeft % 60}s remaining
+            </div>
+          </div>
+        )}
         
         {showReviewPage ? (
           <ReviewPage
             questions={questions}
             userAnswers={userAnswers}
             flaggedQuestions={flaggedQuestions}
-            onGoToQuestion={(index) => {
-              setCurrentQuestionIndex(index);
-              setShowReviewPage(false);
-            }}
-            onSubmitTest={() => setShowConfirmSubmit(true)}
+            onGoToQuestion={handleGoToQuestion}
+            onSubmitTest={handleSubmitTest}
             onCancel={() => setShowReviewPage(false)}
           />
         ) : (
@@ -405,6 +563,7 @@ const TestInterface = () => {
             crossedOutOptions={crossedOutOptions}
             onToggleCrossOut={handleToggleCrossOut}
             onOpenReviewPage={handleOpenReviewPage}
+            onSaveStatusChange={setIsSaving}
           />
         )}
       </main>
@@ -415,7 +574,12 @@ const TestInterface = () => {
         showTimeUpDialog={showTimeUpDialog}
         setShowTimeUpDialog={setShowTimeUpDialog}
         onSubmitTest={handleSubmitTest}
+        onTimeUp={() => {
+          setShowTimeUpDialog(true);
+          handleSubmitTest();
+        }}
       />
+      <Footer />
     </div>
   );
 };

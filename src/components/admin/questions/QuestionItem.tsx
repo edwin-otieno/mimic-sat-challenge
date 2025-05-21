@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { 
@@ -7,7 +6,7 @@ import {
   CollapsibleContent 
 } from '@/components/ui/collapsible';
 import { ChevronDown } from 'lucide-react';
-import { Question } from './types';
+import { Question, QuestionType } from './types';
 
 interface QuestionItemProps {
   question: Question;
@@ -17,7 +16,7 @@ interface QuestionItemProps {
 
 const QuestionItem = ({ question, onEdit, onDelete }: QuestionItemProps) => {
   return (
-    <Collapsible key={question.id} className="border rounded-md">
+    <Collapsible className="border rounded-md">
       <CollapsibleTrigger asChild>
         <div className="p-4 flex justify-between items-center cursor-pointer">
           <div className="font-medium">{question.text}</div>
@@ -32,16 +31,27 @@ const QuestionItem = ({ question, onEdit, onDelete }: QuestionItemProps) => {
                 <span className="font-medium">Explanation:</span> {question.explanation}
               </div>
             )}
-            <div>
-              <span className="font-medium">Options:</span>
-              <ul className="list-disc pl-5 mt-2 space-y-1">
-                {question.options.map((option) => (
-                  <li key={option.id} className={option.is_correct ? "text-green-600 font-medium" : ""}>
-                    {option.text} {option.is_correct && "(Correct)"}
-                  </li>
-                ))}
-              </ul>
-            </div>
+            {question.question_type === QuestionType.MultipleChoice && question.options && (
+              <div>
+                <span className="font-medium">Options:</span>
+                <ul className="list-disc pl-5 mt-2 space-y-1">
+                  {question.options.map((option, index) => (
+                    <li key={`${question.id}-option-${index}`} className={option.is_correct ? "text-green-600 font-medium" : ""}>
+                      <div dangerouslySetInnerHTML={{ __html: option.text }} />
+                      {option.is_correct && "(Correct)"}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {question.question_type === QuestionType.TextInput && (
+              <div>
+                <span className="font-medium">Correct Answer:</span>
+                <div className="mt-2 text-green-600 font-medium">
+                  {question.correct_answer}
+                </div>
+              </div>
+            )}
             <div className="flex justify-end space-x-2 mt-2">
               <Button size="sm" variant="outline" onClick={() => onEdit(question)}>
                 Edit

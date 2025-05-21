@@ -1,6 +1,5 @@
 import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { ScaledScore } from "@/components/admin/tests/types";
 
 interface ScoreCardProps {
@@ -11,8 +10,6 @@ interface ScoreCardProps {
 }
 
 const ScoreCard: React.FC<ScoreCardProps> = ({ score, total, scaledScoring, scaledScore: providedScaledScore }) => {
-  const percentage = Math.round((score / total) * 100);
-  
   // Calculate scaled score if available and not already provided
   const getScaledScore = () => {
     // If a scaled score is already provided, use that
@@ -45,12 +42,6 @@ const ScoreCard: React.FC<ScoreCardProps> = ({ score, total, scaledScoring, scal
   
   const scaledScoreValue = getScaledScore();
   
-  const getScoreMessage = () => {
-    if (percentage >= 80) return "Excellent work!";
-    if (percentage >= 60) return "Good job!";
-    return "Keep practicing!";
-  };
-
   return (
     <Card>
       <CardHeader>
@@ -58,15 +49,17 @@ const ScoreCard: React.FC<ScoreCardProps> = ({ score, total, scaledScoring, scal
       </CardHeader>
       <CardContent>
         <div className="text-center">
-          <p className="text-5xl font-bold mb-2">{score}/{total}</p>
-          <Progress value={percentage} className="h-3 mb-2" />
-          <p className="text-xl font-medium text-gray-700">{percentage}%</p>
-          {scaledScoreValue !== null && (
-            <div className="mt-2 p-2 bg-primary/10 rounded-md">
-              <p className="font-medium">Scaled Score: {scaledScoreValue}</p>
-            </div>
+          {scaledScoreValue !== null ? (
+            <>
+              <p className="text-5xl font-bold mb-2">{scaledScoreValue}</p>
+              <p className="text-sm text-gray-500 mb-4">Scaled Score</p>
+            </>
+          ) : (
+            <>
+              <p className="text-5xl font-bold mb-2">N/A</p>
+              <p className="text-sm text-gray-500">No scaled score available</p>
+            </>
           )}
-          <p className="mt-4 text-primary font-medium">{getScoreMessage()}</p>
         </div>
       </CardContent>
     </Card>

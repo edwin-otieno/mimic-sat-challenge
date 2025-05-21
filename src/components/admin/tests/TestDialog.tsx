@@ -1,4 +1,3 @@
-
 import React from 'react';
 import {
   Dialog,
@@ -18,7 +17,6 @@ interface TestDialogProps {
   isEditing: boolean;
   currentTest: Test | null;
   onSubmit: (values: z.infer<typeof formSchema>) => void;
-  questionCount?: number;
 }
 
 const TestDialog: React.FC<TestDialogProps> = ({ 
@@ -26,8 +24,7 @@ const TestDialog: React.FC<TestDialogProps> = ({
   onOpenChange, 
   isEditing, 
   currentTest, 
-  onSubmit,
-  questionCount = 10 // Default question count if not provided
+  onSubmit
 }) => {
   
   const handleCloseDialog = () => {
@@ -45,7 +42,6 @@ const TestDialog: React.FC<TestDialogProps> = ({
             currentTest={currentTest}
             onSubmit={onSubmit}
             onCancel={handleCloseDialog}
-            questionCount={questionCount}
           />
         </ScrollArea>
       </DialogContent>

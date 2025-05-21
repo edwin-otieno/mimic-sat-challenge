@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState } from 'react';
 import { Test } from './types';
 
@@ -43,10 +42,23 @@ export const TestOperationsProvider: React.FC<TestOperationsProviderProps> = ({ 
   const [testToDelete, setTestToDelete] = useState<Test | null>(null);
   
   const handleOpenDialog = (test?: Test) => {
+    console.log('Opening dialog with test:', JSON.stringify(test, null, 2));
     if (test) {
+      console.log('Setting editing mode with test:', JSON.stringify(test, null, 2));
       setIsEditing(true);
-      setCurrentTest(test);
+      // Ensure we have a complete test object with all required fields
+      const completeTest: Test = {
+        id: test.id,
+        title: test.title,
+        description: test.description,
+        is_active: test.is_active,
+        created_at: test.created_at,
+        modules: test.modules || [],
+        scaled_scoring: test.scaled_scoring || []
+      };
+      setCurrentTest(completeTest);
     } else {
+      console.log('Setting create mode');
       setIsEditing(false);
       setCurrentTest(null);
     }
@@ -54,11 +66,13 @@ export const TestOperationsProvider: React.FC<TestOperationsProviderProps> = ({ 
   };
 
   const handleOpenDeleteDialog = (test: Test) => {
+    console.log('Opening delete dialog for test:', JSON.stringify(test, null, 2));
     setTestToDelete(test);
     setIsDeleteDialogOpen(true);
   };
 
   const toggleExpandTest = (testId: string) => {
+    console.log('Toggling expand for test:', testId);
     setExpandedTest(expandedTest === testId ? null : testId);
   };
 

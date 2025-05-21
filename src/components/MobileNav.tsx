@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Menu } from "lucide-react";
@@ -39,6 +38,17 @@ const MobileNav = () => {
             Dashboard
           </Button>
           
+          {/* Show Results tab for students only */}
+          {!isAdmin && (
+            <Button 
+              variant="ghost" 
+              onClick={() => handleNavigation("/results")}
+              className={location.pathname === "/results" ? "bg-accent justify-start" : "justify-start"}
+            >
+              Results
+            </Button>
+          )}
+          
           {isAdmin && (
             <Button 
               variant="ghost" 
@@ -48,14 +58,6 @@ const MobileNav = () => {
               Admin Panel
             </Button>
           )}
-          
-          <Button 
-            variant="ghost" 
-            onClick={() => handleNavigation("/results")}
-            className={location.pathname === "/results" ? "bg-accent justify-start" : "justify-start"}
-          >
-            Results
-          </Button>
         </nav>
       </SheetContent>
     </Sheet>

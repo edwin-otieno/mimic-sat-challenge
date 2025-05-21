@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Plus, Minus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -22,10 +21,12 @@ const ScaledScoreTable: React.FC<ScaledScoreTableProps> = ({
   const addScoreRow = (e: React.MouseEvent) => {
     e.preventDefault(); // Prevent form submission
     
-    // Find the next correct answer count that doesn't have a score
+    // Find the next correct answer count that doesn't have a score for this specific module
     let nextCorrectAnswers = 0;
     if (scores.length > 0) {
-      const existingCounts = scores.map(s => s.correct_answers);
+      const existingCounts = scores
+        .filter(s => s.module_id === moduleId)
+        .map(s => s.correct_answers);
       for (let i = 0; i <= questionCount; i++) {
         if (!existingCounts.includes(i)) {
           nextCorrectAnswers = i;
@@ -69,7 +70,7 @@ const ScaledScoreTable: React.FC<ScaledScoreTableProps> = ({
           size="sm" 
           onClick={addScoreRow}
           type="button" // Explicitly set type to button
-          disabled={scores.length >= 100} // Increased maximum to 100 rows
+          disabled={scores.length >= 100} // Maximum is now 100 rows
         >
           <Plus className="h-4 w-4 mr-2" />
           Add Score Mapping
@@ -86,40 +87,42 @@ const ScaledScoreTable: React.FC<ScaledScoreTableProps> = ({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {scores.map((score, index) => (
-              <TableRow key={index}>
-                <TableCell>
-                  <Input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={score.correct_answers}
-                    onChange={(e) => updateScoreValue(index, 'correct_answers', parseInt(e.target.value) || 0)}
-                    className="w-24"
-                    onClick={(e) => e.stopPropagation()} // Prevent bubbling
-                  />
-                </TableCell>
-                <TableCell>
-                  <Input
-                    type="number"
-                    value={score.scaled_score}
-                    onChange={(e) => updateScoreValue(index, 'scaled_score', parseInt(e.target.value) || 0)}
-                    className="w-24"
-                    onClick={(e) => e.stopPropagation()} // Prevent bubbling
-                  />
-                </TableCell>
-                <TableCell>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={(e) => removeScoreRow(index, e)}
-                    type="button" // Explicitly set type to button
-                  >
-                    <Minus className="h-4 w-4" />
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
+            {scores
+              .filter(score => score.module_id === moduleId)
+              .map((score, index) => (
+                <TableRow key={index}>
+                  <TableCell>
+                    <Input
+                      type="number"
+                      min="0"
+                      max={questionCount > 100 ? 100 : questionCount}
+                      value={score.correct_answers}
+                      onChange={(e) => updateScoreValue(index, 'correct_answers', parseInt(e.target.value) || 0)}
+                      className="w-24"
+                      onClick={(e) => e.stopPropagation()} // Prevent bubbling
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Input
+                      type="number"
+                      value={score.scaled_score}
+                      onChange={(e) => updateScoreValue(index, 'scaled_score', parseInt(e.target.value) || 0)}
+                      className="w-24"
+                      onClick={(e) => e.stopPropagation()} // Prevent bubbling
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => removeScoreRow(index, e)}
+                      type="button" // Explicitly set type to button
+                    >
+                      <Minus className="h-4 w-4" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
           </TableBody>
         </Table>
       ) : (

@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -28,8 +27,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from '@/hooks/use-toast';
-import { Pencil, Trash2 } from 'lucide-react';
+import { Pencil, Trash2, Key } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { Input } from '@/components/ui/input';
 
 interface User {
   id: string;
@@ -44,7 +44,9 @@ const UserManagement = () => {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isResetPasswordDialogOpen, setIsResetPasswordDialogOpen] = useState(false);
   const [newRole, setNewRole] = useState<"admin" | "student">("student");
+  const [newPassword, setNewPassword] = useState("");
   
   // Fetch all users from Supabase profiles table
   const { data: users, isLoading, error, refetch } = useQuery({
@@ -78,6 +80,12 @@ const UserManagement = () => {
     setIsDeleteDialogOpen(true);
   };
 
+  const handleResetPassword = (user: User) => {
+    setSelectedUser(user);
+    setNewPassword("");
+    setIsResetPasswordDialogOpen(true);
+  };
+
   const saveRole = async () => {
     if (!selectedUser || !newRole) return;
     
@@ -100,6 +108,32 @@ const UserManagement = () => {
       toast({ 
         title: "Error", 
         description: error.message || "Failed to update user role", 
+        variant: "destructive" 
+      });
+    }
+  };
+
+  const resetPassword = async () => {
+    if (!selectedUser || !newPassword) return;
+    
+    try {
+      const { error } = await supabase.auth.admin.updateUserById(
+        selectedUser.id,
+        { password: newPassword }
+      );
+
+      if (error) throw error;
+      
+      toast({ 
+        title: "Success", 
+        description: `Password has been reset for ${selectedUser.first_name || selectedUser.email}` 
+      });
+      
+      setIsResetPasswordDialogOpen(false);
+    } catch (error: any) {
+      toast({ 
+        title: "Error", 
+        description: error.message || "Failed to reset password", 
         variant: "destructive" 
       });
     }
@@ -199,6 +233,14 @@ const UserManagement = () => {
                     <Button 
                       size="sm" 
                       variant="ghost" 
+                      onClick={() => handleResetPassword(user)}
+                    >
+                      <Key className="h-4 w-4" />
+                      <span className="sr-only">Reset Password</span>
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      variant="ghost" 
                       onClick={() => handleDeleteUser(user)}
                       className="text-red-500 hover:text-red-700 hover:bg-red-50"
                     >
@@ -241,6 +283,31 @@ const UserManagement = () => {
               <Button type="button" variant="outline">Cancel</Button>
             </DialogClose>
             <Button onClick={saveRole}>Save Changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isResetPasswordDialogOpen} onOpenChange={setIsResetPasswordDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reset Password</DialogTitle>
+            <DialogDescription>
+              Enter a new password for {selectedUser?.first_name} {selectedUser?.last_name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Input
+              type="password"
+              placeholder="Enter new password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">Cancel</Button>
+            </DialogClose>
+            <Button onClick={resetPassword}>Reset Password</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

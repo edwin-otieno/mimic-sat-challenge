@@ -1,5 +1,4 @@
-
-import React from 'react';
+import React, { useRef } from 'react';
 import { FormLabel } from '@/components/ui/form';
 import { Button } from '@/components/ui/button';
 import { Trash, Image } from 'lucide-react';
@@ -13,6 +12,7 @@ interface QuestionImageUploadProps {
 
 const QuestionImageUpload = ({ previewImage, setPreviewImage, setImageFile }: QuestionImageUploadProps) => {
   const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -51,12 +51,26 @@ const QuestionImageUpload = ({ previewImage, setPreviewImage, setImageFile }: Qu
   const removeImage = () => {
     setPreviewImage(null);
     setImageFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleButtonClick = () => {
+    fileInputRef.current?.click();
   };
 
   return (
     <div className="space-y-2">
       <FormLabel>Question Image (Optional)</FormLabel>
       <div className="flex flex-col space-y-2">
+        <input 
+          type="file" 
+          className="hidden" 
+          accept="image/*"
+          onChange={handleImageChange}
+          ref={fileInputRef}
+        />
         {previewImage ? (
           <div className="relative">
             <img 
@@ -78,17 +92,15 @@ const QuestionImageUpload = ({ previewImage, setPreviewImage, setImageFile }: Qu
           <div className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-gray-300 rounded-md">
             <Image className="h-10 w-10 text-gray-400" />
             <p className="mt-2 text-sm text-gray-500">Upload an image for this question</p>
-            <label className="mt-2">
-              <input 
-                type="file" 
-                className="hidden" 
-                accept="image/*"
-                onChange={handleImageChange}
-              />
-              <Button type="button" variant="outline" size="sm">
-                Select Image
-              </Button>
-            </label>
+            <Button 
+              type="button" 
+              variant="outline" 
+              size="sm" 
+              onClick={handleButtonClick}
+              className="mt-2"
+            >
+              Select Image
+            </Button>
           </div>
         )}
       </div>

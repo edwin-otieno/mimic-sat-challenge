@@ -1,34 +1,27 @@
-
 import React from 'react';
 import { useFormContext } from 'react-hook-form';
-import { FormField, FormItem, FormLabel, FormControl, FormDescription, FormMessage } from '@/components/ui/form';
+import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { QuestionFormValues } from '../schema';
+import { QuestionType } from '../types';
 
-interface TextInputAnswerProps {
-  // No additional props needed as we'll use useFormContext
-}
+const TextInputAnswer = () => {
+  const { register, formState: { errors } } = useFormContext();
 
-const TextInputAnswer = ({}: TextInputAnswerProps) => {
-  const { control } = useFormContext<QuestionFormValues>();
-  
   return (
-    <FormField
-      control={control}
-      name="correct_answer"
-      render={({ field }) => (
-        <FormItem>
-          <FormLabel>Correct Answer</FormLabel>
-          <FormControl>
-            <Input placeholder="Enter the correct answer..." {...field} />
-          </FormControl>
-          <FormDescription>
-            For text input questions, enter the exact answer that will be considered correct.
-          </FormDescription>
-          <FormMessage />
-        </FormItem>
+    <div className="space-y-2">
+      <Label htmlFor="correct_answer">Correct Answer(s)</Label>
+      <Input
+        id="correct_answer"
+        placeholder="Enter correct answers separated by commas"
+        {...register('correct_answer')}
+      />
+      {errors.correct_answer && (
+        <p className="text-sm text-red-500">{errors.correct_answer.message as string}</p>
       )}
-    />
+      <p className="text-sm text-muted-foreground">
+        Enter multiple correct answers separated by commas. For example: "answer1, answer2, answer3"
+      </p>
+    </div>
   );
 };
 

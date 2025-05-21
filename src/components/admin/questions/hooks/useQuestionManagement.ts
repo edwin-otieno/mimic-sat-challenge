@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { useQueryClient } from '@tanstack/react-query';
@@ -19,13 +18,49 @@ export const questionFormSchema = z.object({
       text: z.string().min(1, { message: "Option text is required" }),
       is_correct: z.boolean().default(false)
     })
-  ).min(2, { message: "At least 2 options are required" })
-  .refine((options) => options.some(option => option.is_correct), {
-    message: "At least one option must be marked as correct",
-  }),
+  ).optional(),
   module_type: z.enum(["reading_writing", "math"]).default("reading_writing"),
   question_type: z.enum([QuestionType.MultipleChoice, QuestionType.TextInput]).default(QuestionType.MultipleChoice),
-  image_url: z.string().optional()
+  image_url: z.string().optional(),
+  correct_answer: z.string().optional()
+}).superRefine((data, ctx) => {
+  // Validate options for multiple choice questions
+  if (data.question_type === QuestionType.MultipleChoice) {
+    if (!data.options || data.options.length < 2) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Multiple choice questions must have at least 2 options",
+        path: ["options"]
+      });
+    } else if (!data.options.some(option => option.is_correct)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Multiple choice questions must have one correct option",
+        path: ["options"]
+      });
+    }
+  }
+
+  // Validate correct_answer for text input questions
+  if (data.question_type === QuestionType.TextInput) {
+    if (!data.correct_answer) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "At least one correct answer is required for text input questions",
+        path: ["correct_answer"]
+      });
+    } else {
+      // Split by comma and trim each answer
+      const answers = data.correct_answer.split(',').map(a => a.trim());
+      if (answers.some(a => !a)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Empty answers are not allowed. Please separate answers with commas.",
+          path: ["correct_answer"]
+        });
+      }
+    }
+  }
 });
 
 export const useQuestionManagement = (testId: string) => {
@@ -44,7 +79,8 @@ export const useQuestionManagement = (testId: string) => {
         const { data: questionsData, error: questionsError } = await supabase
           .from('test_questions')
           .select('*')
-          .eq('test_id', testId);
+          .eq('test_id', testId)
+          .order('question_order', { ascending: true });
           
         if (questionsError) {
           toast({ 
@@ -80,20 +116,24 @@ export const useQuestionManagement = (testId: string) => {
         });
         
         // Map questions with their options
-        const loadedQuestions = questionsData.map(question => ({
-          id: question.id,
-          test_id: question.test_id,
-          text: question.text,
-          explanation: question.explanation,
-          module_type: question.module_type as "reading_writing" | "math",
-          question_type: question.question_type as QuestionType,
-          image_url: question.image_url,
-          options: (optionsByQuestion[question.id] || []).map(option => ({
-            id: option.id,
-            text: option.text,
-            is_correct: option.is_correct
-          }))
-        }));
+        const loadedQuestions = questionsData
+          .sort((a, b) => (a.question_order || 0) - (b.question_order || 0))
+          .map(question => ({
+            id: question.id,
+            test_id: question.test_id,
+            text: question.text,
+            explanation: question.explanation,
+            module_type: question.module_type as "reading_writing" | "math",
+            question_type: question.question_type as QuestionType,
+            image_url: question.image_url,
+            correct_answer: question.correct_answer,
+            options: (optionsByQuestion[question.id] || []).map(option => ({
+              id: option.id,
+              text: option.text,
+              is_correct: option.is_correct
+            })),
+            question_order: question.question_order
+          }));
         
         setQuestions(loadedQuestions);
       } catch (error: any) {
@@ -116,19 +156,28 @@ export const useQuestionManagement = (testId: string) => {
       const questionData = {
         ...values,
         test_id: testId,
-        text: values.text, // Explicitly ensure text is set
+        text: values.text,
         module_type: values.module_type || "reading_writing" as const,
         question_type: values.question_type || QuestionType.MultipleChoice,
-        // Ensure options meet the QuestionOption interface requirements
-        options: values.options ? values.options.map(option => ({
-          id: option.id || undefined,
-          text: option.text || "", // Ensure text is always provided
-          is_correct: option.is_correct || false
-        })) : []
+        // Only include options for multiple choice questions
+        ...(values.question_type === QuestionType.MultipleChoice ? {
+          options: values.options?.map(option => ({
+            id: option.id || undefined,
+            text: option.text || "",
+            is_correct: option.is_correct || false
+          }))
+        } : {
+          correct_answer: values.correct_answer
+        })
       };
       
       // Save to database
-      const savedQuestion = await saveQuestion(questionData);
+      const savedQuestion = await saveQuestion({
+        ...questionData,
+        question_order: values.id 
+          ? questions.find(q => q.id === values.id)?.question_order 
+          : undefined // Let the backend handle new question order
+      });
       
       if (values.id) {
         // Update existing question in local state
@@ -136,7 +185,9 @@ export const useQuestionManagement = (testId: string) => {
           if (q.id === values.id) {
             return { 
               ...questionData, 
-              id: values.id
+              id: values.id,
+              question_order: savedQuestion.question_order,
+              created_at: q.created_at
             } as Question;
           }
           return q;
@@ -149,7 +200,8 @@ export const useQuestionManagement = (testId: string) => {
         const newQuestion: Question = {
           ...questionData,
           id: savedQuestion.id,
-          options: questionData.options as Question['options'] // Ensure type compatibility
+          question_order: savedQuestion.question_order,
+          created_at: new Date().toISOString()
         };
         
         setQuestions([...questions, newQuestion]);
