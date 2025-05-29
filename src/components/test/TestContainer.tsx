@@ -5,7 +5,7 @@ import ProgressBar from "@/components/ProgressBar";
 import TestNavigation from "./TestNavigation";
 import LineReader from "./LineReader";
 import { Button } from "@/components/ui/button";
-import { Flag } from "lucide-react";
+import { Flag, Calculator } from "lucide-react";
 import QuestionNavigator from "./QuestionNavigator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -164,7 +164,17 @@ const TestContainer: React.FC<TestContainerProps> = ({
         <TabsContent value="math">
           <Card>
             <CardHeader>
-              <CardTitle>Math Questions</CardTitle>
+              <div className="flex justify-between items-center">
+                <CardTitle>Math Questions</CardTitle>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => window.open('https://www.desmos.com/testing/digital-act/graphing', '_blank')}
+                >
+                  <Calculator className="mr-2 h-4 w-4" />
+                  Calculator
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {currentQuestion && currentQuestion.module_type === "math" && (

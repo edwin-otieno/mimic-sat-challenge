@@ -44,7 +44,7 @@ const Dashboard = () => {
         <section className="space-y-8">
           <h3 className="text-xl font-semibold mb-4">Tests Directions & Resources</h3>
           <p className="text-gray-600" style={{ marginBottom: '30px', fontSize: '20px' }}>
-            Please read the following directions and resources before starting the tests. <a href="/docs/directions.pdf" target="_blank" rel="noopener noreferrer" style={{ color: '#C52A30' }}>Test Directions (Opens in new tab)</a> and <a href="https://www.calculator.net/math-calculator.html" target="_blank" rel="noopener noreferrer" style={{ color: '#C52A30' }}>Calculator - For Math Section (Opens in new tab)</a>
+            Please read the following directions and resources before starting the tests. <a href="/docs/directions.pdf" target="_blank" rel="noopener noreferrer" style={{ color: '#C52A30' }}>Test Directions (Opens in new tab)</a> and <a href="https://www.desmos.com/testing/digital-act/graphing" target="_blank" rel="noopener noreferrer" style={{ color: '#C52A30' }}>Calculator - For Math Section (Opens in new tab)</a>
           </p>
         </section>
         <section className="space-y-8">

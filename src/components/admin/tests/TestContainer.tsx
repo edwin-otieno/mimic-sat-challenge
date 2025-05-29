@@ -4,6 +4,7 @@ import TestActions from './TestActions';
 import TestDialogManager from './TestDialogManager';
 import { useTests } from '@/hooks/useTests';
 import { TestOperationsProvider, useTestOperations } from './TestOperationsProvider';
+import { TestExportImport } from './TestExportImport';
 
 const TestContainerContent = () => {
   const { tests, isLoading, error } = useTests();
@@ -22,18 +23,24 @@ const TestContainerContent = () => {
   }
 
   return (
-    <div className="space-y-6">
-      <TestActions onAddTest={() => handleOpenDialog()} />
+    <div className="container mx-auto p-4">
+      <div className="flex justify-between items-center mb-4">
+        <h1 className="text-2xl font-bold">Test Management</h1>
+        <TestExportImport />
+      </div>
+      <div className="space-y-6">
+        <TestActions onAddTest={() => handleOpenDialog()} />
 
-      <TestList 
-        tests={tests}
-        expandedTest={expandedTest}
-        toggleExpandTest={toggleExpandTest}
-        handleOpenDialog={handleOpenDialog}
-        handleDeleteTest={handleOpenDeleteDialog}
-      />
+        <TestList 
+          tests={tests}
+          expandedTest={expandedTest}
+          toggleExpandTest={toggleExpandTest}
+          handleOpenDialog={handleOpenDialog}
+          handleDeleteTest={handleOpenDeleteDialog}
+        />
 
-      <TestDialogManager />
+        <TestDialogManager />
+      </div>
     </div>
   );
 };
