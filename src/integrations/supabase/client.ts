@@ -3,13 +3,16 @@ import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
 const SUPABASE_URL = "https://hdnaqkziirehubztmueh.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhkbmFxa3ppaXJlaHVienRtdWVoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDU5OTUyNDcsImV4cCI6MjA2MTU3MTI0N30.9zJSsbjQc8XIyEnWIQgwopNpXPrwQqjuj0_nmDG56L4";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhkbmFxa3ppaXJlaHVienRtdWVoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDU5OTUyNDcsImV4cCI6MjA2MTU3MTI0N30.9zJSsbjQc8XIyEnWIQgwopNpXPrwQqjuj0_nmDG56L4";
+const SUPABASE_SERVICE_ROLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhkbmFxa3ppaXJlaHVienRtdWVoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0NTk5NTI0NywiZXhwIjoyMDYxNTcxMjQ3fQ.9zJSsbjQc8XIyEnWIQgwopNpXPrwQqjuj0_nmDG56L4";
 
-if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY) {
   throw new Error('Missing Supabase environment variables');
 }
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
-export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+// Create two clients - one for regular operations and one for admin operations
+export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY);
+export const supabaseAdmin = createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);

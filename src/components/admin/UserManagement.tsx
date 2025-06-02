@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, supabaseAdmin } from '@/integrations/supabase/client';
 import { 
   Table, 
   TableHeader, 
@@ -90,7 +90,7 @@ const UserManagement = () => {
     if (!selectedUser || !newRole) return;
     
     try {
-      const { error } = await supabase
+      const { error } = await supabaseAdmin
         .from('profiles')
         .update({ role: newRole })
         .eq('id', selectedUser.id);
@@ -117,7 +117,7 @@ const UserManagement = () => {
     if (!selectedUser || !newPassword) return;
     
     try {
-      const { error } = await supabase.auth.admin.updateUserById(
+      const { error } = await supabaseAdmin.auth.admin.updateUserById(
         selectedUser.id,
         { password: newPassword }
       );
@@ -144,7 +144,7 @@ const UserManagement = () => {
     
     try {
       // First delete from profiles table
-      const { error: profileError } = await supabase
+      const { error: profileError } = await supabaseAdmin
         .from('profiles')
         .delete()
         .eq('id', selectedUser.id);
@@ -152,7 +152,7 @@ const UserManagement = () => {
       if (profileError) throw profileError;
       
       // Then delete the auth user
-      const { error: authError } = await supabase.auth.admin.deleteUser(
+      const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(
         selectedUser.id
       );
       
