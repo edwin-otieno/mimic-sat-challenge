@@ -15,8 +15,10 @@ const Dashboard = () => {
   const [availableTests, setAvailableTests] = useState<Test[]>([]);
   
   useEffect(() => {
-    // Filter active tests from the tests available in the system
-    const activeTests = tests.filter(test => test.is_active);
+    // Filter active tests and sort alphabetically by title
+    const activeTests = tests
+      .filter(test => test.is_active)
+      .sort((a, b) => a.title.localeCompare(b.title));
     setAvailableTests(activeTests);
   }, [tests]);
 

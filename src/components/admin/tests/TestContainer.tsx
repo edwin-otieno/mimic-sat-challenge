@@ -28,18 +28,18 @@ const TestContainerContent = () => {
         <h1 className="text-2xl font-bold">Test Management</h1>
         <TestExportImport />
       </div>
-      <div className="space-y-6">
-        <TestActions onAddTest={() => handleOpenDialog()} />
+    <div className="space-y-6">
+      <TestActions onAddTest={() => handleOpenDialog()} />
 
-        <TestList 
-          tests={tests}
-          expandedTest={expandedTest}
-          toggleExpandTest={toggleExpandTest}
-          handleOpenDialog={handleOpenDialog}
-          handleDeleteTest={handleOpenDeleteDialog}
-        />
+      <TestList 
+        tests={tests}
+        expandedTest={expandedTest}
+        toggleExpandTest={toggleExpandTest}
+        handleOpenDialog={handleOpenDialog}
+        handleDeleteTest={handleOpenDeleteDialog}
+      />
 
-        <TestDialogManager />
+      <TestDialogManager />
       </div>
     </div>
   );

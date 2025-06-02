@@ -97,16 +97,66 @@ export const getTestQuestions = async (testId: string): Promise<{
 }> => {
   try {
     console.log('Getting test questions for test ID:', testId);
-    const result = await getTestQuestionsFromDb(testId);
-    console.log('Test questions result:', result);
-    return result;
+    
+    // First verify the test exists
+    const { data: test, error: testError } = await supabase
+      .from('tests')
+      .select('*')
+      .eq('id', testId)
+      .single();
+      
+    if (testError || !test) {
+      console.error('Test not found:', testError);
+      throw new Error('Test not found');
+    }
+    
+    // Get questions for the test
+    const { data: questionsData, error: questionsError } = await supabase
+      .from('test_questions')
+      .select('*')
+      .eq('test_id', testId)
+      .order('question_order', { ascending: true });
+      
+    if (questionsError) {
+      console.error('Error fetching questions:', questionsError);
+      throw questionsError;
+    }
+
+    if (!questionsData || questionsData.length === 0) {
+      console.error('No questions found for test ID:', testId);
+      throw new Error('No questions found for this test');
+    }
+    
+    console.log('Found questions:', questionsData);
+    
+    // Get options for all questions
+    const questionIds = questionsData.map(q => q.id);
+    const { data: optionsData, error: optionsError } = await supabase
+      .from('test_question_options')
+      .select('*')
+      .in('question_id', questionIds);
+      
+    if (optionsError) {
+      console.error('Error fetching question options:', optionsError);
+      throw optionsError;
+    }
+    
+    console.log('Found options:', optionsData);
+    
+    // Convert to QuestionData format
+    const questions: QuestionData[] = questionsData.map(question => 
+      convertDbQuestionToQuestionData(question, optionsData || [])
+    );
+    
+    console.log('Converted questions:', questions);
+    
+    return { 
+      questions,
+      scaledScoring: test.scaled_scoring ? JSON.parse(test.scaled_scoring) : []
+    };
   } catch (error) {
     console.error('Error getting test questions:', error);
-    // Return empty arrays instead of mock data
-    return { 
-      questions: [],
-      scaledScoring: []
-    };
+    throw error;
   }
 };
 
@@ -217,12 +267,30 @@ export const deleteQuestion = async (questionId: string) => {
 
 // Get all tests from the database
 export const getTests = async () => {
-  const { data, error } = await supabase
-    .from('tests')
-    .select('*')
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-  return data;
+  console.log('Fetching all tests from database...');
+  try {
+    const { data, error } = await supabase
+      .from('tests')
+      .select('*')
+      .order('created_at', { ascending: false });
+      
+    if (error) {
+      console.error('Supabase error fetching tests:', error);
+      throw error;
+    }
+    
+    console.log('Raw database response:', data);
+    
+    if (!data || data.length === 0) {
+      console.log('No tests found in database');
+      return [];
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('Error in getTests:', error);
+    throw error;
+  }
 };
 
 // Create a new test in the database

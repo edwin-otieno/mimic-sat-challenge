@@ -165,7 +165,7 @@ const TestContainer: React.FC<TestContainerProps> = ({
           <Card>
             <CardHeader>
               <div className="flex justify-between items-center">
-                <CardTitle>Math Questions</CardTitle>
+              <CardTitle>Math Questions</CardTitle>
                 <Button
                   variant="outline"
                   size="sm"

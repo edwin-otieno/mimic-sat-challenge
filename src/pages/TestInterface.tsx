@@ -49,6 +49,12 @@ const TestInterface = () => {
         return;
       }
 
+      // Wait for tests to be loaded
+      if (!tests || tests.length === 0) {
+        console.log('Tests not yet loaded, waiting...');
+        return;
+      }
+
       console.log('Loading test with permalink:', permalink);
       console.log('Available tests:', tests);
 
@@ -60,36 +66,7 @@ const TestInterface = () => {
         
         console.log('Found test:', foundTest);
         
-        if (foundTest) {
-          setCurrentTest(foundTest);
-          console.log('Fetching test questions for test ID:', foundTest.id);
-          const testQuestions = await getTestQuestions(foundTest.id);
-          console.log('Received test questions:', testQuestions);
-          
-          if (!testQuestions || !testQuestions.questions || testQuestions.questions.length === 0) {
-            console.error('No questions found for test:', foundTest.id);
-            toast({
-              title: "Error",
-              description: "No questions found for this test. Please contact support.",
-              variant: "destructive"
-            });
-            navigate("/dashboard");
-            return;
-          }
-
-          setQuestions(testQuestions.questions);
-          setScaledScoring(foundTest.scaled_scoring || []);
-          
-          // Initialize the module timer for the first question
-          if (testQuestions.questions.length > 0) {
-            const firstModuleType = testQuestions.questions[0]?.module_type || 'reading_writing';
-            const firstModule = foundTest.modules?.find((m: any) => m.type === firstModuleType);
-            const initialTime = (firstModule?.time || 0) * 60; // Convert minutes to seconds
-            setCurrentModuleTimeLeft(initialTime);
-            setCurrentModuleStartTime(new Date());
-          }
-        } else {
-          // Test not found, redirect to dashboard
+        if (!foundTest) {
           console.error("Test not found:", permalink);
           toast({
             title: "Error",
@@ -97,6 +74,35 @@ const TestInterface = () => {
             variant: "destructive"
           });
           navigate("/dashboard");
+          return;
+        }
+
+        setCurrentTest(foundTest);
+        console.log('Fetching test questions for test ID:', foundTest.id);
+        const testQuestions = await getTestQuestions(foundTest.id);
+        console.log('Received test questions:', testQuestions);
+        
+        if (!testQuestions || !testQuestions.questions || testQuestions.questions.length === 0) {
+          console.error('No questions found for test:', foundTest.id);
+          toast({
+            title: "Error",
+            description: "No questions found for this test. Please contact support.",
+            variant: "destructive"
+          });
+          navigate("/dashboard");
+          return;
+        }
+
+        setQuestions(testQuestions.questions);
+        setScaledScoring(foundTest.scaled_scoring || []);
+        
+        // Initialize the module timer for the first question
+        if (testQuestions.questions.length > 0) {
+          const firstModuleType = testQuestions.questions[0]?.module_type || 'reading_writing';
+          const firstModule = foundTest.modules?.find((m: any) => m.type === firstModuleType);
+          const initialTime = (firstModule?.time || 0) * 60; // Convert minutes to seconds
+          setCurrentModuleTimeLeft(initialTime);
+          setCurrentModuleStartTime(new Date());
         }
       } catch (error) {
         console.error("Error loading test questions:", error);
