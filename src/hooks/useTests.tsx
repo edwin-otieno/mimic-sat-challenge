@@ -16,89 +16,105 @@ export const useTests = () => {
 
   // Helper to normalize test data from DB
   const normalizeTest = (test: any): Test => {
-    console.log('Normalizing test:', test);
-    const normalized = {
+    return {
       ...test,
       modules: typeof test.modules === 'string' ? JSON.parse(test.modules) : test.modules,
       scaled_scoring: typeof test.scaled_scoring === 'string' ? JSON.parse(test.scaled_scoring) : test.scaled_scoring || [],
     };
-    console.log('Normalized test:', normalized);
-    return normalized;
   };
 
-  // Fetch tests from Supabase
-  const fetchTests = async () => {
-    try {
+  // Use React Query for efficient data fetching and caching
+  const { data: queryData, isLoading, error } = useQuery({
+    queryKey: ['tests'],
+    queryFn: async () => {
       console.log('Fetching tests from database...');
-      const dbTests = await getTestsFromDb();
-      console.log('Raw database response:', dbTests);
+      const response = await getTestsFromDb();
+      console.log('Raw database response:', response);
       
-      if (!dbTests || dbTests.length === 0) {
-        console.log('No tests found in database');
-        return [];
+      if (!response) {
+        throw new Error('Failed to fetch tests');
       }
       
-      const normalizedTests = dbTests.map(normalizeTest);
+      // Normalize the data immediately
+      const normalizedTests = response.map(normalizeTest);
       console.log('Normalized tests:', normalizedTests);
+      
+      // Update local state immediately
+      setTests(normalizedTests);
+      
       return normalizedTests;
-    } catch (err) {
-      console.error('Error fetching tests from database:', err);
-      toast({
-        title: 'Error',
-        description: 'Failed to fetch tests. Please try again later.',
-        variant: 'destructive'
-      });
-      return [];
-    }
-  };
-
-  const { data: queryData, isLoading, error, refetch } = useQuery({
-    queryKey: ['tests'],
-    queryFn: fetchTests,
-    initialData: [],
-    staleTime: 30000, // Consider data stale after 30 seconds
-    retry: 3, // Retry failed requests 3 times
-    onError: (error) => {
-      console.error('Query error:', error);
-    }
+    },
+    staleTime: 30000, // Consider data fresh for 30 seconds
+    cacheTime: 5 * 60 * 1000, // Keep in cache for 5 minutes
+    refetchOnWindowFocus: false, // Don't refetch when window regains focus
+    refetchOnMount: false, // Don't refetch when component mounts
   });
 
-  // Keep local state in sync with query data
+  // Update tests state when query data changes
   useEffect(() => {
     if (queryData) {
-      console.log('Updating tests state with query data:', queryData);
       setTests(queryData);
     }
   }, [queryData]);
 
-  const updateTest = async (updatedTest: Test) => {
+  // Create a new test
+  const createTest = async (testData: Partial<Test>) => {
     try {
-      console.log('Updating test:', updatedTest);
-      const dbTest = await updateTestInDb(updatedTest);
-      console.log('Database response:', dbTest);
-      
-      const normalized = normalizeTest(dbTest);
-      console.log('Normalized updated test:', normalized);
-      
-      // Update both local state and query cache
-      setTests(prev => prev.map(t => t.id === normalized.id ? normalized : t));
-      queryClient.setQueryData(['tests'], (old: Test[] = []) => 
-        old.map(t => t.id === normalized.id ? normalized : t)
-      );
-      
-      toast({ 
-        description: 'Test updated successfully' 
-      });
-      
-      return normalized;
-    } catch (err) {
-      console.error('Error updating test:', err);
+      const newTest = await createTestInDb(testData);
+      if (newTest) {
+        const normalizedTest = normalizeTest(newTest);
+        setTests(prev => [...prev, normalizedTest]);
+        // Invalidate the query cache to trigger a refetch
+        queryClient.invalidateQueries({ queryKey: ['tests'] });
+        return normalizedTest;
+      }
+    } catch (error) {
+      console.error('Error creating test:', error);
       toast({
-        title: 'Error',
-        description: 'Failed to update test. Please try again later.',
-        variant: 'destructive'
+        title: "Error",
+        description: "Failed to create test. Please try again.",
+        variant: "destructive"
       });
-      throw err;
+    }
+  };
+
+  // Update an existing test
+  const updateTest = async (id: string, testData: Partial<Test>) => {
+    try {
+      const updatedTest = await updateTestInDb(id, testData);
+      if (updatedTest) {
+        const normalizedTest = normalizeTest(updatedTest);
+        setTests(prev => prev.map(test => 
+          test.id === id ? normalizedTest : test
+        ));
+        // Invalidate the query cache to trigger a refetch
+        queryClient.invalidateQueries({ queryKey: ['tests'] });
+        return normalizedTest;
+      }
+    } catch (error) {
+      console.error('Error updating test:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update test. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  // Delete a test
+  const deleteTest = async (id: string) => {
+    try {
+      await deleteTestInDb(id);
+      setTests(prev => prev.filter(test => test.id !== id));
+      // Invalidate the query cache to trigger a refetch
+      queryClient.invalidateQueries({ queryKey: ['tests'] });
+    } catch (error) {
+      console.error('Error deleting test:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete test. Please try again.",
+        variant: "destructive"
+      });
     }
   };
 
@@ -106,7 +122,8 @@ export const useTests = () => {
     tests,
     isLoading,
     error,
-    refetch,
-    updateTest
+    createTest,
+    updateTest,
+    deleteTest
   };
 };

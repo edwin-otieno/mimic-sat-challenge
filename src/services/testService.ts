@@ -267,26 +267,18 @@ export const deleteQuestion = async (questionId: string) => {
 
 // Get all tests from the database
 export const getTests = async () => {
-  console.log('Fetching all tests from database...');
   try {
     const { data, error } = await supabase
       .from('tests')
       .select('*')
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(100); // Add a reasonable limit
       
     if (error) {
-      console.error('Supabase error fetching tests:', error);
       throw error;
     }
     
-    console.log('Raw database response:', data);
-    
-    if (!data || data.length === 0) {
-      console.log('No tests found in database');
-      return [];
-    }
-    
-    return data;
+    return data || [];
   } catch (error) {
     console.error('Error in getTests:', error);
     throw error;
