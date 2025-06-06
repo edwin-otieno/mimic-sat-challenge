@@ -17,6 +17,8 @@ import { useToast } from "@/hooks/use-toast";
 import Footer from "@/components/Footer";
 import { QuestionType } from "@/components/admin/questions/types";
 import { useTestAutoSave } from '@/hooks/useTestAutoSave';
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 const TestInterface = () => {
   const navigate = useNavigate();
@@ -39,6 +41,11 @@ const TestInterface = () => {
   const [currentModuleStartTime, setCurrentModuleStartTime] = useState<Date>(new Date());
   const [currentModuleTimeLeft, setCurrentModuleTimeLeft] = useState<number>(0);
   const [isSaving, setIsSaving] = useState(false);
+  const [showModuleSelection, setShowModuleSelection] = useState(true);
+  const [selectedModule, setSelectedModule] = useState<string | null>(null);
+  const [completedModules, setCompletedModules] = useState<Set<string>>(new Set());
+  const [showModuleScores, setShowModuleScores] = useState(false);
+  const [currentModuleScores, setCurrentModuleScores] = useState<any[]>([]);
   
   const { saveTestState, loadTestState, clearTestState, isRestoring, setIsRestoring } = useTestAutoSave(permalink || '');
 
@@ -179,7 +186,19 @@ const TestInterface = () => {
 
   const handleNextQuestion = () => {
     if (currentQuestionIndex < questions.length - 1) {
-      setCurrentQuestionIndex(currentQuestionIndex + 1);
+      const nextIndex = currentQuestionIndex + 1;
+      const currentModuleType = questions[currentQuestionIndex]?.module_type;
+      const nextModuleType = questions[nextIndex]?.module_type;
+      
+      if (currentModuleType !== nextModuleType) {
+        // Module change detected, show scores
+        handleModuleCompletion();
+      } else {
+        setCurrentQuestionIndex(nextIndex);
+      }
+    } else {
+      // Last question of the module
+      handleModuleCompletion();
     }
   };
 
@@ -491,6 +510,52 @@ const TestInterface = () => {
     }
   }, [currentTest, questions]);
 
+  // Add new function to handle module selection
+  const handleModuleSelection = (moduleType: string) => {
+    setSelectedModule(moduleType);
+    setShowModuleSelection(false);
+    
+    // Find the first question of the selected module
+    const firstQuestionIndex = questions.findIndex(q => q.module_type === moduleType);
+    if (firstQuestionIndex !== -1) {
+      setCurrentQuestionIndex(firstQuestionIndex);
+      
+      // Initialize module timer
+      const module = currentTest.modules?.find((m: any) => m.type === moduleType);
+      const initialTime = (module?.time || 0) * 60;
+      setCurrentModuleTimeLeft(initialTime);
+      setCurrentModuleStartTime(new Date());
+    }
+  };
+
+  // Add function to handle module completion
+  const handleModuleCompletion = () => {
+    if (!selectedModule) return;
+    
+    // Calculate scores for the completed module
+    const moduleScores = calculateModuleScores();
+    setCurrentModuleScores(moduleScores);
+    setShowModuleScores(true);
+    
+    // Mark module as completed
+    setCompletedModules(prev => new Set([...prev, selectedModule]));
+  };
+
+  // Add function to proceed to next module
+  const handleProceedToNextModule = () => {
+    setShowModuleScores(false);
+    
+    // Find the next uncompleted module
+    const nextModule = currentTest.modules?.find((m: any) => !completedModules.has(m.type));
+    
+    if (nextModule) {
+      handleModuleSelection(nextModule.type);
+    } else {
+      // All modules completed, show final results
+      handleSubmitTest();
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -498,6 +563,88 @@ const TestInterface = () => {
           <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
           <p className="text-lg">Loading test...</p>
         </div>
+      </div>
+    );
+  }
+
+  // Add the module selection screen to the render logic
+  if (showModuleSelection) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        <Header />
+        <main className="flex-1 container max-w-4xl mx-auto py-8 px-4">
+          <Card className="mb-8">
+            <CardHeader>
+              <CardTitle>Select Module to Start</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-4">
+                {currentTest?.modules?.map((module: TestModule) => (
+                  <Button
+                    key={module.type}
+                    onClick={() => handleModuleSelection(module.type)}
+                    className="w-full py-6 text-lg"
+                    disabled={completedModules.has(module.type)}
+                  >
+                    {module.name} ({module.time} minutes)
+                    {completedModules.has(module.type) && " - Completed"}
+                  </Button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  // Add the module scores screen
+  if (showModuleScores) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        <Header />
+        <main className="flex-1 container max-w-4xl mx-auto py-8 px-4">
+          <Card className="mb-8">
+            <CardHeader>
+              <CardTitle>Module Results</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {currentModuleScores.map((module) => (
+                <div key={module.moduleId} className="mb-6">
+                  <h3 className="text-xl font-semibold mb-2">{module.moduleName}</h3>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="bg-white rounded-lg p-4 border">
+                      <h4 className="text-lg font-medium mb-2">Raw Score</h4>
+                      <div className="text-3xl font-bold">
+                        {module.correctAnswers} / {module.totalQuestions}
+                      </div>
+                      <div className="text-sm text-gray-500 mt-1">
+                        {Math.round((module.correctAnswers / module.totalQuestions) * 100)}%
+                      </div>
+                    </div>
+                    {module.scaledScore !== undefined && (
+                      <div className="bg-white rounded-lg p-4 border">
+                        <h4 className="text-lg font-medium mb-2">Scaled Score</h4>
+                        <div className="text-3xl font-bold">
+                          {module.scaledScore}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+              <div className="mt-6">
+                <Button onClick={handleProceedToNextModule} className="w-full">
+                  {completedModules.size < (currentTest?.modules?.length || 0) 
+                    ? "Proceed to Next Module" 
+                    : "View Final Results"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </main>
+        <Footer />
       </div>
     );
   }

@@ -34,9 +34,10 @@ const Timer: React.FC<TimerProps> = ({ initialTime, onTimeUp }) => {
 
   const minutes = Math.floor(timeLeft / 60);
   const seconds = timeLeft % 60;
+  const isWarning = minutes <= 5;
 
   return (
-    <div className="text-[2rem] font-bold">
+    <div className={`text-[2rem] font-bold ${isWarning ? 'text-red-600 animate-pulse' : ''}`}>
       {String(minutes).padStart(2, '0')}:{String(seconds).padStart(2, '0')}
     </div>
   );

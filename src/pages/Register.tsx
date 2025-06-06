@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import Footer from "@/components/Footer";
+import AccessCodeGuard from "@/components/AccessCodeGuard";
 
 const Register = () => {
   const { signUp } = useAuth();
@@ -25,7 +26,7 @@ const Register = () => {
     setIsLoading(false);
   };
 
-  return (
+  const RegisterForm = () => (
     <div className="min-h-screen bg-white flex flex-col">
       <header className="flex justify-between items-center py-6 px-8 relative">
         <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate("/")}> 
@@ -79,6 +80,12 @@ const Register = () => {
       </main>
       <Footer />
     </div>
+  );
+
+  return (
+    <AccessCodeGuard accessCode="@SAT2025">
+      <RegisterForm />
+    </AccessCodeGuard>
   );
 };
 
