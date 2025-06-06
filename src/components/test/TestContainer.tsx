@@ -1,21 +1,20 @@
 import React, { useState, useEffect } from "react";
-import { QuestionData } from "@/components/Question";
-import Question from "@/components/Question";
-import ProgressBar from "@/components/ProgressBar";
-import TestNavigation from "./TestNavigation";
-import LineReader from "./LineReader";
-import { Button } from "@/components/ui/button";
-import { Flag, Calculator } from "lucide-react";
-import QuestionNavigator from "./QuestionNavigator";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Switch } from "@/components/ui/switch";
+import Question, { QuestionData, QuestionType } from '@/components/Question';
+import TestNavigation from './TestNavigation';
+import ProgressBar from '@/components/ProgressBar';
+import LineReader from './LineReader';
+import { Button } from '@/components/ui/button';
+import { Flag, Calculator } from 'lucide-react';
+import QuestionNavigator from './QuestionNavigator';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Switch } from '@/components/ui/switch';
 
 interface TestContainerProps {
   questions: QuestionData[];
   currentQuestionIndex: number;
   userAnswers: Record<string, string>;
-  onSelectOption: (questionId: string, answer: string) => void;
+  onSelectOption: (questionId: string, optionId: string) => void;
   onPreviousQuestion: () => void;
   onNextQuestion: () => void;
   onConfirmSubmit: () => void;
@@ -26,9 +25,11 @@ interface TestContainerProps {
   onToggleCrossOut: (questionId: string, optionId: string) => void;
   onOpenReviewPage: () => void;
   onSaveStatusChange?: (isSaving: boolean) => void;
+  showSubmitButton?: boolean;
+  onSubmit?: () => void;
 }
 
-const TestContainer: React.FC<TestContainerProps> = ({
+export const TestContainer: React.FC<TestContainerProps> = ({
   questions,
   currentQuestionIndex,
   userAnswers,
@@ -43,9 +44,14 @@ const TestContainer: React.FC<TestContainerProps> = ({
   onToggleCrossOut,
   onOpenReviewPage,
   onSaveStatusChange,
+  showSubmitButton = false,
+  onSubmit,
 }) => {
   const [showLineReader, setShowLineReader] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [selectedOption, setSelectedOption] = useState<string | null>(null);
+  const [textAnswer, setTextAnswer] = useState<string>("");
+  const [showExplanation, setShowExplanation] = useState(false);
 
   // Validate questions prop
   if (!Array.isArray(questions) || questions.length === 0) {
@@ -83,10 +89,26 @@ const TestContainer: React.FC<TestContainerProps> = ({
     }
   }, [userAnswers, onSaveStatusChange]);
 
-  const handleTextAnswerChange = (answer: string) => {
-    if (currentQuestion) {
+  useEffect(() => {
+    // Reset state when question changes
+    setSelectedOption(null);
+    setTextAnswer("");
+    setShowExplanation(false);
+  }, [currentQuestionIndex]);
+
+  const handleAnswerChange = (answer: string) => {
+    if (currentQuestion.question_type === QuestionType.TextInput) {
+      setTextAnswer(answer);
+      onSelectOption(currentQuestion.id, answer);
+    } else {
+      setSelectedOption(answer);
       onSelectOption(currentQuestion.id, answer);
     }
+  };
+
+  const handleTextAnswerChange = (value: string) => {
+    setTextAnswer(value);
+    onSelectOption(currentQuestion.id, value);
   };
 
   return (
@@ -149,12 +171,13 @@ const TestContainer: React.FC<TestContainerProps> = ({
               {currentQuestion && currentQuestion.module_type === "reading_writing" && (
                 <Question
                   question={currentQuestion}
-                  selectedOption={selectedAnswer}
-                  onSelectOption={(optionId) => onSelectOption(currentQuestion.id, optionId)}
+                  onAnswerChange={handleAnswerChange}
+                  selectedOption={selectedOption}
+                  textAnswer={textAnswer}
+                  onTextAnswerChange={handleTextAnswerChange}
+                  showExplanation={showExplanation}
                   crossedOutOptions={questionCrossedOuts}
                   onToggleCrossOut={(optionId) => onToggleCrossOut(currentQuestion.id, optionId)}
-                  textAnswer={selectedAnswer}
-                  onTextAnswerChange={handleTextAnswerChange}
                 />
               )}
             </CardContent>
@@ -165,7 +188,7 @@ const TestContainer: React.FC<TestContainerProps> = ({
           <Card>
             <CardHeader>
               <div className="flex justify-between items-center">
-              <CardTitle>Math Questions</CardTitle>
+                <CardTitle>Math Questions</CardTitle>
                 <Button
                   variant="outline"
                   size="sm"
@@ -180,12 +203,13 @@ const TestContainer: React.FC<TestContainerProps> = ({
               {currentQuestion && currentQuestion.module_type === "math" && (
                 <Question
                   question={currentQuestion}
-                  selectedOption={selectedAnswer}
-                  onSelectOption={(optionId) => onSelectOption(currentQuestion.id, optionId)}
+                  onAnswerChange={handleAnswerChange}
+                  selectedOption={selectedOption}
+                  textAnswer={textAnswer}
+                  onTextAnswerChange={handleTextAnswerChange}
+                  showExplanation={showExplanation}
                   crossedOutOptions={questionCrossedOuts}
                   onToggleCrossOut={(optionId) => onToggleCrossOut(currentQuestion.id, optionId)}
-                  textAnswer={selectedAnswer}
-                  onTextAnswerChange={handleTextAnswerChange}
                 />
               )}
             </CardContent>
@@ -198,7 +222,8 @@ const TestContainer: React.FC<TestContainerProps> = ({
         totalQuestions={questions.length}
         onPrevious={onPreviousQuestion}
         onNext={onNextQuestion}
-        onSubmit={onConfirmSubmit}
+        showSubmitButton={showSubmitButton}
+        onSubmit={onSubmit}
       />
       
       <div className="mt-8">

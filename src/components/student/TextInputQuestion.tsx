@@ -1,77 +1,55 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { QuestionData } from '@/components/Question';
-import { Question } from '@/components/admin/questions/types';
 
 interface TextInputQuestionProps {
-  question: Question;
-  onAnswerChange: (answer: string) => void;
-  userAnswer?: string;
+  question: QuestionData;
+  value?: string;
+  onChange?: (value: string) => void;
+  onAnswerChange?: (value: string) => void;
+  disabled?: boolean;
   isSubmitted?: boolean;
 }
 
-const TextInputQuestion: React.FC<TextInputQuestionProps> = ({
+export const TextInputQuestion: React.FC<TextInputQuestionProps> = ({
   question,
+  value,
+  onChange,
   onAnswerChange,
-  userAnswer = '',
+  disabled = false,
   isSubmitted = false
 }) => {
-  const [answer, setAnswer] = useState(userAnswer);
+  const [answer, setAnswer] = useState(value || '');
+
+  useEffect(() => {
+    if (value !== undefined) {
+      setAnswer(value);
+    }
+  }, [value]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newAnswer = e.target.value;
-    setAnswer(newAnswer);
-    onAnswerChange(newAnswer);
+    const newValue = e.target.value;
+    setAnswer(newValue);
+    onChange?.(newValue);
+    onAnswerChange?.(newValue);
   };
-
-  const isCorrect = isSubmitted && question.correct_answer
-    ? question.correct_answer
-        .split(',')
-        .map(a => a.trim().toLowerCase())
-        .includes(answer.trim().toLowerCase())
-    : false;
 
   return (
     <div className="space-y-4">
-      <div className="space-y-2">
-        <input
-          type="text"
-          value={answer}
-          onChange={handleChange}
-          className="w-full p-2 border rounded-md"
-          placeholder="Type your answer here"
-          disabled={isSubmitted}
-        />
-        
-        {isSubmitted && (
-          <div className={`p-2 rounded-md ${isCorrect ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-            {isCorrect ? (
-              <p>Correct!</p>
-            ) : (
-              <div>
-                <p>Incorrect. The correct answer(s) {question.correct_answer?.split(',').length === 1 ? 'is' : 'are'}:</p>
-                <ul className="list-disc list-inside">
-                  {question.correct_answer?.split(',').map((ans, index) => (
-                    <li key={index}>{ans.trim()}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        )}
-        
-        {isSubmitted && question.explanation && (
-          <div className="mt-4 p-4 bg-gray-50 rounded-md">
-            <h4 className="font-semibold mb-2">Explanation:</h4>
-            <div 
-              className="prose prose-sm max-w-none"
-              dangerouslySetInnerHTML={{ __html: question.explanation }}
-            />
-          </div>
-        )}
-      </div>
+      <Input
+        type="text"
+        value={answer}
+        onChange={handleChange}
+        placeholder="Enter your answer"
+        disabled={disabled}
+        className="w-full"
+      />
+      {isSubmitted && question.correct_answer && (
+        <div className="mt-2 text-sm">
+          <span className="font-medium">Correct answer: </span>
+          {question.correct_answer}
+        </div>
+      )}
     </div>
   );
-};
-
-export default TextInputQuestion; 
+}; 

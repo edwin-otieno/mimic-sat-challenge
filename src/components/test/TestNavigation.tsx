@@ -1,4 +1,3 @@
-
 import React from "react";
 import { Button } from "@/components/ui/button";
 
@@ -8,6 +7,7 @@ interface TestNavigationProps {
   onPrevious: () => void;
   onNext: () => void;
   onSubmit: () => void;
+  showSubmitButton?: boolean;
 }
 
 const TestNavigation: React.FC<TestNavigationProps> = ({
@@ -16,6 +16,7 @@ const TestNavigation: React.FC<TestNavigationProps> = ({
   onPrevious,
   onNext,
   onSubmit,
+  showSubmitButton = false,
 }) => {
   const isFirstQuestion = currentQuestionIndex === 0;
   const isLastQuestion = currentQuestionIndex === totalQuestions - 1;
@@ -30,7 +31,7 @@ const TestNavigation: React.FC<TestNavigationProps> = ({
         Previous
       </Button>
       
-      {isLastQuestion ? (
+      {isLastQuestion && showSubmitButton ? (
         <Button onClick={onSubmit}>
           Submit Test
         </Button>

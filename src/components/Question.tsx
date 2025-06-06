@@ -2,12 +2,15 @@ import React from "react";
 import { cn } from "@/lib/utils";
 import { X } from "lucide-react";
 import { QuestionType } from '@/components/admin/questions/types';
-import TextInputQuestion from '@/components/student/TextInputQuestion';
+import { TextInputQuestion } from '@/components/student/TextInputQuestion';
+import { renderFormattedText } from '@/lib/utils';
+
+export { QuestionType };
 
 export interface QuestionOption {
   id: string;
   text: string;
-  isCorrect: boolean;
+  is_correct: boolean;
 }
 
 export interface QuestionData {
@@ -19,79 +22,36 @@ export interface QuestionData {
   module_type?: "reading_writing" | "math";
   question_type: QuestionType;
   correct_answer?: string;
+  test_id?: string;
+  question_order?: number;
 }
 
 interface QuestionProps {
   question: QuestionData;
-  selectedOption: string | null;
-  onSelectOption: (optionId: string) => void;
-  showExplanation?: boolean;
+  onAnswerChange: (answer: string) => void;
+  selectedOption?: string;
   textAnswer?: string;
   onTextAnswerChange?: (value: string) => void;
+  showExplanation?: boolean;
   crossedOutOptions?: string[];
   onToggleCrossOut?: (optionId: string) => void;
 }
 
-const Question = ({
+const Question: React.FC<QuestionProps> = ({
   question,
+  onAnswerChange,
   selectedOption,
-  onSelectOption,
-  showExplanation = false,
-  textAnswer = "",
+  textAnswer,
   onTextAnswerChange,
+  showExplanation = false,
   crossedOutOptions = [],
   onToggleCrossOut,
-}: QuestionProps) => {
+}) => {
   const handleOptionClick = (optionId: string) => {
-    onSelectOption(optionId);
+    onAnswerChange(optionId);
   };
   
   const letters = ["A", "B", "C", "D", "E"];
-
-  // Function to render text with basic formatting
-  const renderFormattedText = (text: string) => {
-    if (!text) return null;
-    
-    // Split text into paragraphs (double line breaks)
-    const paragraphs = text.split(/\n\s*\n/);
-    
-    return paragraphs.map((paragraph, pIndex) => {
-      // Split paragraph into lines
-      const lines = paragraph.split('\n');
-      
-      const formattedLines = lines.map((line, index) => {
-        // Check if line is a list item
-        if (line.trim().startsWith('- ')) {
-          return (
-            <li key={index} className="ml-4">
-              <div dangerouslySetInnerHTML={{ __html: line.substring(2) }} />
-            </li>
-          );
-        }
-        // Check if line is a numbered list item
-        if (/^\d+\.\s/.test(line)) {
-          return (
-            <li key={index} className="ml-4">
-              <div dangerouslySetInnerHTML={{ __html: line.substring(line.indexOf('.') + 2) }} />
-            </li>
-          );
-        }
-        // Regular text with HTML formatting
-        return <div key={index} className="mb-2" dangerouslySetInnerHTML={{ __html: line }} />;
-      });
-
-      // Wrap list items in a ul element if needed
-      const hasListItems = lines.some(line => 
-        line.trim().startsWith('- ') || /^\d+\.\s/.test(line)
-      );
-
-      if (hasListItems) {
-        return <ul key={pIndex} className="mb-4">{formattedLines}</ul>;
-      }
-
-      return <div key={pIndex} className="mb-4">{formattedLines}</div>;
-    });
-  };
 
   if (question.question_type === QuestionType.TextInput) {
     return (
@@ -112,9 +72,12 @@ const Question = ({
           </div>
         </div>
         <TextInputQuestion
+          question={question}
           value={textAnswer}
           onChange={onTextAnswerChange}
+          onAnswerChange={onAnswerChange}
           disabled={showExplanation}
+          isSubmitted={showExplanation}
         />
       </div>
     );
@@ -149,7 +112,7 @@ const Question = ({
                   "question-option flex items-start",
                   selectedOption === option.id && "selected",
                   isCrossedOut && "opacity-60",
-                  showExplanation && option.isCorrect && "border-green-500 bg-green-50"
+                  showExplanation && option.is_correct && "border-green-500 bg-green-50"
                 )}
                 onClick={() => handleOptionClick(option.id)}
               >

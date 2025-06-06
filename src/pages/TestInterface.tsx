@@ -556,6 +556,9 @@ const TestInterface = () => {
     }
   };
 
+  // Modify the TestContainer props to conditionally show submit button
+  const showSubmitButton = completedModules.size === (currentTest?.modules?.length || 0);
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -610,30 +613,36 @@ const TestInterface = () => {
               <CardTitle>Module Results</CardTitle>
             </CardHeader>
             <CardContent>
-              {currentModuleScores.map((module) => (
-                <div key={module.moduleId} className="mb-6">
-                  <h3 className="text-xl font-semibold mb-2">{module.moduleName}</h3>
-                  <div className="grid md:grid-cols-2 gap-4">
-                    <div className="bg-white rounded-lg p-4 border">
-                      <h4 className="text-lg font-medium mb-2">Raw Score</h4>
-                      <div className="text-3xl font-bold">
-                        {module.correctAnswers} / {module.totalQuestions}
-                      </div>
-                      <div className="text-sm text-gray-500 mt-1">
-                        {Math.round((module.correctAnswers / module.totalQuestions) * 100)}%
+              {currentModuleScores.map((module) => {
+                // Only show the current module's results
+                if (module.moduleId === selectedModule) {
+                  return (
+                    <div key={module.moduleId} className="mb-6">
+                      <h3 className="text-xl font-semibold mb-2">{module.moduleName}</h3>
+                      <div className="grid md:grid-cols-2 gap-4">
+                        <div className="bg-white rounded-lg p-4 border">
+                          <h4 className="text-lg font-medium mb-2">Raw Score</h4>
+                          <div className="text-3xl font-bold">
+                            {module.correctAnswers} / {module.totalQuestions}
+                          </div>
+                          <div className="text-sm text-gray-500 mt-1">
+                            {Math.round((module.correctAnswers / module.totalQuestions) * 100)}%
+                          </div>
+                        </div>
+                        {module.scaledScore !== undefined && (
+                          <div className="bg-white rounded-lg p-4 border">
+                            <h4 className="text-lg font-medium mb-2">Scaled Score</h4>
+                            <div className="text-3xl font-bold">
+                              {module.scaledScore}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
-                    {module.scaledScore !== undefined && (
-                      <div className="bg-white rounded-lg p-4 border">
-                        <h4 className="text-lg font-medium mb-2">Scaled Score</h4>
-                        <div className="text-3xl font-bold">
-                          {module.scaledScore}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
+                  );
+                }
+                return null;
+              })}
               <div className="mt-6">
                 <Button onClick={handleProceedToNextModule} className="w-full">
                   {completedModules.size < (currentTest?.modules?.length || 0) 
@@ -644,7 +653,6 @@ const TestInterface = () => {
             </CardContent>
           </Card>
         </main>
-        <Footer />
       </div>
     );
   }
@@ -700,6 +708,7 @@ const TestInterface = () => {
             onGoToQuestion={handleGoToQuestion}
             onSubmitTest={handleSubmitTest}
             onCancel={() => setShowReviewPage(false)}
+            showSubmitButton={showSubmitButton}
           />
         ) : (
           <TestContainer
@@ -717,6 +726,7 @@ const TestInterface = () => {
             onToggleCrossOut={handleToggleCrossOut}
             onOpenReviewPage={handleOpenReviewPage}
             onSaveStatusChange={setIsSaving}
+            showSubmitButton={showSubmitButton}
           />
         )}
       </main>
