@@ -7,11 +7,11 @@ const Footer = () => (
       <nav className="flex flex-col md:flex-row gap-4 text-[#1a3c7c] font-semibold text-base items-center md:items-start md:mb-0 mb-4">
         <a href="/" className="hover:underline">Sat Tests</a>
         <a href="#" className="hover:underline">ACT Tests</a>
-        <a href="https://tutorsacrossamerica.com/contact/" target="_blank" className="hover:underline">Contact Us</a>
+        <a href="https://taatesting.com/#contact-form/" className="hover:underline">Contact Us</a>
         <a href="https://tutorsacrossamerica.com/faqs/faq-students/" target="_blank" className="hover:underline">FAQ's</a>
       </nav>
-      <span className="flex items-center text-[#1a3c7c] text-base font-medium"><img src="/icons/phone.png" alt="Phone" className="w-4 h-4 inline-block mr-1" />(702) 818-5444</span>
-      <span className="flex items-center text-[#1a3c7c] text-base font-medium"><img src="/icons/email.png" alt="Email" className="w-4 h-4 inline-block mr-1" />Staff@TutorsAcrossAmerica.com</span>
+      <span className="flex items-center text-[#1a3c7c] text-base font-medium"><img src="/icons/phone.png" alt="Phone" className="w-4 h-4 inline-block mr-1" /><a href="tel:702-818-5444">(702) 818-5444</a></span>
+      <span className="flex items-center text-[#1a3c7c] text-base font-medium"><img src="/icons/email.png" alt="Email" className="w-4 h-4 inline-block mr-1" /><a href="mailto:staff@tutorsacrossamerica.com">Staff@TutorsAcrossAmerica.com</a></span>
     </div>
   </footer>
 );

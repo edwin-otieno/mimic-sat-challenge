@@ -42,7 +42,7 @@ const Index = () => {
         <nav className="hidden md:flex flex-row gap-4 text-[#1a3c7c] font-semibold text-base">
           <a href="/login" className="hover:underline">Sat Tests</a>
           <a href="#" className="hover:underline">ACT Tests</a>
-          <a href="https://tutorsacrossamerica.com/contact/" target="_blank" className="hover:underline">Contact Us</a>
+          <a href="#contact-form" className="hover:underline">Contact Us</a>
           <a href="https://tutorsacrossamerica.com/faqs/faq-students/" target="_blank" className="hover:underline">FAQ's</a>
         </nav>
         {/* Hamburger for mobile */}
@@ -56,7 +56,7 @@ const Index = () => {
           <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-lg shadow-lg z-50 flex flex-col p-4 md:hidden animate-fade-in">
             <a href="/login" className="py-2 px-3 text-[#1a3c7c] hover:underline" onClick={() => setMenuOpen(false)}>Sat Tests</a>
             <a href="#" className="py-2 px-3 text-[#1a3c7c] hover:underline" onClick={() => setMenuOpen(false)}>ACT Tests</a>
-            <a href="https://tutorsacrossamerica.com/contact/" target="_blank" className="py-2 px-3 text-[#1a3c7c] hover:underline" onClick={() => setMenuOpen(false)}>Contact Us</a>
+            <a href="#contact-form" className="py-2 px-3 text-[#1a3c7c] hover:underline" onClick={() => setMenuOpen(false)}>Contact Us</a>
             <a href="https://tutorsacrossamerica.com/faqs/faq-students/" target="_blank" className="py-2 px-3 text-[#1a3c7c] hover:underline" onClick={() => setMenuOpen(false)}>FAQ's</a>
           </div>
         )}
@@ -107,13 +107,13 @@ const Index = () => {
                   <img src="/lovable-uploads/contact-students.jpg" alt="Contact" className="rounded-xl w-full md:w-80 h-48 md:h-60 object-cover shadow-md mb-4 md:mb-0 md:-ml-16 md:z-10" style={{ marginTop: 0 }} />
                   <div className="w-full md:w-1/2 md:pl-4">
                     <p className="text-gray-700 text-base mb-2" style={{fontSize: "20px"}}>We're here to help! If you're looking for our main page, visit us at: <span className="font-bold"><a href="https://tutorsacrossamerica.com" target="_blank" rel="noopener noreferrer">TutorsAcrossAmerica.com</a></span></p>
-                    <p className="text-gray-700 text-base mb-2" style={{fontSize: "20px"}}>If you need help with taking your practice tests, ask your teacher/TA, or reach out to us at: <span className="font-bold">702-818-5444, staff@TutorsAcrossAmerica.com</span>, or by using the Contact form here. Thanks!</p>
+                    <p className="text-gray-700 text-base mb-2" style={{fontSize: "20px"}}>If you need help with taking your practice tests, ask your teacher/TA, or reach out to us at: <span className="font-bold"><a href="tel:702-818-5444">702-818-5444</a>, <a href="mailto:staff@tutorsacrossamerica.com">staff@TutorsAcrossAmerica.com</a></span>, or by using the Contact form here. Thanks!</p>
                   </div>
                 </div>
               </div>
             </div>
             {/* Right: Form */}
-            <div className="md:w-1/2 flex flex-col gap-3 w-full max-w-md md:w-96 md:ml-auto justify-center">
+            <div className="md:w-1/2 flex flex-col gap-3 w-full max-w-md md:w-96 md:ml-auto justify-center" id="contact-form">
               <form className="flex flex-col gap-3 mt-2 w-full" ref={contactFormRef} onSubmit={handleContactSubmit}>
                 <input name="name" type="text" placeholder="Name:" className="rounded-full border border-gray-300 px-5 py-3 text-base focus:outline-none focus:ring-2 focus:ring-[#1a3c7c]" />
                 <input name="email" type="email" placeholder="Email:" className="rounded-full border border-gray-300 px-5 py-3 text-base focus:outline-none focus:ring-2 focus:ring-[#1a3c7c]" />

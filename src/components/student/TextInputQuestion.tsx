@@ -34,6 +34,16 @@ export const TextInputQuestion: React.FC<TextInputQuestionProps> = ({
     onAnswerChange?.(newValue);
   };
 
+  const isCorrect = isSubmitted && question.correct_answer
+    ? question.correct_answer
+        .split(';')
+        .map(a => a.trim().toLowerCase())
+        .some(correctAnswer => {
+          const userAnswer = answer.trim().toLowerCase();
+          return userAnswer === correctAnswer;
+        })
+    : false;
+
   return (
     <div className="space-y-4">
       <Input
@@ -44,10 +54,22 @@ export const TextInputQuestion: React.FC<TextInputQuestionProps> = ({
         disabled={disabled}
         className="w-full"
       />
-      {isSubmitted && question.correct_answer && (
-        <div className="mt-2 text-sm">
-          <span className="font-medium">Correct answer: </span>
-          {question.correct_answer}
+      {isSubmitted && (
+        <div className={`mt-2 p-3 rounded-md ${isCorrect ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
+          <div className="mb-2">
+            <span className="font-medium">Your answer: </span>
+            {answer || '(no answer provided)'}
+          </div>
+          {question.correct_answer && (
+            <div>
+              <p className="font-medium">Correct answer{question.correct_answer.split(';').length === 1 ? ' is' : 's are'}:</p>
+              <ul className="list-disc list-inside mt-1">
+                {question.correct_answer.split(';').map((ans, index) => (
+                  <li key={index}>{ans.trim()}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -67,6 +67,13 @@ export const TestContainer: React.FC<TestContainerProps> = ({
   const isQuestionFlagged = currentQuestion ? flaggedQuestions.has(currentQuestion.id) : false;
   const questionCrossedOuts = currentQuestion ? crossedOutOptions[currentQuestion.id] || [] : [];
 
+  // Initialize text answer from user's saved answer
+  useEffect(() => {
+    if (currentQuestion?.question_type === QuestionType.TextInput) {
+      setTextAnswer(userAnswers[currentQuestion.id] || '');
+    }
+  }, [currentQuestion, userAnswers]);
+
   // Group questions by module type
   const readingWritingQuestions = questions.filter(q => q.module_type === "reading_writing");
   const mathQuestions = questions.filter(q => q.module_type === "math");
@@ -92,7 +99,7 @@ export const TestContainer: React.FC<TestContainerProps> = ({
   useEffect(() => {
     // Reset state when question changes
     setSelectedOption(null);
-    setTextAnswer("");
+    // Don't reset textAnswer here as it's managed by the parent
     setShowExplanation(false);
   }, [currentQuestionIndex]);
 
