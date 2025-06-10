@@ -7,15 +7,26 @@ import Footer from "@/components/Footer";
 
 const Index = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, signIn } = useAuth();
   const contactFormRef = useRef<HTMLFormElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
   // If user is logged in, redirect to dashboard
   if (user) {
     navigate("/dashboard");
     return null;
   }
+
+  // Login handler
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    await signIn(loginEmail, loginPassword);
+    setIsLoading(false);
+  };
 
   // Contact form handler
   const handleContactSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -82,14 +93,34 @@ const Index = () => {
           </div>
             {/* Right: Form */}
             <div className="md:w-1/2 flex flex-col gap-3 w-full max-w-md md:w-96 md:ml-auto justify-center">
-              <input type="text" placeholder="Username, email" className="rounded-full border border-gray-300 px-5 py-3 text-base focus:outline-none focus:ring-2 focus:ring-[#1a3c7c]" />
-              <input type="password" placeholder="Password" className="rounded-full border border-gray-300 px-5 py-3 text-base focus:outline-none focus:ring-2 focus:ring-[#1a3c7c]" />
-              <button onClick={() => navigate("/login")}
-                className="bg-[#1a3c7c] text-white font-semibold rounded-full px-6 py-3 text-lg shadow hover:bg-[#17407c] transition w-full mt-2">
-                Login
-              </button>
-              <button onClick={() => navigate("/register")}
-                className="bg-[#e74c3c] text-white font-normal rounded-full px-6 py-3 text-lg shadow hover:bg-[#c0392b] transition w-full" style={{width: "60%", marginLeft: "auto", marginRight: "auto"}}>
+              <form onSubmit={handleLogin} className="flex flex-col gap-3">
+                <input 
+                  type="text" 
+                  placeholder="Username, email" 
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  className="rounded-full border border-gray-300 px-5 py-3 text-base focus:outline-none focus:ring-2 focus:ring-[#1a3c7c]" 
+                />
+                <input 
+                  type="password" 
+                  placeholder="Password" 
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  className="rounded-full border border-gray-300 px-5 py-3 text-base focus:outline-none focus:ring-2 focus:ring-[#1a3c7c]" 
+                />
+                <button 
+                  type="submit"
+                  disabled={isLoading}
+                  className="bg-[#1a3c7c] text-white font-semibold rounded-full px-6 py-3 text-lg shadow hover:bg-[#17407c] transition w-full mt-2"
+                >
+                  {isLoading ? "Signing In..." : "Login"}
+                </button>
+              </form>
+              <button 
+                onClick={() => navigate("/register")}
+                className="bg-[#e74c3c] text-white font-normal rounded-full px-6 py-3 text-lg shadow hover:bg-[#c0392b] transition w-full" 
+                style={{width: "60%", marginLeft: "auto", marginRight: "auto"}}
+              >
                 Create an Account
               </button>
             </div>
