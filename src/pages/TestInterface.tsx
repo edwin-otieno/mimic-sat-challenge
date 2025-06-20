@@ -270,8 +270,12 @@ const TestInterface = () => {
       const userAnswer = userAnswers[question.id];
       if (userAnswer) {
         if (question.question_type === QuestionType.TextInput) {
-          // For text input questions, check if the answer matches exactly
-          if (userAnswer.toLowerCase() === question.correct_answer?.toLowerCase()) {
+          // For text input questions, check if the answer matches any correct answer (split by ';')
+          if (
+            question.correct_answer?.split(';')
+              .map(a => a.trim().toLowerCase())
+              .some(correctAnswer => userAnswer.trim().toLowerCase() === correctAnswer)
+          ) {
             modules[moduleType].correctAnswers++;
           }
         } else {
@@ -423,7 +427,12 @@ const TestInterface = () => {
         const userAnswer = userAnswers[question.id];
         if (userAnswer) {
           if (question.question_type === QuestionType.TextInput) {
-            if (userAnswer.toLowerCase() === question.correct_answer?.toLowerCase()) {
+            // For text input questions, check if the answer matches any correct answer (split by ';')
+            if (
+              question.correct_answer?.split(';')
+                .map(a => a.trim().toLowerCase())
+                .some(correctAnswer => userAnswer.trim().toLowerCase() === correctAnswer)
+            ) {
               correctAnswers++;
             }
           } else {

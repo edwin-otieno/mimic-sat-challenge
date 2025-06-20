@@ -30,7 +30,7 @@ const QuestionReview: React.FC<QuestionReviewProps> = ({ questions, userAnswers 
             const isCorrect = question.correct_answer
               ?.split(';')
               .map(a => a.trim().toLowerCase())
-              .some(correctAnswer => userAnswerId.toLowerCase() === correctAnswer);
+              .some(correctAnswer => userAnswerId.trim().toLowerCase() === correctAnswer);
             
             resultIndicator = (
               <div className={`mb-2 ${isCorrect ? 'text-green-600' : 'text-red-500'}`}>

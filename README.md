@@ -1,8 +1,6 @@
 # Tutors Across America SAT app
 
-## Project info
-
-**URL**: https://lovable.dev/projects/f20a87e1-6268-403a-b29e-b4d05965df14
+Custom-built SAT app for Tutors Across America with the following features; Line reader, ability for students to pause timer, ability for students to cross out wrong answers, question navigator, auto-save, student can start with whichever module they prefer, custom scoring feature, external calculator form Math module.
 
 ## How can I edit this code?
 
@@ -18,13 +16,13 @@ Follow these steps:
 
 ```sh
 # Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+git clone https://github.com/edwin-otieno/mimic-sat-challenge/
 
 # Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+cd mimic-sat-challenge
 
 # Step 3: Install the necessary dependencies.
-npm i
+npm install
 
 # Step 4: Start the development server with auto-reloading and an instant preview.
 npm run dev
