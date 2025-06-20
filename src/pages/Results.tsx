@@ -115,15 +115,6 @@ const Results = () => {
     fetchResults();
   }, [user]);
   
-  // If no results data and no saved results, redirect to dashboard
-  if (!state && savedResults.length === 0) {
-    React.useEffect(() => {
-      navigate("/dashboard");
-    }, [navigate]);
-    
-    return null;
-  }
-  
   // Calculate total scaled score from module scores
   const calculateTotalScaledScore = (moduleScores: ModuleScore[]) => {
     if (!state.scaledScoring || state.scaledScoring.length === 0) {
