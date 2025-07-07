@@ -8,6 +8,7 @@ interface TestDialogsProps {
   showTimeUpDialog: boolean;
   setShowTimeUpDialog: (show: boolean) => void;
   onSubmitTest: () => void;
+  onDiscardTest: () => void;
 }
 
 const TestDialogs: React.FC<TestDialogsProps> = ({
@@ -16,6 +17,7 @@ const TestDialogs: React.FC<TestDialogsProps> = ({
   showTimeUpDialog,
   setShowTimeUpDialog,
   onSubmitTest,
+  onDiscardTest,
 }) => {
   return (
     <>
@@ -43,7 +45,13 @@ const TestDialogs: React.FC<TestDialogsProps> = ({
       </Dialog>
       
       {/* Time Up Dialog */}
-      <Dialog open={showTimeUpDialog} onOpenChange={setShowTimeUpDialog}>
+      <Dialog 
+        open={showTimeUpDialog} 
+        onOpenChange={(open) => {
+          setShowTimeUpDialog(open);
+          if (!open) onDiscardTest();
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Time's Up!</DialogTitle>

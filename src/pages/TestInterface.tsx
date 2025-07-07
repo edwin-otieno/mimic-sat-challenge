@@ -1041,6 +1041,10 @@ const TestInterface = () => {
         showTimeUpDialog={showTimeUpDialog}
         setShowTimeUpDialog={setShowTimeUpDialog}
         onSubmitTest={handleSubmitTest}
+        onDiscardTest={async () => {
+          await clearTestState();
+          navigate('/dashboard');
+        }}
       />
       <Footer />
     </div>
