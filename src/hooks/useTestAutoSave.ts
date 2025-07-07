@@ -10,33 +10,58 @@ interface SavedTestState {
   testStartTime: Date;
   currentModuleStartTime: Date;
   currentModuleTimeLeft: number;
+  // Timer-related states
+  currentPartTimeLeft: number;
+  timerRunning: boolean;
+  currentPart: { [moduleType: string]: 1 | 2 };
+  selectedModule: string | null;
+  partTimes: { [moduleType: string]: number };
+  // Module-related states
+  showModuleSelection: boolean;
+  completedModules: Set<string>;
+  showModuleScores: boolean;
+  showPartTransition: boolean;
 }
 
 export const useTestAutoSave = (permalink: string) => {
   const { user } = useAuth();
   const [isRestoring, setIsRestoring] = useState(false);
 
-  const saveTestState = async (state: SavedTestState) => {
-    if (!user || !permalink) return;
+  const saveTestState = async (state: SavedTestState): Promise<void> => {
+    console.log('saveTestState called with state:', state);
+    if (!user || !permalink) {
+      console.log('No user or permalink, returning early');
+      return;
+    }
 
     try {
+      console.log('Preparing to save state to database...');
+      const stateToSave = {
+        ...state,
+        flaggedQuestions: Array.from(state.flaggedQuestions),
+        completedModules: Array.from(state.completedModules),
+        testStartTime: state.testStartTime.toISOString(),
+        currentModuleStartTime: state.currentModuleStartTime.toISOString()
+      };
+      console.log('State prepared for database:', stateToSave);
+      
       const { error } = await supabase
         .from('test_states')
         .upsert({
           user_id: user.id,
           test_permalink: permalink,
-          state: {
-            ...state,
-            flaggedQuestions: Array.from(state.flaggedQuestions),
-            testStartTime: state.testStartTime.toISOString(),
-            currentModuleStartTime: state.currentModuleStartTime.toISOString()
-          },
+          state: stateToSave,
           updated_at: new Date().toISOString()
         });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error from supabase:', error);
+        throw error;
+      }
+      console.log('State saved successfully to database');
     } catch (error) {
       console.error('Error saving test state:', error);
+      throw error;
     }
   };
 
@@ -59,6 +84,7 @@ export const useTestAutoSave = (permalink: string) => {
         return {
           ...data.state,
           flaggedQuestions: new Set(data.state.flaggedQuestions),
+          completedModules: new Set(data.state.completedModules),
           testStartTime: new Date(data.state.testStartTime),
           currentModuleStartTime: new Date(data.state.currentModuleStartTime)
         };
@@ -71,7 +97,7 @@ export const useTestAutoSave = (permalink: string) => {
     }
   };
 
-  const clearTestState = async () => {
+  const clearTestState = async (): Promise<void> => {
     if (!user || !permalink) return;
 
     try {
@@ -82,8 +108,10 @@ export const useTestAutoSave = (permalink: string) => {
         .eq('test_permalink', permalink);
 
       if (error) throw error;
+      console.log('Test state cleared successfully');
     } catch (error) {
       console.error('Error clearing test state:', error);
+      throw error; // Re-throw the error so the caller can handle it
     }
   };
 

@@ -33,7 +33,7 @@ const TestNavigation: React.FC<TestNavigationProps> = ({
       
       {isLastQuestion && showSubmitButton ? (
         <Button onClick={onSubmit}>
-          Submit Test
+          Submit Module
         </Button>
       ) : (
         <Button onClick={onNext}>

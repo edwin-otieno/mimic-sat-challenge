@@ -30,7 +30,7 @@ const convertDbQuestionToQuestionData = (
       .map(option => ({
         id: option.id,
         text: option.text,
-        isCorrect: option.is_correct
+        is_correct: option.is_correct
       }))
   };
 };

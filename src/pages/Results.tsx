@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import Header from "@/components/Header";
@@ -64,12 +64,23 @@ const Results = () => {
   const [savedResults, setSavedResults] = useState<SavedTestResults[]>([]);
   const [selectedResult, setSelectedResult] = useState<string | null>(null);
   const [viewingHistory, setViewingHistory] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
   
   const state = location.state as ResultsState;
+  
+  // Set initial load to false after a brief moment to ensure smooth transition
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsInitialLoad(false);
+    }, 50);
+    return () => clearTimeout(timer);
+  }, []);
   
   const fetchResults = async () => {
     if (!user) return;
     
+    setIsLoadingHistory(true);
     try {
       // Fetch user's test results
       const { data: testResults, error: testError } = await supabase
@@ -107,13 +118,19 @@ const Results = () => {
       }
     } catch (error) {
       console.error('Error fetching results:', error);
+    } finally {
+      setIsLoadingHistory(false);
     }
   };
   
-  // Fetch results when component mounts and user is available
-  useEffect(() => {
-    fetchResults();
-  }, [user]);
+  // Only fetch results when user explicitly wants to view history
+  const toggleHistory = async () => {
+    if (!viewingHistory && savedResults.length === 0) {
+      // First time viewing history, fetch the data
+      await fetchResults();
+    }
+    setViewingHistory(!viewingHistory);
+  };
   
   // Calculate total scaled score from module scores
   const calculateTotalScaledScore = (moduleScores: ModuleScore[]) => {
@@ -141,11 +158,6 @@ const Results = () => {
     return closestLower ? closestLower.scaled_score : sortedScoring[sortedScoring.length - 1].scaled_score;
   };
   
-  // Toggle between current result and history
-  const toggleHistory = () => {
-    setViewingHistory(!viewingHistory);
-  };
-  
   let content;
   
   if (!state || viewingHistory) {
@@ -163,7 +175,12 @@ const Results = () => {
           )}
         </div>
         
-        {savedResults.length > 0 ? (
+        {isLoadingHistory ? (
+          <div className="text-center py-8">
+            <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+            <p className="text-gray-500">Loading test history...</p>
+          </div>
+        ) : savedResults.length > 0 ? (
           <div className="space-y-6">
             <Card>
               <CardHeader>
@@ -221,9 +238,6 @@ const Results = () => {
                                 <div className="text-3xl font-bold">
                                   {module.score} / {module.total}
                                 </div>
-                                <div className="text-sm text-gray-500 mt-1">
-                                  {Math.round((module.score / module.total) * 100)}%
-                                </div>
                               </div>
                               
                               {module.scaled_score !== null && (
@@ -264,6 +278,13 @@ const Results = () => {
     // Show current test result
     const { score, total, answers, questions, moduleScores } = state;
     
+    // Memoize calculated values to prevent unnecessary recalculations
+    const memoizedScaledScore = useMemo(() => {
+      return state.overallScaledScore || (state.scaledScoring ? calculateTotalScaledScore(moduleScores || []) : null);
+    }, [state.overallScaledScore, state.scaledScoring, moduleScores]);
+    
+    const answeredCount = useMemo(() => Object.keys(answers).length, [answers]);
+    
     content = (
       <>
         <ResultsHeader />
@@ -274,70 +295,76 @@ const Results = () => {
           </Button>
         </div>
         
-        <div className="grid md:grid-cols-2 gap-6 mb-10">
-          <ScoreCard 
-            score={score} 
-            total={total} 
-            scaledScoring={state.scaledScoring}
-            scaledScore={state.overallScaledScore || (state.scaledScoring ? calculateTotalScaledScore(moduleScores || []) : null)} 
-          />
-          <SummaryCard 
-            score={score} 
-            total={total} 
-            answeredCount={Object.keys(answers).length} 
-          />
-        </div>
-        
-        {moduleScores && moduleScores.length > 0 && (
-          <Card className="mb-10">
-            <CardHeader>
-              <CardTitle>Module Scores</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Tabs defaultValue={moduleScores[0].moduleId}>
-                <TabsList className="mb-4">
-                  {moduleScores.map(module => (
-                    <TabsTrigger key={module.moduleId} value={module.moduleId}>
-                      {module.moduleName}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-                
-                {moduleScores.map(module => (
-                  <TabsContent key={module.moduleId} value={module.moduleId}>
-                    <div className="grid md:grid-cols-2 gap-4">
-                      <div className="bg-white rounded-lg p-4 border">
-                        <h3 className="text-lg font-medium mb-2">{module.moduleName} Score</h3>
-                        <div className="text-3xl font-bold">
-                          {module.correctAnswers} / {module.totalQuestions}
+        {isInitialLoad ? (
+          <div className="text-center py-8">
+            <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+            <p className="text-gray-500">Loading your results...</p>
+          </div>
+        ) : (
+          <>
+            <div className="grid md:grid-cols-2 gap-6 mb-10">
+              <ScoreCard 
+                score={score} 
+                total={total} 
+                scaledScoring={state.scaledScoring}
+                scaledScore={memoizedScaledScore} 
+              />
+              <SummaryCard 
+                score={score} 
+                total={total} 
+                answeredCount={answeredCount} 
+              />
+            </div>
+            
+            {moduleScores && moduleScores.length > 0 && (
+              <Card className="mb-10">
+                <CardHeader>
+                  <CardTitle>Module Scores</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Tabs defaultValue={moduleScores[0].moduleId}>
+                    <TabsList className="mb-4">
+                      {moduleScores.map(module => (
+                        <TabsTrigger key={module.moduleId} value={module.moduleId}>
+                          {module.moduleName}
+                        </TabsTrigger>
+                      ))}
+                    </TabsList>
+                    
+                    {moduleScores.map(module => (
+                      <TabsContent key={module.moduleId} value={module.moduleId}>
+                        <div className="grid md:grid-cols-2 gap-4">
+                          <div className="bg-white rounded-lg p-4 border">
+                            <h3 className="text-lg font-medium mb-2">{module.moduleName} Score</h3>
+                            <div className="text-3xl font-bold">
+                              {module.correctAnswers} / {module.totalQuestions}
+                            </div>
+                          </div>
+                          
+                          <div className="bg-white rounded-lg p-4 border">
+                            <h3 className="text-lg font-medium mb-2">Scaled Score</h3>
+                            <div className="text-3xl font-bold">
+                              {module.scaledScore !== undefined && module.scaledScore !== null ? module.scaledScore : 'N/A'}
+                            </div>
+                          </div>
                         </div>
-                        <div className="text-sm text-gray-500 mt-1">
-                          {module.totalQuestions > 0 ? Math.round((module.correctAnswers / module.totalQuestions) * 100) : 0}%
-                        </div>
-                      </div>
-                      
-                      <div className="bg-white rounded-lg p-4 border">
-                        <h3 className="text-lg font-medium mb-2">Scaled Score</h3>
-                        <div className="text-3xl font-bold">
-                          {module.scaledScore !== undefined && module.scaledScore !== null ? module.scaledScore : 'N/A'}
-                        </div>
-                      </div>
+                      </TabsContent>
+                    ))}
+                  </Tabs>
+                  
+                  <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+                    <h3 className="text-lg font-medium mb-2">Total Scaled Score</h3>
+                    <div className="text-3xl font-bold">
+                      {memoizedScaledScore || 'N/A'}
                     </div>
-                  </TabsContent>
-                ))}
-              </Tabs>
-              
-              <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-                <h3 className="text-lg font-medium mb-2">Total Scaled Score</h3>
-                <div className="text-3xl font-bold">
-                  {state.overallScaledScore || calculateTotalScaledScore(moduleScores) || 'N/A'}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+            
+            <QuestionReview questions={questions} userAnswers={answers} />
+          </>
         )}
-        
-        <QuestionReview questions={questions} userAnswers={answers} />
       </>
     );
   } else {

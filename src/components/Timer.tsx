@@ -3,9 +3,10 @@ import React, { useState, useEffect } from 'react';
 interface TimerProps {
   initialTime: number;
   onTimeUp: () => void;
+  running?: boolean;
 }
 
-const Timer: React.FC<TimerProps> = ({ initialTime, onTimeUp }) => {
+const Timer: React.FC<TimerProps> = ({ initialTime, onTimeUp, running = true }) => {
   const [timeLeft, setTimeLeft] = useState(initialTime);
 
   useEffect(() => {
@@ -13,11 +14,11 @@ const Timer: React.FC<TimerProps> = ({ initialTime, onTimeUp }) => {
   }, [initialTime]);
 
   useEffect(() => {
+    if (!running) return;
     if (timeLeft <= 0) {
       onTimeUp();
       return;
     }
-
     const timer = setInterval(() => {
       setTimeLeft(prev => {
         if (prev <= 1) {
@@ -28,9 +29,8 @@ const Timer: React.FC<TimerProps> = ({ initialTime, onTimeUp }) => {
         return prev - 1;
       });
     }, 1000);
-
     return () => clearInterval(timer);
-  }, [timeLeft, onTimeUp]);
+  }, [running, timeLeft, onTimeUp]);
 
   const minutes = Math.floor(timeLeft / 60);
   const seconds = timeLeft % 60;

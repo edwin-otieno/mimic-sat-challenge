@@ -96,7 +96,7 @@ const Index = () => {
               <form onSubmit={handleLogin} className="flex flex-col gap-3">
                 <input 
                   type="text" 
-                  placeholder="Username, email" 
+                  placeholder="Username / email" 
                   value={loginEmail}
                   onChange={(e) => setLoginEmail(e.target.value)}
                   className="rounded-full border border-gray-300 px-5 py-3 text-base focus:outline-none focus:ring-2 focus:ring-[#1a3c7c]" 

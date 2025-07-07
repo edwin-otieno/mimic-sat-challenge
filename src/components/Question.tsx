@@ -35,6 +35,7 @@ interface QuestionProps {
   showExplanation?: boolean;
   crossedOutOptions?: string[];
   onToggleCrossOut?: (optionId: string) => void;
+  crossOutMode?: boolean;
 }
 
 const Question: React.FC<QuestionProps> = ({
@@ -46,6 +47,7 @@ const Question: React.FC<QuestionProps> = ({
   showExplanation = false,
   crossedOutOptions = [],
   onToggleCrossOut,
+  crossOutMode = false,
 }) => {
   const handleOptionClick = (optionId: string) => {
     onAnswerChange(optionId);
@@ -134,7 +136,7 @@ const Question: React.FC<QuestionProps> = ({
                 </div>
               </label>
               
-              {onToggleCrossOut && (
+              {crossOutMode && onToggleCrossOut && (
                 <button 
                   type="button"
                   className={cn(

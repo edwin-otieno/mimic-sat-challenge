@@ -9,6 +9,7 @@ import QuestionNavigator from './QuestionNavigator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 
 interface TestContainerProps {
   questions: QuestionData[];
@@ -27,6 +28,9 @@ interface TestContainerProps {
   onSaveStatusChange?: (isSaving: boolean) => void;
   showSubmitButton?: boolean;
   onSubmit?: () => void;
+  currentPart?: 1 | 2;
+  crossOutMode: boolean;
+  setCrossOutMode: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 export const TestContainer: React.FC<TestContainerProps> = ({
@@ -46,12 +50,16 @@ export const TestContainer: React.FC<TestContainerProps> = ({
   onSaveStatusChange,
   showSubmitButton = false,
   onSubmit,
+  currentPart = 1,
+  crossOutMode,
+  setCrossOutMode,
 }) => {
   const [showLineReader, setShowLineReader] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [textAnswer, setTextAnswer] = useState<string>("");
   const [showExplanation, setShowExplanation] = useState(false);
+  const [showEndModuleDialog, setShowEndModuleDialog] = useState(false);
 
   // Validate questions prop
   if (!Array.isArray(questions) || questions.length === 0) {
@@ -80,6 +88,10 @@ export const TestContainer: React.FC<TestContainerProps> = ({
 
   // Find the current module type
   const currentModuleType = currentQuestion?.module_type || "reading_writing";
+  const moduleName = currentModuleType === "reading_writing" ? "Reading & Writing" : "Math";
+
+  // Determine if this is the last question of the module (end of Part 2)
+  const isLastQuestion = currentQuestionIndex === questions.length - 1;
 
   // Show saving indicator when answers change
   useEffect(() => {
@@ -118,6 +130,19 @@ export const TestContainer: React.FC<TestContainerProps> = ({
     onSelectOption(currentQuestion.id, value);
   };
 
+  const handleNext = () => {
+    if (isLastQuestion) {
+      setShowEndModuleDialog(true);
+    } else {
+      onNextQuestion();
+    }
+  };
+
+  const handleConfirmEndModule = () => {
+    setShowEndModuleDialog(false);
+    onNextQuestion();
+  };
+
   return (
     <>
       <div className="mb-6">
@@ -125,7 +150,9 @@ export const TestContainer: React.FC<TestContainerProps> = ({
       </div>
       
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-2xl font-bold">Practice Test</h2>
+        <h2 className="text-2xl font-bold">
+          {moduleName} - Part {currentPart}
+        </h2>
         <div className="flex items-center gap-4">
           {isSaving && (
             <div className="text-sm text-gray-500 flex items-center gap-2">
@@ -141,17 +168,29 @@ export const TestContainer: React.FC<TestContainerProps> = ({
             <span className="text-sm">Line Reader</span>
           </div>
         </div>
-        
-        {currentQuestion && (
-          <Button
-            variant={isQuestionFlagged ? "destructive" : "outline"}
-            size="sm"
-            onClick={() => onToggleFlag(currentQuestion.id)}
-          >
-            <Flag className="mr-1 h-4 w-4" />
-            {isQuestionFlagged ? "Unflag Question" : "Flag for Review"}
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {currentQuestion && (
+            <>
+              <Button
+                variant={isQuestionFlagged ? "destructive" : "outline"}
+                size="sm"
+                onClick={() => onToggleFlag(currentQuestion.id)}
+              >
+                <Flag className="mr-1 h-4 w-4" />
+                {isQuestionFlagged ? "Unflag Question" : "Flag for Review"}
+              </Button>
+              <button
+                className={`px-[25px] py-1 rounded border flex items-center justify-center text-sm font-bold w-8 h-8 ml-2 ${crossOutMode ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300'} transition`}
+                title={crossOutMode ? 'Disable answer cross out' : 'Enable answer cross out'}
+                onClick={() => setCrossOutMode((prev) => !prev)}
+                aria-pressed={crossOutMode}
+                style={{ textDecoration: 'line-through' }}
+              >
+                ABC
+              </button>
+            </>
+          )}
+        </div>
       </div>
       
       <LineReader 
@@ -184,7 +223,8 @@ export const TestContainer: React.FC<TestContainerProps> = ({
                   onTextAnswerChange={handleTextAnswerChange}
                   showExplanation={showExplanation}
                   crossedOutOptions={questionCrossedOuts}
-                  onToggleCrossOut={(optionId) => onToggleCrossOut(currentQuestion.id, optionId)}
+                  onToggleCrossOut={crossOutMode ? (optionId => onToggleCrossOut(currentQuestion.id, optionId)) : undefined}
+                  crossOutMode={crossOutMode}
                 />
               )}
             </CardContent>
@@ -216,7 +256,8 @@ export const TestContainer: React.FC<TestContainerProps> = ({
                   onTextAnswerChange={handleTextAnswerChange}
                   showExplanation={showExplanation}
                   crossedOutOptions={questionCrossedOuts}
-                  onToggleCrossOut={(optionId) => onToggleCrossOut(currentQuestion.id, optionId)}
+                  onToggleCrossOut={crossOutMode ? (optionId => onToggleCrossOut(currentQuestion.id, optionId)) : undefined}
+                  crossOutMode={crossOutMode}
                 />
               )}
             </CardContent>
@@ -224,15 +265,14 @@ export const TestContainer: React.FC<TestContainerProps> = ({
         </TabsContent>
       </Tabs>
       
-      <TestNavigation
-        currentQuestionIndex={currentQuestionIndex}
-        totalQuestions={questions.length}
-        onPrevious={onPreviousQuestion}
-        onNext={onNextQuestion}
-        showSubmitButton={showSubmitButton}
-        onSubmit={onSubmit}
-      />
-      
+      <div className="flex justify-end gap-2 mt-8">
+        <Button variant="outline" onClick={onPreviousQuestion} disabled={currentQuestionIndex === 0}>
+          Previous Question
+        </Button>
+        <Button onClick={handleNext}>
+          {isLastQuestion ? 'Finish Module' : 'Next Question'}
+        </Button>
+      </div>
       <div className="mt-8">
         <QuestionNavigator
           questions={questions}
@@ -242,6 +282,24 @@ export const TestContainer: React.FC<TestContainerProps> = ({
           onQuestionClick={onGoToQuestion}
         />
       </div>
+      <Dialog open={showEndModuleDialog} onOpenChange={setShowEndModuleDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>End Module?</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to end this module and submit your answers?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEndModuleDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleConfirmEndModule}>
+              Yes, Submit Module
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 };
