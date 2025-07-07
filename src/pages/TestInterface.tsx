@@ -723,7 +723,6 @@ const TestInterface = () => {
             description: "Test not found. Please try again.",
             variant: "destructive"
           });
-          navigate("/dashboard");
           return;
         }
 
@@ -739,7 +738,6 @@ const TestInterface = () => {
             description: "No questions found for this test. Please contact support.",
             variant: "destructive"
           });
-          navigate("/dashboard");
           return;
         }
 
@@ -792,7 +790,6 @@ const TestInterface = () => {
           description: "Failed to load test questions. Please try again.",
           variant: "destructive"
         });
-        navigate("/dashboard");
       }
     };
     

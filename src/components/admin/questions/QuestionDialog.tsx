@@ -126,12 +126,12 @@ const QuestionDialog = ({
 
   const handleSubmit = async (values: QuestionFormValues) => {
     try {
-      console.log('Form values before submission:', JSON.stringify(values, null, 2));
-      console.log('Question type:', values.question_type);
-      console.log('Correct answer:', values.correct_answer);
-
-      // Handle image upload if there's a new image
+      // If no previewImage and no imageFile, set image_url to null
       let imageUrl = values.image_url;
+      if (!previewImage && !imageFile) {
+        imageUrl = null;
+      }
+      // Handle image upload if there's a new image
       if (imageFile) {
         console.log('Uploading image file:', imageFile.name);
         const fileExt = imageFile.name.split('.').pop();

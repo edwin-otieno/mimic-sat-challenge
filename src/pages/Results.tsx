@@ -69,6 +69,13 @@ const Results = () => {
   
   const state = location.state as ResultsState;
   
+  // Move hooks to top level to avoid conditional hook calls
+  const memoizedScaledScore = useMemo(() => {
+    return state?.overallScaledScore || (state?.scaledScoring ? calculateTotalScaledScore(state?.moduleScores || []) : null);
+  }, [state?.overallScaledScore, state?.scaledScoring, state?.moduleScores]);
+
+  const answeredCount = useMemo(() => Object.keys(state?.answers || {}).length, [state?.answers]);
+  
   // Set initial load to false after a brief moment to ensure smooth transition
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -77,8 +84,19 @@ const Results = () => {
     return () => clearTimeout(timer);
   }, []);
   
+  // Fetch results history on mount if user is present
+  useEffect(() => {
+    if (user) {
+      fetchResults();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+  
   const fetchResults = async () => {
-    if (!user) return;
+    if (!user) {
+      console.log('No user found in fetchResults');
+      return;
+    }
     
     setIsLoadingHistory(true);
     try {
@@ -88,7 +106,8 @@ const Results = () => {
         .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
-        
+      
+      console.log('Fetched testResults:', testResults);
       if (testError) {
         console.error('Error fetching test results:', testError);
         return;
@@ -111,6 +130,7 @@ const Results = () => {
       }));
       
       setSavedResults(combinedResults);
+      console.log('Set savedResults:', combinedResults);
       
       // Select the most recent result by default
       if (combinedResults.length > 0 && !selectedResult) {
@@ -123,12 +143,8 @@ const Results = () => {
     }
   };
   
-  // Only fetch results when user explicitly wants to view history
-  const toggleHistory = async () => {
-    if (!viewingHistory && savedResults.length === 0) {
-      // First time viewing history, fetch the data
-      await fetchResults();
-    }
+  // Only toggle the view, don't fetch again
+  const toggleHistory = () => {
     setViewingHistory(!viewingHistory);
   };
   
@@ -163,6 +179,7 @@ const Results = () => {
   if (!state || viewingHistory) {
     // Show saved results history
     const currentResult = savedResults.find(r => r.testResult.id === selectedResult);
+    console.log('Rendering history view. savedResults:', savedResults, 'selectedResult:', selectedResult, 'currentResult:', currentResult);
     
     content = (
       <>
@@ -276,15 +293,6 @@ const Results = () => {
     );
   } else if (state) {
     // Show current test result
-    const { score, total, answers, questions, moduleScores } = state;
-    
-    // Memoize calculated values to prevent unnecessary recalculations
-    const memoizedScaledScore = useMemo(() => {
-      return state.overallScaledScore || (state.scaledScoring ? calculateTotalScaledScore(moduleScores || []) : null);
-    }, [state.overallScaledScore, state.scaledScoring, moduleScores]);
-    
-    const answeredCount = useMemo(() => Object.keys(answers).length, [answers]);
-    
     content = (
       <>
         <ResultsHeader />
@@ -304,34 +312,34 @@ const Results = () => {
           <>
             <div className="grid md:grid-cols-2 gap-6 mb-10">
               <ScoreCard 
-                score={score} 
-                total={total} 
+                score={state.score} 
+                total={state.total} 
                 scaledScoring={state.scaledScoring}
                 scaledScore={memoizedScaledScore} 
               />
               <SummaryCard 
-                score={score} 
-                total={total} 
+                score={state.score} 
+                total={state.total} 
                 answeredCount={answeredCount} 
               />
             </div>
             
-            {moduleScores && moduleScores.length > 0 && (
+            {state.moduleScores && state.moduleScores.length > 0 && (
               <Card className="mb-10">
                 <CardHeader>
                   <CardTitle>Module Scores</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <Tabs defaultValue={moduleScores[0].moduleId}>
+                  <Tabs defaultValue={state.moduleScores[0].moduleId}>
                     <TabsList className="mb-4">
-                      {moduleScores.map(module => (
+                      {state.moduleScores.map(module => (
                         <TabsTrigger key={module.moduleId} value={module.moduleId}>
                           {module.moduleName}
                         </TabsTrigger>
                       ))}
                     </TabsList>
                     
-                    {moduleScores.map(module => (
+                    {state.moduleScores.map(module => (
                       <TabsContent key={module.moduleId} value={module.moduleId}>
                         <div className="grid md:grid-cols-2 gap-4">
                           <div className="bg-white rounded-lg p-4 border">
@@ -362,7 +370,7 @@ const Results = () => {
               </Card>
             )}
             
-            <QuestionReview questions={questions} userAnswers={answers} />
+            <QuestionReview questions={state.questions} userAnswers={state.answers} />
           </>
         )}
       </>
@@ -371,9 +379,6 @@ const Results = () => {
     content = (
       <div className="text-center py-8">
         <p className="text-gray-500">No results data available.</p>
-        <Button className="mt-4" onClick={() => navigate("/dashboard")}>
-          Return to Dashboard
-        </Button>
       </div>
     );
   }
