@@ -54,6 +54,7 @@ const TestInterface = () => {
   const [currentPartTimeLeft, setCurrentPartTimeLeft] = useState<number>(0);
   const [partTimes, setPartTimes] = useState<{ [moduleType: string]: number }>({});
   const [showReference, setShowReference] = useState(false);
+  const [showMathReference, setShowMathReference] = useState(false);
   const [crossOutMode, setCrossOutMode] = useState(() => {
     // Persist for the session
     const saved = sessionStorage.getItem('crossOutMode');
@@ -975,10 +976,10 @@ const TestInterface = () => {
                 return `Questions: ${questionsInPart} | Time: ${totalTime} min`;
               })()}
             </div>
-            <div className="flex justify-center">
+            <div className="flex justify-center gap-2">
               <Dialog open={showReference} onOpenChange={setShowReference}>
                 <DialogTrigger asChild>
-                  <Button variant="outline">Reference</Button>
+                  <Button variant="outline">Instructions</Button>
                 </DialogTrigger>
                 <DialogContent className="max-w-3xl w-full">
                   <DialogHeader>
@@ -998,6 +999,35 @@ const TestInterface = () => {
                   </DialogClose>
                 </DialogContent>
               </Dialog>
+              
+              {/* Show Reference button only for Math module */}
+              {(() => {
+                const moduleType = selectedModule || getCurrentModuleType();
+                return moduleType === 'math' ? (
+                  <Dialog open={showMathReference} onOpenChange={setShowMathReference}>
+                    <DialogTrigger asChild>
+                      <Button variant="outline">Reference</Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-3xl w-full">
+                      <DialogHeader>
+                        <DialogTitle>Math Reference</DialogTitle>
+                      </DialogHeader>
+                      <div className="w-full h-[70vh]">
+                        <iframe
+                          src="/docs/reference.pdf"
+                          title="Math Reference"
+                          width="100%"
+                          height="100%"
+                          style={{ border: 0 }}
+                        />
+                      </div>
+                      <DialogClose asChild>
+                        <Button variant="secondary" className="mt-4 w-full">Close</Button>
+                      </DialogClose>
+                    </DialogContent>
+                  </Dialog>
+                ) : null;
+              })()}
             </div>
           </div>
         )}
