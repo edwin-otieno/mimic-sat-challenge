@@ -157,10 +157,10 @@ const Question: React.FC<QuestionProps> = ({
         })}
       </div>
       
-      {showExplanation && question.explanation && (
+      {question.explanation && (
         <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-100">
           <h4 className="font-semibold text-blue-800 mb-2">Explanation:</h4>
-          <div className="whitespace-pre-wrap">
+          <div className="whitespace-pre-wrap italic">
             {renderFormattedText(question.explanation)}
           </div>
         </div>
