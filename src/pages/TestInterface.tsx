@@ -51,6 +51,7 @@ const TestInterface = () => {
   const [currentPart, setCurrentPart] = useState<{ [moduleType: string]: 1 | 2 }>({ reading_writing: 1, math: 1 });
   const [showPartTransition, setShowPartTransition] = useState(false);
   const [timerRunning, setTimerRunning] = useState(true);
+  const [timerVisible, setTimerVisible] = useState(true);
   const [currentPartTimeLeft, setCurrentPartTimeLeft] = useState<number>(0);
   const [partTimes, setPartTimes] = useState<{ [moduleType: string]: number }>({});
   const [showReference, setShowReference] = useState(false);
@@ -71,6 +72,7 @@ const TestInterface = () => {
     const timerState = {
       currentPartTimeLeft,
       timerRunning,
+      timerVisible,
       currentPart,
       selectedModule,
       partTimes,
@@ -89,6 +91,7 @@ const TestInterface = () => {
         const timerState = JSON.parse(saved);
         setCurrentPartTimeLeft(timerState.currentPartTimeLeft || 0);
         setTimerRunning(timerState.timerRunning !== false); // Default to true if not saved
+        setTimerVisible(timerState.timerVisible !== false); // Default to true if not saved
         setCurrentPart(timerState.currentPart || { reading_writing: 1, math: 1 });
         setSelectedModule(timerState.selectedModule || null);
         setPartTimes(timerState.partTimes || {});
@@ -109,7 +112,7 @@ const TestInterface = () => {
     if (permalink) {
       saveTimerState();
     }
-  }, [currentPartTimeLeft, timerRunning, currentPart, selectedModule, partTimes, showModuleSelection, completedModules, showModuleScores, showPartTransition, permalink]);
+  }, [currentPartTimeLeft, timerRunning, timerVisible, currentPart, selectedModule, partTimes, showModuleSelection, completedModules, showModuleScores, showPartTransition, permalink]);
 
   // Save complete test state periodically
   useEffect(() => {
@@ -126,6 +129,7 @@ const TestInterface = () => {
         currentModuleTimeLeft,
         currentPartTimeLeft,
         timerRunning,
+        timerVisible,
         currentPart,
         selectedModule,
         partTimes,
@@ -139,7 +143,7 @@ const TestInterface = () => {
     // Save state every 30 seconds
     const interval = setInterval(saveState, 30000);
     return () => clearInterval(interval);
-  }, [permalink, currentTest, currentQuestionIndex, userAnswers, flaggedQuestions, crossedOutOptions, testStartTime, currentModuleStartTime, currentModuleTimeLeft, currentPartTimeLeft, timerRunning, currentPart, selectedModule, partTimes, showModuleSelection, completedModules, showModuleScores, showPartTransition, saveTestState]);
+  }, [permalink, currentTest, currentQuestionIndex, userAnswers, flaggedQuestions, crossedOutOptions, testStartTime, currentModuleStartTime, currentModuleTimeLeft, currentPartTimeLeft, timerRunning, timerVisible, currentPart, selectedModule, partTimes, showModuleSelection, completedModules, showModuleScores, showPartTransition, saveTestState]);
 
   // Load timer and test state on component mount
   useEffect(() => {
@@ -157,6 +161,7 @@ const TestInterface = () => {
         setCurrentModuleTimeLeft(saved.currentModuleTimeLeft);
         setCurrentPartTimeLeft(saved.currentPartTimeLeft);
         setTimerRunning(saved.timerRunning);
+        setTimerVisible(saved.timerVisible !== false); // Default to true if not saved
         setCurrentPart(saved.currentPart);
         setSelectedModule(saved.selectedModule);
         setPartTimes(saved.partTimes);
@@ -480,6 +485,7 @@ const TestInterface = () => {
           currentModuleTimeLeft,
           currentPartTimeLeft,
           timerRunning,
+          timerVisible,
           currentPart,
           selectedModule,
           partTimes,
@@ -580,7 +586,12 @@ const TestInterface = () => {
   const handleTimeUp = () => {
     if (timerEnabled) {
       console.log('Time up for current module');
-      setShowTimeUpDialog(true);
+      // Don't automatically submit - just show a notification
+      toast({
+        title: "Time's up!",
+        description: "You can continue working on the test, but the timer has expired.",
+        duration: 5000,
+      });
     }
   };
 
@@ -610,17 +621,30 @@ const TestInterface = () => {
   }, [currentTest, questions]);
 
   // Add new function to handle module selection
-  const handleModuleSelection = (moduleType: string) => {
+  const handleModuleSelection = (moduleType: string, partNumber: number = 1) => {
     setSelectedModule(moduleType);
     setShowModuleSelection(false);
     
-    // Find the first question of the selected module
-    const firstQuestionIndex = questions.findIndex(q => q.module_type === moduleType);
-    if (firstQuestionIndex !== -1) {
-      setCurrentQuestionIndex(firstQuestionIndex);
-      setCurrentPartTimeLeft(partTimes[moduleType] || 0);
-      setTimerRunning(true);
+    // Set the current part
+    setCurrentPart(prev => ({ ...prev, [moduleType]: partNumber as 1 | 2 }));
+    
+    // Find the first question of the selected part
+    const partQuestions = moduleParts[moduleType]?.[partNumber - 1] || [];
+    if (partQuestions.length > 0) {
+      const firstIndex = questions.findIndex(q => q.id === partQuestions[0].id);
+      if (firstIndex !== -1) {
+        setCurrentQuestionIndex(firstIndex);
+      }
+    } else {
+      // Fallback to first question of the module
+      const firstQuestionIndex = questions.findIndex(q => q.module_type === moduleType);
+      if (firstQuestionIndex !== -1) {
+        setCurrentQuestionIndex(firstQuestionIndex);
+      }
     }
+    
+    setCurrentPartTimeLeft(partTimes[moduleType] || 0);
+    setTimerRunning(true);
   };
 
   // Add function to handle module completion
@@ -652,7 +676,7 @@ const TestInterface = () => {
     
     if (nextModule) {
       console.log('Proceeding to next module:', nextModule.type);
-      handleModuleSelection(nextModule.type);
+      handleModuleSelection(nextModule.type, 1); // Always start with Part 1
     } else {
       // All modules completed, show final results
       console.log('All modules completed, calling handleSubmitTest');
@@ -810,27 +834,69 @@ const TestInterface = () => {
 
   // Add the module selection screen to the render logic
   if (showModuleSelection) {
+    // Generate part information for each module
+    const getPartInfo = (moduleType: string) => {
+      const module = currentTest?.modules?.find((m: any) => m.type === moduleType);
+      const parts = moduleParts[moduleType];
+      const partTimes = module ? Math.floor((module.time || 0) / 2) : 0; // Half the module time in minutes
+      
+      if (!parts || parts.length === 0) {
+        return [{
+          partNumber: 1,
+          questionCount: 0,
+          timeMinutes: module?.time || 0,
+          moduleType,
+          moduleName: module?.name || moduleType
+        }];
+      }
+      
+      return parts.map((partQuestions, index) => ({
+        partNumber: index + 1,
+        questionCount: partQuestions.length,
+        timeMinutes: partTimes,
+        moduleType,
+        moduleName: module?.name || moduleType
+      }));
+    };
+
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
         <Header />
         <main className="flex-1 container max-w-4xl mx-auto py-8 px-4">
           <Card className="mb-8">
             <CardHeader>
-              <CardTitle>Select Module to Start</CardTitle>
+              <CardTitle>Select Module Part to Start</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid gap-4">
-                {currentTest?.modules?.map((module: TestModule) => (
-                  <Button
-                    key={module.type}
-                    onClick={() => handleModuleSelection(module.type)}
-                    className="w-full py-6 text-lg"
-                    disabled={completedModules.has(module.type)}
-                  >
-                    {module.name} ({module.time} minutes)
-                    {completedModules.has(module.type) && " - Completed"}
-                  </Button>
-                ))}
+                {currentTest?.modules?.map((module: TestModule) => {
+                  const partInfo = getPartInfo(module.type);
+                  const isModuleCompleted = completedModules.has(module.type);
+                  
+                  return (
+                    <div key={module.type} className="space-y-3">
+                      <h3 className="text-lg font-semibold text-gray-700 border-b pb-2">
+                        {module.name} Module
+                        {isModuleCompleted && <span className="ml-2 text-green-600">✓ Completed</span>}
+                      </h3>
+                      <div className="grid gap-3">
+                        {partInfo.map((part) => (
+                          <Button
+                            key={`${module.type}-part-${part.partNumber}`}
+                            onClick={() => handleModuleSelection(module.type, part.partNumber)}
+                            className="w-full py-4 text-left justify-start bg-blue-600 hover:bg-blue-700 focus:bg-blue-800 whitespace-normal break-words"
+                            disabled={isModuleCompleted}
+                            variant={isModuleCompleted ? "outline" : "default"}
+                          >
+                            <span className="text-white w-full truncate break-words whitespace-normal font-medium">
+                              {part.moduleName} Part {part.partNumber}: {part.questionCount} questions in {part.timeMinutes} minutes
+                            </span>
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </CardContent>
           </Card>
@@ -943,14 +1009,24 @@ const TestInterface = () => {
               >
                 ⏸ Pause
               </button>
+              <button
+                className={`px-3 py-1 rounded ${timerVisible ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'}`}
+                onClick={() => setTimerVisible(!timerVisible)}
+              >
+                {timerVisible ? '👁️ Hide Timer' : '👁️ Show Timer'}
+              </button>
             </div>
-            {timerRunning && (
+            {timerVisible && (
               <div className="flex items-center gap-2">
                 <Timer 
                   initialTime={currentPartTimeLeft} 
                   onTimeUp={handleTimeUp} 
                   running={timerRunning}
+                  autoSubmit={false}
                 />
+                {currentPartTimeLeft <= 0 && (
+                  <span className="text-sm text-red-600 font-medium">(Time expired)</span>
+                )}
               </div>
             )}
           </div>

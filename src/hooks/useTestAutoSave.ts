@@ -13,6 +13,7 @@ interface SavedTestState {
   // Timer-related states
   currentPartTimeLeft: number;
   timerRunning: boolean;
+  timerVisible: boolean;
   currentPart: { [moduleType: string]: 1 | 2 };
   selectedModule: string | null;
   partTimes: { [moduleType: string]: number };

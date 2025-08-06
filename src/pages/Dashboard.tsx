@@ -64,7 +64,7 @@ const Dashboard = () => {
                     <div className="flex justify-between text-sm">
                       <div className="flex flex-col">
                         <span className="font-semibold text-gray-700">Modules</span>
-                        <span>{test.modules?.length || 2}</span>
+                        <span>{(test.modules?.length || 2) * 2}</span>
                       </div>
                       <div className="flex flex-col">
                         <span className="font-semibold text-gray-700">Type</span>

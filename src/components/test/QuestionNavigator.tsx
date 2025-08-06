@@ -75,35 +75,43 @@ const QuestionNavigator: React.FC<QuestionNavigatorProps> = ({
       
       <Tabs defaultValue={currentModuleType} className="w-full">
         <TabsList className="mb-4">
-          <TabsTrigger value="reading_writing">
-            Reading & Writing ({readingWritingQuestions.length} questions)
-          </TabsTrigger>
-          <TabsTrigger value="math">
-            Math ({mathQuestions.length} questions)
-          </TabsTrigger>
+          {currentModuleType === "reading_writing" && (
+            <TabsTrigger value="reading_writing">
+              Reading & Writing ({readingWritingQuestions.length} questions)
+            </TabsTrigger>
+          )}
+          {currentModuleType === "math" && (
+            <TabsTrigger value="math">
+              Math ({mathQuestions.length} questions)
+            </TabsTrigger>
+          )}
         </TabsList>
         
-        <TabsContent value="reading_writing">
-          <Card>
-            <CardHeader>
-              <CardTitle>Reading & Writing Questions</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {renderQuestionButtons(readingWritingQuestions, "reading_writing")}
-            </CardContent>
-          </Card>
-        </TabsContent>
+        {currentModuleType === "reading_writing" && (
+          <TabsContent value="reading_writing">
+            <Card>
+              <CardHeader>
+                <CardTitle>Reading & Writing Questions</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {renderQuestionButtons(readingWritingQuestions, "reading_writing")}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
         
-        <TabsContent value="math">
-          <Card>
-            <CardHeader>
-              <CardTitle>Math Questions</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {renderQuestionButtons(mathQuestions, "math")}
-            </CardContent>
-          </Card>
-        </TabsContent>
+        {currentModuleType === "math" && (
+          <TabsContent value="math">
+            <Card>
+              <CardHeader>
+                <CardTitle>Math Questions</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {renderQuestionButtons(mathQuestions, "math")}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );
