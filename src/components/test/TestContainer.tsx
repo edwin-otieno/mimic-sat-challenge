@@ -200,69 +200,75 @@ export const TestContainer: React.FC<TestContainerProps> = ({
       
       <Tabs defaultValue={currentModuleType} className="w-full mb-6">
         <TabsList className="mb-4">
-          <TabsTrigger value="reading_writing">
-            Reading & Writing ({readingWritingQuestions.length} questions)
-          </TabsTrigger>
-          <TabsTrigger value="math">
-            Math ({mathQuestions.length} questions)
-          </TabsTrigger>
+          {currentModuleType === "reading_writing" && (
+            <TabsTrigger value="reading_writing">
+              Reading & Writing ({readingWritingQuestions.length} questions)
+            </TabsTrigger>
+          )}
+          {currentModuleType === "math" && (
+            <TabsTrigger value="math">
+              Math ({mathQuestions.length} questions)
+            </TabsTrigger>
+          )}
         </TabsList>
-        
-        <TabsContent value="reading_writing">
-          <Card>
-            <CardHeader>
-              <CardTitle>Reading & Writing Questions</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {currentQuestion && currentQuestion.module_type === "reading_writing" && (
-                <Question
-                  question={currentQuestion}
-                  onAnswerChange={handleAnswerChange}
-                  selectedOption={selectedOption}
-                  textAnswer={textAnswer}
-                  onTextAnswerChange={handleTextAnswerChange}
-                  showExplanation={showExplanation}
-                  crossedOutOptions={questionCrossedOuts}
-                  onToggleCrossOut={crossOutMode ? (optionId => onToggleCrossOut(currentQuestion.id, optionId)) : undefined}
-                  crossOutMode={crossOutMode}
-                />
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-        
-        <TabsContent value="math">
-          <Card>
-            <CardHeader>
-              <div className="flex justify-between items-center">
-                <CardTitle>Math Questions</CardTitle>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => window.open('https://www.desmos.com/testing/digital-act/graphing', '_blank')}
-                >
-                  <Calculator className="mr-2 h-4 w-4" />
-                  Calculator
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {currentQuestion && currentQuestion.module_type === "math" && (
-                <Question
-                  question={currentQuestion}
-                  onAnswerChange={handleAnswerChange}
-                  selectedOption={selectedOption}
-                  textAnswer={textAnswer}
-                  onTextAnswerChange={handleTextAnswerChange}
-                  showExplanation={showExplanation}
-                  crossedOutOptions={questionCrossedOuts}
-                  onToggleCrossOut={crossOutMode ? (optionId => onToggleCrossOut(currentQuestion.id, optionId)) : undefined}
-                  crossOutMode={crossOutMode}
-                />
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+        {currentModuleType === "reading_writing" && (
+          <TabsContent value="reading_writing">
+            <Card>
+              <CardHeader>
+                <CardTitle>Reading & Writing Questions</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {currentQuestion && currentQuestion.module_type === "reading_writing" && (
+                  <Question
+                    question={currentQuestion}
+                    onAnswerChange={handleAnswerChange}
+                    selectedOption={selectedOption}
+                    textAnswer={textAnswer}
+                    onTextAnswerChange={handleTextAnswerChange}
+                    showExplanation={showExplanation}
+                    crossedOutOptions={questionCrossedOuts}
+                    onToggleCrossOut={crossOutMode ? (optionId => onToggleCrossOut(currentQuestion.id, optionId)) : undefined}
+                    crossOutMode={crossOutMode}
+                  />
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
+        {currentModuleType === "math" && (
+          <TabsContent value="math">
+            <Card>
+              <CardHeader>
+                <div className="flex justify-between items-center">
+                  <CardTitle>Math Questions</CardTitle>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => window.open('https://www.desmos.com/testing/digital-act/graphing', '_blank')}
+                  >
+                    <Calculator className="mr-2 h-4 w-4" />
+                    Calculator
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {currentQuestion && currentQuestion.module_type === "math" && (
+                  <Question
+                    question={currentQuestion}
+                    onAnswerChange={handleAnswerChange}
+                    selectedOption={selectedOption}
+                    textAnswer={textAnswer}
+                    onTextAnswerChange={handleTextAnswerChange}
+                    showExplanation={showExplanation}
+                    crossedOutOptions={questionCrossedOuts}
+                    onToggleCrossOut={crossOutMode ? (optionId => onToggleCrossOut(currentQuestion.id, optionId)) : undefined}
+                    crossOutMode={crossOutMode}
+                  />
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
       </Tabs>
       
       <div className="flex justify-end gap-2 mt-8">
