@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -28,7 +28,7 @@ export const useTestAutoSave = (permalink: string) => {
   const { user } = useAuth();
   const [isRestoring, setIsRestoring] = useState(false);
 
-  const saveTestState = async (state: SavedTestState): Promise<void> => {
+  const saveTestState = useCallback(async (state: SavedTestState): Promise<void> => {
     console.log('saveTestState called with state:', state);
     if (!user || !permalink) {
       console.log('No user or permalink, returning early');
@@ -64,9 +64,9 @@ export const useTestAutoSave = (permalink: string) => {
       console.error('Error saving test state:', error);
       throw error;
     }
-  };
+  }, [user, permalink]);
 
-  const loadTestState = async (): Promise<SavedTestState | null> => {
+  const loadTestState = useCallback(async (): Promise<SavedTestState | null> => {
     if (!user || !permalink) return null;
 
     try {
@@ -79,7 +79,14 @@ export const useTestAutoSave = (permalink: string) => {
         .limit(1)
         .single();
 
-      if (error) throw error;
+      if (error) {
+        // Handle specific CORS or network errors
+        if (error.message?.includes('NetworkError') || error.message?.includes('CORS')) {
+          console.warn('CORS/Network error loading test state, will use sessionStorage fallback:', error.message);
+          return null;
+        }
+        throw error;
+      }
 
       if (data?.state) {
         return {
@@ -96,9 +103,9 @@ export const useTestAutoSave = (permalink: string) => {
       console.error('Error loading test state:', error);
       return null;
     }
-  };
+  }, [user, permalink]);
 
-  const clearTestState = async (): Promise<void> => {
+  const clearTestState = useCallback(async (): Promise<void> => {
     if (!user || !permalink) return;
 
     try {
@@ -114,7 +121,7 @@ export const useTestAutoSave = (permalink: string) => {
       console.error('Error clearing test state:', error);
       throw error; // Re-throw the error so the caller can handle it
     }
-  };
+  }, [user, permalink]);
 
   return {
     saveTestState,

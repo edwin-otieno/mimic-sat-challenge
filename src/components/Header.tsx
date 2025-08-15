@@ -6,9 +6,11 @@ import MobileNav from "./MobileNav";
 
 interface HeaderProps {
   showLogout?: boolean;
+  onSaveAndExit?: () => Promise<void>;
+  isSaving?: boolean;
 }
 
-const Header = ({ showLogout = true }: HeaderProps) => {
+const Header = ({ showLogout = true, onSaveAndExit, isSaving = false }: HeaderProps) => {
   const navigate = useNavigate();
   const location = useLocation();
   const isTestPage = location.pathname.includes('/test');
@@ -24,6 +26,12 @@ const Header = ({ showLogout = true }: HeaderProps) => {
   const handleLogout = () => {
     signOut();
     navigate("/");
+  };
+
+  const handleSaveAndExit = async () => {
+    if (onSaveAndExit) {
+      await onSaveAndExit();
+    }
   };
 
   return (
@@ -92,6 +100,19 @@ const Header = ({ showLogout = true }: HeaderProps) => {
                 Log Out
               </Button>
             )}
+          </div>
+        )}
+        
+        {user && isTestPage && onSaveAndExit && (
+          <div className="flex items-center gap-4">
+            <Button 
+              variant="outline" 
+              onClick={handleSaveAndExit}
+              disabled={isSaving}
+              className="bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
+            >
+              {isSaving ? "Saving..." : "Save & Exit"}
+            </Button>
           </div>
         )}
         

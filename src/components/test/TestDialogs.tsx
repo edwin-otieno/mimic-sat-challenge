@@ -7,8 +7,12 @@ interface TestDialogsProps {
   setShowConfirmSubmit: (show: boolean) => void;
   showTimeUpDialog: boolean;
   setShowTimeUpDialog: (show: boolean) => void;
+  showSaveExitDialog: boolean;
+  setShowSaveExitDialog: (show: boolean) => void;
   onSubmitTest: () => void;
   onDiscardTest: () => void;
+  onSaveAndExit: () => Promise<void>;
+  isSaving?: boolean;
 }
 
 const TestDialogs: React.FC<TestDialogsProps> = ({
@@ -16,8 +20,12 @@ const TestDialogs: React.FC<TestDialogsProps> = ({
   setShowConfirmSubmit,
   showTimeUpDialog,
   setShowTimeUpDialog,
+  showSaveExitDialog,
+  setShowSaveExitDialog,
   onSubmitTest,
   onDiscardTest,
+  onSaveAndExit,
+  isSaving = false,
 }) => {
   return (
     <>
@@ -39,6 +47,30 @@ const TestDialogs: React.FC<TestDialogsProps> = ({
               onSubmitTest();
             }}>
               Submit
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Save & Exit Dialog */}
+      <Dialog open={showSaveExitDialog} onOpenChange={setShowSaveExitDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Save & Exit Test?</DialogTitle>
+            <DialogDescription>
+              Your current progress will be saved and you can resume the test later from where you left off.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSaveExitDialog(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={onSaveAndExit}
+              disabled={isSaving}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {isSaving ? "Saving..." : "Save & Exit"}
             </Button>
           </DialogFooter>
         </DialogContent>

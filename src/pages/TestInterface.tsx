@@ -1,25 +1,35 @@
-import React, { useState, useEffect } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
+import { useTests, useOptimizedTest } from '@/hooks/useTests';
+import { useTestAutoSave } from '@/hooks/useTestAutoSave';
+import { useToast } from '@/hooks/use-toast';
+import { getTestQuestions } from '@/services/testService';
+import { QuestionData } from '@/components/Question';
+import { TestModule } from '@/components/admin/tests/types';
+import { ScaledScore } from '@/components/admin/tests/types';
+import TestContainer from '@/components/test/TestContainer';
+import TestNavigation from '@/components/test/TestNavigation';
+import QuestionNavigator from '@/components/test/QuestionNavigator';
+import Timer from '@/components/Timer';
+import ProgressBar from '@/components/ProgressBar';
+import TestDialogs from '@/components/test/TestDialogs';
+import ReviewPage from '@/components/test/ReviewPage';
+import LineReader from '@/components/test/LineReader';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Loader2, Play, Pause, RotateCcw, Eye, EyeOff, Flag, BookOpen, Calculator, Clock, CheckCircle, XCircle } from 'lucide-react';
 import Header from "@/components/Header";
-import Timer from "@/components/Timer";
-import { QuestionData } from "@/components/Question";
-import { getTestQuestions } from "@/services/testService";
-import TestContainer from "@/components/test/TestContainer";
-import TestDialogs from "@/components/test/TestDialogs";
-import { ScaledScore, TestModule } from "@/components/admin/tests/types";
-import { useTests } from "@/hooks/useTests";
-import ReviewPage from "@/components/test/ReviewPage";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
-import { useToast } from "@/hooks/use-toast";
-import Footer from "@/components/Footer";
 import { QuestionType } from "@/components/admin/questions/types";
-import { useTestAutoSave } from '@/hooks/useTestAutoSave';
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
+import QuestionReview from '@/components/results/QuestionReview';
+import Footer from "@/components/Footer";
+import { supabase } from "@/integrations/supabase/client";
 
 const TestInterface = () => {
   const navigate = useNavigate();
@@ -27,6 +37,12 @@ const TestInterface = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  
+  // Debug currentQuestionIndex changes
+  useEffect(() => {
+    console.log('🔍 currentQuestionIndex changed to:', currentQuestionIndex, 'at:', new Date().toISOString());
+  }, [currentQuestionIndex]);
+  
   const [userAnswers, setUserAnswers] = useState<Record<string, string>>({});
   const [questions, setQuestions] = useState<QuestionData[]>([]);
   const [scaledScoring, setScaledScoring] = useState<ScaledScore[]>([]);
@@ -39,6 +55,9 @@ const TestInterface = () => {
   const [testStartTime, setTestStartTime] = useState<Date>(new Date());
   const { tests } = useTests();
   const [currentTest, setCurrentTest] = useState<any>(null);
+  
+  // Use optimized test loading directly by permalink or id from route
+  const { testData, isLoading: testDataLoading, error: testDataError } = useOptimizedTest(permalink || null);
   const [currentModuleStartTime, setCurrentModuleStartTime] = useState<Date>(new Date());
   const [currentModuleTimeLeft, setCurrentModuleTimeLeft] = useState<number>(0);
   const [isSaving, setIsSaving] = useState(false);
@@ -66,6 +85,7 @@ const TestInterface = () => {
 
   // Add a flag to track if state was loaded from persistence
   const [stateLoaded, setStateLoaded] = useState(false);
+  // Removed isRestoringState and userHasInteracted since auto-save is disabled
 
   // Timer state persistence
   const saveTimerState = () => {
@@ -82,6 +102,64 @@ const TestInterface = () => {
       showPartTransition
     };
     sessionStorage.setItem(`timerState_${permalink}`, JSON.stringify(timerState));
+  };
+
+  const saveCompleteTestState = () => {
+    const completeState = {
+      currentQuestionIndex,
+      userAnswers,
+      flaggedQuestions: Array.from(flaggedQuestions),
+      crossedOutOptions,
+      testStartTime: testStartTime.toISOString(),
+      currentModuleStartTime: currentModuleStartTime.toISOString(),
+      currentModuleTimeLeft,
+      currentPartTimeLeft,
+      timerRunning,
+      timerVisible,
+      currentPart,
+      selectedModule,
+      partTimes,
+      showModuleSelection,
+      completedModules: Array.from(completedModules),
+      showModuleScores,
+      showPartTransition
+    };
+    sessionStorage.setItem(`completeTestState_${permalink}`, JSON.stringify(completeState));
+  };
+
+  const clearSessionTestState = () => {
+    sessionStorage.removeItem(`completeTestState_${permalink}`);
+    sessionStorage.removeItem(`timerState_${permalink}`);
+  };
+
+  const loadCompleteTestState = () => {
+    const saved = sessionStorage.getItem(`completeTestState_${permalink}`);
+    if (saved) {
+      try {
+        const state = JSON.parse(saved) as any;
+        setCurrentQuestionIndex(state.currentQuestionIndex || 0);
+        setUserAnswers(state.userAnswers || {});
+        setFlaggedQuestions(new Set(state.flaggedQuestions || []));
+        setCrossedOutOptions(state.crossedOutOptions || {});
+        setTestStartTime(new Date(state.testStartTime || new Date()));
+        setCurrentModuleStartTime(new Date(state.currentModuleStartTime || new Date()));
+        setCurrentModuleTimeLeft(state.currentModuleTimeLeft || 0);
+        setCurrentPartTimeLeft(state.currentPartTimeLeft || 0);
+        setTimerRunning(state.timerRunning !== false);
+        setTimerVisible(state.timerVisible !== false);
+        setCurrentPart(state.currentPart || { reading_writing: 1, math: 1 });
+        setSelectedModule(state.selectedModule || null);
+        setPartTimes(state.partTimes || {});
+        setShowModuleSelection(state.showModuleSelection !== false);
+        setCompletedModules(new Set(state.completedModules || []));
+        setShowModuleScores(state.showModuleScores || false);
+        setShowPartTransition(state.showPartTransition || false);
+        return true;
+      } catch (error) {
+        console.error('Error loading complete test state:', error);
+      }
+    }
+    return false;
   };
 
   const loadTimerState = () => {
@@ -107,80 +185,99 @@ const TestInterface = () => {
     return false;
   };
 
-  // Save timer state whenever it changes
-  useEffect(() => {
-    if (permalink) {
-      saveTimerState();
-    }
-  }, [currentPartTimeLeft, timerRunning, timerVisible, currentPart, selectedModule, partTimes, showModuleSelection, completedModules, showModuleScores, showPartTransition, permalink]);
-
-  // Save complete test state periodically
-  useEffect(() => {
-    if (!permalink || !currentTest) return;
-    
-    const saveState = async () => {
-      await saveTestState({
-        currentQuestionIndex,
-        userAnswers,
-        flaggedQuestions,
-        crossedOutOptions,
-        testStartTime,
-        currentModuleStartTime,
-        currentModuleTimeLeft,
-        currentPartTimeLeft,
-        timerRunning,
-        timerVisible,
-        currentPart,
-        selectedModule,
-        partTimes,
-        showModuleSelection,
-        completedModules,
-        showModuleScores,
-        showPartTransition,
-      });
-    };
-
-    // Save state every 30 seconds
-    const interval = setInterval(saveState, 30000);
-    return () => clearInterval(interval);
-  }, [permalink, currentTest, currentQuestionIndex, userAnswers, flaggedQuestions, crossedOutOptions, testStartTime, currentModuleStartTime, currentModuleTimeLeft, currentPartTimeLeft, timerRunning, timerVisible, currentPart, selectedModule, partTimes, showModuleSelection, completedModules, showModuleScores, showPartTransition, saveTestState]);
-
   // Load timer and test state on component mount
   useEffect(() => {
-    if (!permalink) return;
+    if (!permalink || stateLoaded) return; // Prevent multiple loads
     (async () => {
-      // Try to load from DB first
-      const saved = await loadTestState();
-      if (saved) {
-        setCurrentQuestionIndex(saved.currentQuestionIndex);
-        setUserAnswers(saved.userAnswers);
-        setFlaggedQuestions(saved.flaggedQuestions);
-        setCrossedOutOptions(saved.crossedOutOptions);
-        setTestStartTime(new Date(saved.testStartTime));
-        setCurrentModuleStartTime(new Date(saved.currentModuleStartTime));
-        setCurrentModuleTimeLeft(saved.currentModuleTimeLeft);
-        setCurrentPartTimeLeft(saved.currentPartTimeLeft);
-        setTimerRunning(saved.timerRunning);
-        setTimerVisible(saved.timerVisible !== false); // Default to true if not saved
-        setCurrentPart(saved.currentPart);
-        setSelectedModule(saved.selectedModule);
-        setPartTimes(saved.partTimes);
-        setShowModuleSelection(saved.showModuleSelection);
-        setCompletedModules(saved.completedModules);
-        setShowModuleScores(saved.showModuleScores);
-        setShowPartTransition(saved.showPartTransition);
-        setStateLoaded(true);
-        return;
+      try {
+        // Try to load from DB first with timeout
+        const loadPromise = loadTestState();
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Timeout')), 5000) // 5 second timeout
+        );
+        
+        let saved: any = null;
+        try {
+          saved = await Promise.race([loadPromise, timeoutPromise]);
+        } catch (_) {
+          saved = null;
+        }
+        
+        if (saved && typeof saved === 'object') {
+          console.log('🔍 Loading saved state, setting currentQuestionIndex to:', saved.currentQuestionIndex);
+          setCurrentQuestionIndex(saved.currentQuestionIndex);
+          setUserAnswers(saved.userAnswers);
+          setFlaggedQuestions(saved.flaggedQuestions);
+          setCrossedOutOptions(saved.crossedOutOptions);
+          setTestStartTime(new Date(saved.testStartTime));
+          setCurrentModuleStartTime(new Date(saved.currentModuleStartTime));
+          setCurrentModuleTimeLeft(saved.currentModuleTimeLeft);
+          setCurrentPartTimeLeft(saved.currentPartTimeLeft);
+          setTimerRunning(saved.timerRunning);
+          setTimerVisible(saved.timerVisible !== false); // Default to true if not saved
+          setCurrentPart(saved.currentPart);
+          setSelectedModule(saved.selectedModule);
+          setPartTimes(saved.partTimes);
+          setShowModuleSelection(saved.showModuleSelection);
+          setCompletedModules(saved.completedModules);
+          setShowModuleScores(saved.showModuleScores);
+          setShowPartTransition(saved.showPartTransition);
+          setStateLoaded(true);
+          
+          return;
+        }
+        // Fallback to complete sessionStorage state
+        const completeStateLoaded = loadCompleteTestState();
+        if (!completeStateLoaded) {
+          // Fallback to timer-only state if complete state not available
+          const timerStateLoaded = loadTimerState();
+          setStateLoaded(timerStateLoaded);
+        } else {
+          setStateLoaded(true);
+        }
+      } catch (error) {
+        console.error('Error loading test state (falling back to sessionStorage):', error);
+        // Fallback to complete sessionStorage state on error
+        const completeStateLoaded = loadCompleteTestState();
+        if (!completeStateLoaded) {
+          // Fallback to timer-only state if complete state not available
+          const timerStateLoaded = loadTimerState();
+          setStateLoaded(timerStateLoaded);
+        } else {
+          setStateLoaded(true);
+        }
       }
-      // Fallback to sessionStorage
-      const timerStateLoaded = loadTimerState();
-      setStateLoaded(timerStateLoaded);
     })();
-  }, [permalink, loadTestState]);
+  }, [permalink, stateLoaded, loadTestState]);
 
   useEffect(() => {
     sessionStorage.setItem('crossOutMode', crossOutMode ? 'true' : 'false');
   }, [crossOutMode]);
+
+  // Auto-save complete test state to sessionStorage
+  useEffect(() => {
+    if (stateLoaded && permalink) {
+      saveCompleteTestState();
+    }
+  }, [
+    currentQuestionIndex,
+    userAnswers,
+    flaggedQuestions,
+    crossedOutOptions,
+    currentModuleTimeLeft,
+    currentPartTimeLeft,
+    timerRunning,
+    timerVisible,
+    currentPart,
+    selectedModule,
+    partTimes,
+    showModuleSelection,
+    completedModules,
+    showModuleScores,
+    showPartTransition,
+    stateLoaded,
+    permalink
+  ]);
 
   // Calculate total test duration from modules
   const totalTestDuration = currentTest?.modules?.reduce((total: number, module: TestModule) => 
@@ -207,7 +304,6 @@ const TestInterface = () => {
         : null;
       
       if (previousModuleType !== currentModuleType) {
-        console.log('Changing module, setting new time:', newModuleTime);
         setCurrentModuleTimeLeft(newModuleTime);
         setCurrentModuleStartTime(new Date());
       }
@@ -600,20 +696,14 @@ const TestInterface = () => {
   };
 
   // Add a loading state check
-  const isLoading = !currentTest || questions.length === 0;
-
+  const isLoading = !currentTest || questions.length === 0 || !stateLoaded;
+  
   // Initialize module timer when test loads
   useEffect(() => {
     if (currentTest && questions.length > 0) {
       const firstModuleType = questions[0]?.module_type || 'reading_writing';
       const firstModule = currentTest.modules?.find((m: any) => m.type === firstModuleType);
       const initialTime = (firstModule?.time || 0) * 60; // Convert minutes to seconds
-      
-      console.log('Initializing module timer:', {
-        moduleType: firstModuleType,
-        moduleTime: firstModule?.time,
-        initialTime
-      });
       
       setCurrentModuleTimeLeft(initialTime);
       setCurrentModuleStartTime(new Date());
@@ -717,116 +807,191 @@ const TestInterface = () => {
     return () => clearInterval(timer);
   }, [timerRunning, currentPartTimeLeft]);
 
+  // Optimized test loading effect
   useEffect(() => {
-    const loadTest = async () => {
-      if (!user) {
-        console.log('No user found, returning');
-        return;
-      }
+    if (!user) {
+      console.log('No user found, returning');
+      return;
+    }
 
-      // Wait for tests to be loaded
-      if (!tests || tests.length === 0) {
-        console.log('Tests not yet loaded, waiting...');
-        return;
-      }
 
-      console.log('Loading test with permalink:', permalink);
-      console.log('Available tests:', tests);
+    if (testDataLoading) {
+      console.log('Test data is loading...');
+      return;
+    }
 
-      try {
-        // Find the test by permalink or ID
-        const foundTest = tests.find(test => 
-          test.permalink === permalink || test.id === permalink
-        );
-        
-        console.log('Found test:', foundTest);
-        
-        if (!foundTest) {
-          console.error("Test not found:", permalink);
-          toast({
-            title: "Error",
-            description: "Test not found. Please try again.",
-            variant: "destructive"
-          });
-          return;
-        }
+    if (testDataError) {
+      console.error('Error loading test data:', testDataError);
+      toast({
+        title: "Error",
+        description: "Failed to load test. Please try again.",
+        variant: "destructive"
+      });
+      return;
+    }
 
-        setCurrentTest(foundTest);
-        console.log('Fetching test questions for test ID:', foundTest.id);
-        const testQuestions = await getTestQuestions(foundTest.id);
-        console.log('Received test questions:', testQuestions);
-        
-        if (!testQuestions || !testQuestions.questions || testQuestions.questions.length === 0) {
-          console.error('No questions found for test:', foundTest.id);
-          toast({
-            title: "Error",
-            description: "No questions found for this test. Please contact support.",
-            variant: "destructive"
-          });
-          return;
-        }
+    if (!testData) {
+      console.log('No test data available yet');
+      return;
+    }
 
-        setQuestions(testQuestions.questions);
-        setScaledScoring(foundTest.scaled_scoring || []);
-        
-        // Split each module's questions into two parts
-        const grouped: { [moduleType: string]: QuestionData[] } = { reading_writing: [], math: [] };
-        testQuestions.questions.forEach(q => {
-          if (q.module_type === 'math') grouped.math.push(q);
-          else grouped.reading_writing.push(q);
-        });
-        const parts: { [moduleType: string]: [QuestionData[], QuestionData[]] } = {};
-        Object.entries(grouped).forEach(([moduleType, qs]) => {
-          const half = Math.ceil(qs.length / 2);
-          parts[moduleType] = [qs.slice(0, half), qs.slice(half)];
-        });
-        setModuleParts(parts);
-        
-        // Only set default values if no state was loaded from persistence
-        if (!stateLoaded) {
-          setCurrentPart({ reading_writing: 1, math: 1 });
-        }
-        
-        // Set per-part time (half the module time, rounded down)
-        const partTimes: { [moduleType: string]: number } = {};
-        if (foundTest.modules) {
-          foundTest.modules.forEach((m: any) => {
-            partTimes[m.type] = Math.floor((m.time || 0) * 60 / 2); // seconds
-          });
-        }
-        
-        // Only set partTimes if no state was loaded from persistence
-        if (!stateLoaded) {
-          setPartTimes(partTimes);
-        }
-        
-        // Initialize the module timer for the first question (only if no state was loaded)
-        if (testQuestions.questions.length > 0 && !stateLoaded) {
-          const firstModuleType = testQuestions.questions[0]?.module_type || 'reading_writing';
-          const firstModule = foundTest.modules?.find((m: any) => m.type === firstModuleType);
-          const initialTime = (firstModule?.time || 0) * 60; // Convert minutes to seconds
-          setCurrentModuleTimeLeft(initialTime);
-          setCurrentModuleStartTime(new Date());
-        }
-      } catch (error) {
-        console.error("Error loading test questions:", error);
-        toast({
-          title: "Error",
-          description: "Failed to load test questions. Please try again.",
-          variant: "destructive"
-        });
-      }
-    };
+    console.log('Setting up test with optimized data');
+    console.log('Raw modules data:', testData.test.modules);
     
-    loadTest();
-  }, [user, permalink, tests, navigate, toast]);
+    // Parse modules first before using them
+    let modules = testData.test.modules;
+    
+    // Parse modules if it's a string
+    if (typeof modules === 'string') {
+      try {
+        modules = JSON.parse(modules);
+      } catch (error) {
+        console.error('Error parsing modules:', error);
+        modules = [];
+      }
+    }
+    
+    // Ensure modules is an array
+    if (!Array.isArray(modules)) {
+      console.warn('Modules is not an array:', modules);
+      modules = [];
+    }
+    
+    console.log('Parsed modules:', modules);
+    
+    // Ensure modules are properly parsed when setting currentTest
+    const currentTestWithParsedModules = {
+      ...testData.test,
+      modules: modules // Use the parsed modules variable
+    };
+    setCurrentTest(currentTestWithParsedModules);
+    setQuestions(testData.questions);
+    setScaledScoring(testData.scaledScoring);
+    
+    console.log('Questions set:', testData.questions.length);
+    console.log('Scaled scoring set:', testData.scaledScoring.length);
+    
+    // Split each module's questions into two parts
+    const grouped: { [moduleType: string]: QuestionData[] } = { reading_writing: [], math: [] };
+    testData.questions.forEach(q => {
+      if (q.module_type === 'math') grouped.math.push(q);
+      else grouped.reading_writing.push(q);
+    });
+    const parts: { [moduleType: string]: [QuestionData[], QuestionData[]] } = {};
+    Object.entries(grouped).forEach(([moduleType, qs]) => {
+      const half = Math.ceil(qs.length / 2);
+      parts[moduleType] = [qs.slice(0, half), qs.slice(half)];
+    });
+    setModuleParts(parts);
+    
+    console.log('Module parts set:', Object.keys(parts));
+    
+    // Only set default values if no state was loaded from persistence
+    if (!stateLoaded) {
+      setCurrentPart({ reading_writing: 1, math: 1 });
+      console.log('Current part set to defaults');
+    } else {
+      console.log('State was loaded, ensuring proper module selection');
+    }
+    
+    // Set per-part time (half the module time, rounded down)
+    const partTimes: { [moduleType: string]: number } = {};
+    
+    if (modules.length > 0) {
+      modules.forEach((m: any) => {
+        partTimes[m.type] = Math.floor((m.time || 0) * 60 / 2); // seconds
+      });
+    }
+    
+    // Only set partTimes if no state was loaded from persistence
+    if (!stateLoaded) {
+      setPartTimes(partTimes);
+      console.log('Part times set:', partTimes);
+    }
+    
+    // Initialize the module timer for the first question (only if no state was loaded)
+    if (testData.questions.length > 0 && !stateLoaded) {
+      const firstModuleType = testData.questions[0]?.module_type || 'reading_writing';
+      const firstModule = modules?.find((m: any) => m.type === firstModuleType);
+      const initialTime = (firstModule?.time || 0) * 60; // Convert minutes to seconds
+      setCurrentModuleTimeLeft(initialTime);
+      setCurrentModuleStartTime(new Date());
+      console.log('Module timer initialized:', initialTime);
+    }
+    
+    console.log('Test loading completed successfully');
+    
+    // Ensure stateLoaded is set to true after successful loading
+    if (!stateLoaded) {
+      setStateLoaded(true);
+      console.log('State loaded set to true');
+    }
+    
+  }, [user, testData, testDataLoading, testDataError, stateLoaded, toast]);
 
-  if (isLoading) {
+  const [showSaveExitDialog, setShowSaveExitDialog] = useState(false);
+
+  // Add function to handle Save & Exit
+  const handleSaveAndExit = async () => {
+    setIsSaving(true);
+    try {
+      console.log('Saving test state before exit...');
+      await saveTestState({
+        currentQuestionIndex,
+        userAnswers,
+        flaggedQuestions,
+        crossedOutOptions,
+        testStartTime,
+        currentModuleStartTime,
+        currentModuleTimeLeft,
+        currentPartTimeLeft,
+        timerRunning,
+        timerVisible,
+        currentPart,
+        selectedModule,
+        partTimes,
+        showModuleSelection,
+        completedModules,
+        showModuleScores,
+        showPartTransition,
+      });
+      console.log('Test state saved successfully');
+      
+      toast({
+        title: "Test Saved",
+        description: "Your progress has been saved. You can resume the test later.",
+        duration: 3000,
+      });
+      
+      // Navigate to dashboard
+      navigate('/dashboard');
+    } catch (error) {
+      console.error('Error saving test state:', error);
+      toast({
+        title: "Error",
+        description: "Failed to save your progress. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSaving(false);
+      setShowSaveExitDialog(false);
+    }
+  };
+
+  const handleSaveExitClick = async () => {
+    setShowSaveExitDialog(true);
+  };
+
+  // Show loading state for optimized test loading (do not block when we already restored state)
+  if ((testDataLoading || !permalink) && !stateLoaded) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
-          <p className="text-lg">Loading test...</p>
+          <p className="text-lg">Loading test data...</p>
+          {testDataError && (
+            <p className="text-red-500 mt-2">Error: {String(testDataError)}</p>
+          )}
         </div>
       </div>
     );
@@ -840,7 +1005,7 @@ const TestInterface = () => {
       const parts = moduleParts[moduleType];
       const partTimes = module ? Math.floor((module.time || 0) / 2) : 0; // Half the module time in minutes
       
-      if (!parts || parts.length === 0) {
+      if (!parts || parts.length < 1) {
         return [{
           partNumber: 1,
           questionCount: 0,
@@ -908,6 +1073,9 @@ const TestInterface = () => {
 
   // Add the module scores screen
   if (showModuleScores) {
+    const currentModuleType = selectedModule || getCurrentModuleType();
+    const currentModuleQuestions = questions.filter(q => q.module_type === currentModuleType);
+    
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
         <Header />
@@ -944,6 +1112,16 @@ const TestInterface = () => {
                 }
                 return null;
               })}
+              
+              {/* Add Answer Review Section */}
+              <div className="mt-8 pt-6 border-t border-gray-200">
+                <QuestionReview 
+                  questions={currentModuleQuestions}
+                  userAnswers={userAnswers}
+                  moduleType={currentModuleType}
+                />
+              </div>
+              
               <div className="mt-6">
                 <Button onClick={handleProceedToNextModule} className="w-full">
                   {completedModules.size < (currentTest?.modules?.length || 0) 
@@ -985,10 +1163,10 @@ const TestInterface = () => {
   const partQuestions = getCurrentPartQuestions();
   const partStartIndex = questions.findIndex(q => q.id === partQuestions[0]?.id);
   const partRelativeIndex = currentQuestionIndex - partStartIndex;
-
+  
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      <Header showLogout={false} />
+      <Header showLogout={false} onSaveAndExit={handleSaveExitClick} isSaving={isSaving} />
       
       <main className="flex-1 container max-w-4xl mx-auto py-6 px-4">
         <div className="flex justify-between items-center mb-6 border-b pb-4">
@@ -1126,7 +1304,10 @@ const TestInterface = () => {
             onPreviousQuestion={handlePreviousQuestion}
             onNextQuestion={handleNextQuestion}
             onConfirmSubmit={() => setShowConfirmSubmit(true)}
-            onGoToQuestion={index => setCurrentQuestionIndex(partStartIndex + index)}
+            onGoToQuestion={index => {
+              const newIndex = partStartIndex + index;
+              setCurrentQuestionIndex(newIndex);
+            }}
             flaggedQuestions={flaggedQuestions}
             onToggleFlag={handleToggleFlag}
             crossedOutOptions={crossedOutOptions}
@@ -1146,11 +1327,15 @@ const TestInterface = () => {
         setShowConfirmSubmit={setShowConfirmSubmit}
         showTimeUpDialog={showTimeUpDialog}
         setShowTimeUpDialog={setShowTimeUpDialog}
+        showSaveExitDialog={showSaveExitDialog}
+        setShowSaveExitDialog={setShowSaveExitDialog}
         onSubmitTest={handleSubmitTest}
         onDiscardTest={async () => {
           await clearTestState();
           navigate('/dashboard');
         }}
+        onSaveAndExit={handleSaveAndExit}
+        isSaving={isSaving}
       />
       <Footer />
     </div>

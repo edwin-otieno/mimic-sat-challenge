@@ -475,3 +475,136 @@ export const migrateTestsToUUID = async () => {
     totalTests: tests.length
   };
 };
+
+// Simple in-memory cache for test data
+const testCache = new Map<string, { data: any, timestamp: number }>();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+// Optimized function to load test and questions in parallel
+export const getTestWithQuestionsOptimized = async (testIdentifier: string): Promise<{ 
+  test: any,
+  questions: QuestionData[], 
+  scaledScoring?: ScaledScore[] 
+}> => {
+  try {
+    console.log('Getting test and questions optimized for identifier:', testIdentifier);
+    
+    const isUuid = /^[0-9a-fA-F-]{36}$/.test(testIdentifier);
+    
+    // If we have a UUID, we can try the cache immediately
+    if (isUuid) {
+      const cached = testCache.get(testIdentifier);
+      if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+        console.log('Loading test from cache:', testIdentifier);
+        return cached.data;
+      }
+    }
+    
+    // First load the test row by id or permalink
+    const testQuery = supabase
+      .from('tests')
+      .select('*')
+      .limit(1);
+    
+    const testResult = isUuid
+      ? await testQuery.eq('id', testIdentifier).single()
+      : await testQuery.eq('permalink', testIdentifier).single();
+    
+    if (testResult.error || !testResult.data) {
+      console.error('Test not found:', testResult.error);
+      throw new Error('Test not found');
+    }
+    
+    const testId = testResult.data.id;
+    
+    // Check cache again using canonical test id
+    const cachedById = testCache.get(testId);
+    if (cachedById && Date.now() - cachedById.timestamp < CACHE_DURATION) {
+      console.log('Loading test from cache by id:', testId);
+      return cachedById.data;
+    }
+    
+    // Load questions for this test id
+    const { data: questionsData, error: questionsError } = await supabase
+      .from('test_questions')
+      .select('*')
+      .eq('test_id', testId)
+      .order('question_order', { ascending: true });
+    
+    if (questionsError) {
+      console.error('Error fetching questions:', questionsError);
+      throw questionsError;
+    }
+
+    if (!questionsData || questionsData.length === 0) {
+      console.error('No questions found for test ID:', testId);
+      throw new Error('No questions found for this test');
+    }
+    
+    console.log('Found questions:', questionsData.length);
+    
+    // Get options for all questions in a single query
+    const questionIds = questionsData.map(q => q.id);
+    const { data: optionsData, error: optionsError } = await supabase
+      .from('test_question_options')
+      .select('*')
+      .in('question_id', questionIds);
+      
+    if (optionsError) {
+      console.error('Error fetching question options:', optionsError);
+      throw optionsError;
+    }
+    
+    // Convert to QuestionData format
+    const questions: QuestionData[] = questionsData.map(question => 
+      convertDbQuestionToQuestionData(question, optionsData || [])
+    );
+    
+    console.log('Converted questions:', questions.length);
+    
+    // Parse modules and scaled_scoring if they're stored as JSON strings
+    let parsedModules = testResult.data.modules;
+    if (typeof parsedModules === 'string') {
+      try {
+        parsedModules = JSON.parse(parsedModules);
+      } catch (error) {
+        console.error('Error parsing modules:', error);
+        parsedModules = [];
+      }
+    }
+    
+    let parsedScaledScoring = testResult.data.scaled_scoring;
+    if (typeof parsedScaledScoring === 'string') {
+      try {
+        parsedScaledScoring = JSON.parse(parsedScaledScoring);
+      } catch (error) {
+        console.error('Error parsing scaled_scoring:', error);
+        parsedScaledScoring = [];
+      }
+    }
+    
+    const result = { 
+      test: {
+        ...testResult.data,
+        modules: parsedModules,
+        scaled_scoring: parsedScaledScoring
+      },
+      questions,
+      scaledScoring: parsedScaledScoring || []
+    };
+    
+    // Cache the result
+    testCache.set(testId, { data: result, timestamp: Date.now() });
+    
+    return result;
+  } catch (error) {
+    console.error('Error getting test with questions optimized:', error);
+    throw error;
+  }
+};
+
+// Clear cache function for testing or when needed
+export const clearTestCache = () => {
+  testCache.clear();
+  console.log('Test cache cleared');
+};

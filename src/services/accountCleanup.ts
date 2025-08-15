@@ -1,4 +1,5 @@
-import { adminClient } from '@/integrations/supabase/admin-client';
+import { supabaseAdmin } from '@/integrations/supabase/admin-client';
+import { supabase } from '@/integrations/supabase/client';
 
 /**
  * Deletes student accounts that are more than 6 months old
@@ -11,7 +12,7 @@ export const cleanupOldStudentAccounts = async () => {
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
     // First, get all student profiles that are older than 6 months
-    const { data: oldProfiles, error: profileError } = await adminClient
+    const { data: oldProfiles, error: profileError } = await supabaseAdmin
       .from('profiles')
       .select('id, email, role, created_at')
       .eq('role', 'student')
@@ -33,7 +34,7 @@ export const cleanupOldStudentAccounts = async () => {
     for (const profile of oldProfiles) {
       try {
         // First delete from profiles table
-        const { error: profileDeleteError } = await adminClient
+        const { error: profileDeleteError } = await supabaseAdmin
           .from('profiles')
           .delete()
           .eq('id', profile.id);
@@ -44,7 +45,7 @@ export const cleanupOldStudentAccounts = async () => {
         }
 
         // Then delete the auth user
-        const { error: authDeleteError } = await adminClient.auth.admin.deleteUser(
+        const { error: authDeleteError } = await supabaseAdmin.auth.admin.deleteUser(
           profile.id
         );
 

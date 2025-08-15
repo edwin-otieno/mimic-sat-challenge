@@ -32,38 +32,66 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    // Set up auth state listener FIRST
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, currentSession) => {
-        console.log("Auth state changed:", event, !!currentSession);
+    let isMounted = true;
+    
+    const setupAuth = async () => {
+      try {
+        // Set up auth state listener FIRST
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(
+          (event, currentSession) => {
+            if (!isMounted) return;
+            console.log("Auth state changed:", event, !!currentSession);
+            setSession(currentSession);
+            setUser(currentSession?.user ?? null);
+            
+            // Fetch profile data if user is authenticated
+            if (currentSession?.user) {
+              setTimeout(() => {
+                fetchProfile(currentSession.user.id);
+              }, 0);
+            } else {
+              setProfile(null);
+            }
+          }
+        );
+
+        // THEN check for existing session
+        const { data: { session: currentSession }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('Error getting session:', error);
+          if (isMounted) {
+            setIsLoading(false);
+          }
+          return;
+        }
+        
+        if (!isMounted) return;
+        
+        console.log("Initial session check:", !!currentSession);
         setSession(currentSession);
         setUser(currentSession?.user ?? null);
         
-        // Fetch profile data if user is authenticated
         if (currentSession?.user) {
-          setTimeout(() => {
-            fetchProfile(currentSession.user.id);
-          }, 0);
-        } else {
-          setProfile(null);
+          fetchProfile(currentSession.user.id);
+        }
+        
+        setIsLoading(false);
+
+        return () => subscription.unsubscribe();
+      } catch (error) {
+        console.error('Error setting up auth:', error);
+        if (isMounted) {
+          setIsLoading(false);
         }
       }
-    );
+    };
 
-    // THEN check for existing session
-    supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
-      console.log("Initial session check:", !!currentSession);
-      setSession(currentSession);
-      setUser(currentSession?.user ?? null);
-      
-      if (currentSession?.user) {
-        fetchProfile(currentSession.user.id);
-      }
-      
-      setIsLoading(false);
-    });
+    setupAuth();
 
-    return () => subscription.unsubscribe();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const fetchProfile = async (userId: string) => {
@@ -77,6 +105,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (error) {
         console.error('Error fetching profile:', error);
+        // Don't throw error, just log it and continue
         return;
       }
 
@@ -84,6 +113,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setProfile(data as Profile);
     } catch (error) {
       console.error('Error in fetchProfile:', error);
+      // Don't throw error, just log it and continue
+      // This prevents the app from crashing on network errors
     }
   };
 

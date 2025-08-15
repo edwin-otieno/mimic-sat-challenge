@@ -11,8 +11,10 @@ import Footer from "@/components/Footer";
 const Dashboard = () => {
   const navigate = useNavigate();
   const { user, profile } = useAuth();
-  const { tests } = useTests();
+  const { tests, checkTestInProgress } = useTests();
   const [availableTests, setAvailableTests] = useState<Test[]>([]);
+  const [testProgressStatus, setTestProgressStatus] = useState<Record<string, boolean>>({});
+  const [loadingProgress, setLoadingProgress] = useState(true);
   
   useEffect(() => {
     // Filter active tests and sort alphabetically by title
@@ -22,6 +24,33 @@ const Dashboard = () => {
     setAvailableTests(activeTests);
   }, [tests]);
 
+  useEffect(() => {
+    const checkAllTestProgress = async () => {
+      if (!user || availableTests.length === 0) {
+        setLoadingProgress(false);
+        return;
+      }
+
+      const progressStatus: Record<string, boolean> = {};
+      
+      for (const test of availableTests) {
+        const testId = test.permalink || test.id;
+        try {
+          const inProgress = await checkTestInProgress(testId);
+          progressStatus[testId] = inProgress;
+        } catch (error) {
+          console.error(`Error checking progress for test ${testId}:`, error);
+          progressStatus[testId] = false;
+        }
+      }
+      
+      setTestProgressStatus(progressStatus);
+      setLoadingProgress(false);
+    };
+
+    checkAllTestProgress();
+  }, [user, availableTests, checkTestInProgress]);
+
   const startTest = (testId: string) => {
     const test = availableTests.find(t => t.id === testId);
     if (test?.permalink) {
@@ -29,6 +58,28 @@ const Dashboard = () => {
     } else {
       navigate(`/test/${testId}`);
     }
+  };
+
+  const getTestButtonText = (test: Test) => {
+    const testId = test.permalink || test.id;
+    const inProgress = testProgressStatus[testId];
+    
+    if (loadingProgress) {
+      return "Loading...";
+    }
+    
+    return inProgress ? "Resume Test" : "Start Test";
+  };
+
+  const getTestButtonVariant = (test: Test) => {
+    const testId = test.permalink || test.id;
+    const inProgress = testProgressStatus[testId];
+    
+    if (loadingProgress) {
+      return "outline" as const;
+    }
+    
+    return inProgress ? "default" as const : "default" as const;
   };
 
   return (
@@ -54,38 +105,50 @@ const Dashboard = () => {
           
           {availableTests.length > 0 ? (
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {availableTests.map((test) => (
-                <Card key={test.id} className="hover:shadow-md transition-shadow">
-                  <CardHeader>
-                    <CardTitle>{test.title}</CardTitle>
-                    <CardDescription>{test.description}</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex justify-between text-sm">
-                      <div className="flex flex-col">
-                        <span className="font-semibold text-gray-700">Modules</span>
-                        <span>{(test.modules?.length || 2) * 2}</span>
+              {availableTests.map((test) => {
+                const testId = test.permalink || test.id;
+                const inProgress = testProgressStatus[testId];
+                
+                return (
+                  <Card key={test.id} className="hover:shadow-md transition-shadow">
+                    <CardHeader>
+                      <CardTitle>{test.title}</CardTitle>
+                      <CardDescription>{test.description}</CardDescription>
+                      {inProgress && (
+                        <div className="text-sm text-blue-600 font-medium">
+                          ⏸️ Test in progress
+                        </div>
+                      )}
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex justify-between text-sm">
+                        <div className="flex flex-col">
+                          <span className="font-semibold text-gray-700">Modules</span>
+                          <span>{(test.modules?.length || 2) * 2}</span>
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="font-semibold text-gray-700">Type</span>
+                          <span>{test.modules?.map(m => m.type.split('_')[0]).join(', ')}</span>
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="font-semibold text-gray-700">Status</span>
+                          <span>{test.is_active ? 'Active' : 'Inactive'}</span>
+                        </div>
                       </div>
-                      <div className="flex flex-col">
-                        <span className="font-semibold text-gray-700">Type</span>
-                        <span>{test.modules?.map(m => m.type.split('_')[0]).join(', ')}</span>
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="font-semibold text-gray-700">Status</span>
-                        <span>{test.is_active ? 'Active' : 'Inactive'}</span>
-                      </div>
-                    </div>
-                  </CardContent>
-                  <CardFooter>
-                    <Button 
-                      className="w-full" 
-                      onClick={() => startTest(test.id)}
-                    >
-                      Start Test
-                    </Button>
-                  </CardFooter>
-                </Card>
-              ))}
+                    </CardContent>
+                    <CardFooter>
+                      <Button 
+                        className="w-full" 
+                        onClick={() => startTest(test.id)}
+                        variant={getTestButtonVariant(test)}
+                        disabled={loadingProgress}
+                      >
+                        {getTestButtonText(test)}
+                      </Button>
+                    </CardFooter>
+                  </Card>
+                );
+              })}
             </div>
           ) : (
             <div className="text-center p-8 bg-gray-50 rounded-lg border border-dashed">

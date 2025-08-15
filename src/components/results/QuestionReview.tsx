@@ -6,15 +6,23 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 interface QuestionReviewProps {
   questions: QuestionData[];
   userAnswers: Record<string, string>;
+  moduleType?: string; // Optional: filter questions by module type
 }
 
-const QuestionReview: React.FC<QuestionReviewProps> = React.memo(({ questions, userAnswers }) => {
+const QuestionReview: React.FC<QuestionReviewProps> = React.memo(({ questions, userAnswers, moduleType }) => {
   // Group questions by module type - memoize to prevent recalculation
   const { readingWritingQuestions, mathQuestions } = useMemo(() => {
-    const readingWriting = questions.filter(q => q.module_type === "reading_writing");
-    const math = questions.filter(q => q.module_type === "math");
+    let filteredQuestions = questions;
+    
+    // If moduleType is specified, filter questions by that module
+    if (moduleType) {
+      filteredQuestions = questions.filter(q => q.module_type === moduleType);
+    }
+    
+    const readingWriting = filteredQuestions.filter(q => q.module_type === "reading_writing");
+    const math = filteredQuestions.filter(q => q.module_type === "math");
     return { readingWritingQuestions: readingWriting, mathQuestions: math };
-  }, [questions]);
+  }, [questions, moduleType]);
 
   const renderQuestionList = useMemo(() => {
     return (questions: QuestionData[]) => {
@@ -122,38 +130,53 @@ const QuestionReview: React.FC<QuestionReviewProps> = React.memo(({ questions, u
     <div className="mb-6">
       <h3 className="text-xl font-semibold mb-4">Review Your Answers</h3>
       
-      <Tabs defaultValue="reading_writing" className="w-full">
-        <TabsList className="mb-4">
-          <TabsTrigger value="reading_writing">
-            Reading & Writing ({readingWritingQuestions.length} questions)
-          </TabsTrigger>
-          <TabsTrigger value="math">
-            Math ({mathQuestions.length} questions)
-          </TabsTrigger>
-        </TabsList>
-        
-        <TabsContent value="reading_writing">
-          <Card>
-            <CardHeader>
-              <CardTitle>Reading & Writing Questions</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {renderQuestionList(readingWritingQuestions)}
-            </CardContent>
-          </Card>
-        </TabsContent>
-        
-        <TabsContent value="math">
-          <Card>
-            <CardHeader>
-              <CardTitle>Math Questions</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {renderQuestionList(mathQuestions)}
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      {/* If moduleType is specified, show simplified view without tabs */}
+      {moduleType ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              {moduleType === 'reading_writing' ? 'Reading & Writing' : 'Math'} Questions ({readingWritingQuestions.length + mathQuestions.length} questions)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {renderQuestionList([...readingWritingQuestions, ...mathQuestions])}
+          </CardContent>
+        </Card>
+      ) : (
+        /* Show tabs for full test review */
+        <Tabs defaultValue="reading_writing" className="w-full">
+          <TabsList className="mb-4">
+            <TabsTrigger value="reading_writing">
+              Reading & Writing ({readingWritingQuestions.length} questions)
+            </TabsTrigger>
+            <TabsTrigger value="math">
+              Math ({mathQuestions.length} questions)
+            </TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="reading_writing">
+            <Card>
+              <CardHeader>
+                <CardTitle>Reading & Writing Questions</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {renderQuestionList(readingWritingQuestions)}
+              </CardContent>
+            </Card>
+          </TabsContent>
+          
+          <TabsContent value="math">
+            <Card>
+              <CardHeader>
+                <CardTitle>Math Questions</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {renderQuestionList(mathQuestions)}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      )}
     </div>
   );
 });

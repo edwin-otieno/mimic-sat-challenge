@@ -73,7 +73,7 @@ const QuestionNavigator: React.FC<QuestionNavigatorProps> = ({
     <div className="border rounded-lg p-4 bg-white">
       <h3 className="text-sm font-medium mb-3">Question Navigator</h3>
       
-      <Tabs defaultValue={currentModuleType} className="w-full">
+      <Tabs value={currentModuleType} className="w-full">
         <TabsList className="mb-4">
           {currentModuleType === "reading_writing" && (
             <TabsTrigger value="reading_writing">

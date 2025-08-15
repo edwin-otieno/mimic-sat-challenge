@@ -61,16 +61,11 @@ export const TestContainer: React.FC<TestContainerProps> = ({
   const [showExplanation, setShowExplanation] = useState(false);
   const [showEndModuleDialog, setShowEndModuleDialog] = useState(false);
 
-  // Validate questions prop
-  if (!Array.isArray(questions) || questions.length === 0) {
-    return (
-      <div className="text-center py-8">
-        <p className="text-gray-500">No questions available</p>
-      </div>
-    );
-  }
+  // Always call hooks; avoid early return to keep hook order stable
+  const safeQuestions = Array.isArray(questions) ? questions : [];
+  const noQuestions = safeQuestions.length === 0;
 
-  const currentQuestion = questions[currentQuestionIndex];
+  const currentQuestion = safeQuestions[currentQuestionIndex];
   const selectedAnswer = currentQuestion ? userAnswers[currentQuestion.id] : null;
   const isQuestionFlagged = currentQuestion ? flaggedQuestions.has(currentQuestion.id) : false;
   const questionCrossedOuts = currentQuestion ? crossedOutOptions[currentQuestion.id] || [] : [];
@@ -83,30 +78,31 @@ export const TestContainer: React.FC<TestContainerProps> = ({
   }, [currentQuestion, userAnswers]);
 
   // Group questions by module type
-  const readingWritingQuestions = questions.filter(q => q.module_type === "reading_writing");
-  const mathQuestions = questions.filter(q => q.module_type === "math");
+  const readingWritingQuestions = safeQuestions.filter(q => q.module_type === "reading_writing");
+  const mathQuestions = safeQuestions.filter(q => q.module_type === "math");
 
   // Find the current module type
   const currentModuleType = currentQuestion?.module_type || "reading_writing";
   const moduleName = currentModuleType === "reading_writing" ? "Reading & Writing" : "Math";
 
   // Determine if this is the last question of the module (end of Part 2)
-  const isLastQuestion = currentQuestionIndex === questions.length - 1;
+  const isLastQuestion = currentQuestionIndex === safeQuestions.length - 1;
 
   // Show saving indicator when answers change
-  useEffect(() => {
-    if (onSaveStatusChange) {
-      setIsSaving(true);
-      onSaveStatusChange(true);
+  // DISABLED: Auto-save is causing issues with navigation
+  // useEffect(() => {
+  //   if (onSaveStatusChange) {
+  //     setIsSaving(true);
+  //     onSaveStatusChange(true);
       
-      const timer = setTimeout(() => {
-        setIsSaving(false);
-        onSaveStatusChange(false);
-      }, 1000);
+  //     const timer = setTimeout(() => {
+  //       setIsSaving(false);
+  //       onSaveStatusChange(false);
+  //     }, 1000);
       
-      return () => clearTimeout(timer);
-    }
-  }, [userAnswers, onSaveStatusChange]);
+  //     return () => clearTimeout(timer);
+  //   }
+  // }, [userAnswers, onSaveStatusChange]);
 
   useEffect(() => {
     // Reset state when question changes
@@ -146,7 +142,7 @@ export const TestContainer: React.FC<TestContainerProps> = ({
   return (
     <>
       <div className="mb-6">
-        <ProgressBar current={currentQuestionIndex + 1} total={questions.length} />
+        <ProgressBar current={currentQuestionIndex + 1} total={safeQuestions.length} />
       </div>
       
       <div className="flex justify-between items-center mb-4">
@@ -154,12 +150,7 @@ export const TestContainer: React.FC<TestContainerProps> = ({
           {moduleName} - Part {currentPart}
         </h2>
         <div className="flex items-center gap-4">
-          {isSaving && (
-            <div className="text-sm text-gray-500 flex items-center gap-2">
-              <div className="animate-spin h-4 w-4 border-2 border-gray-500 border-t-transparent rounded-full"></div>
-              Saving...
-            </div>
-          )}
+          {/* Removed saving indicator since auto-save is disabled */}
           <div className="flex items-center space-x-2">
             <Switch
               checked={showLineReader}
@@ -198,7 +189,7 @@ export const TestContainer: React.FC<TestContainerProps> = ({
         onToggle={() => setShowLineReader(false)} 
       />
       
-      <Tabs defaultValue={currentModuleType} className="w-full mb-6">
+      <Tabs value={currentModuleType} className="w-full mb-6">
         <TabsList className="mb-4">
           {currentModuleType === "reading_writing" && (
             <TabsTrigger value="reading_writing">
@@ -218,7 +209,7 @@ export const TestContainer: React.FC<TestContainerProps> = ({
                 <CardTitle>Reading & Writing Questions</CardTitle>
               </CardHeader>
               <CardContent>
-                {currentQuestion && currentQuestion.module_type === "reading_writing" && (
+                                 {!noQuestions && currentQuestion && currentQuestion.module_type === "reading_writing" && (
                   <Question
                     question={currentQuestion}
                     onAnswerChange={handleAnswerChange}
@@ -252,7 +243,7 @@ export const TestContainer: React.FC<TestContainerProps> = ({
                 </div>
               </CardHeader>
               <CardContent>
-                {currentQuestion && currentQuestion.module_type === "math" && (
+                                 {!noQuestions && currentQuestion && currentQuestion.module_type === "math" && (
                   <Question
                     question={currentQuestion}
                     onAnswerChange={handleAnswerChange}
@@ -281,7 +272,7 @@ export const TestContainer: React.FC<TestContainerProps> = ({
       </div>
       <div className="mt-8">
         <QuestionNavigator
-          questions={questions}
+          questions={safeQuestions}
           currentIndex={currentQuestionIndex}
           userAnswers={userAnswers}
           flaggedQuestions={flaggedQuestions}
