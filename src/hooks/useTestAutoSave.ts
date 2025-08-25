@@ -22,6 +22,8 @@ interface SavedTestState {
   completedModules: Set<string>;
   showModuleScores: boolean;
   showPartTransition: boolean;
+  // Track last saved question for each module/part
+  lastSavedQuestions?: { [key: string]: number };
 }
 
 export const useTestAutoSave = (permalink: string) => {

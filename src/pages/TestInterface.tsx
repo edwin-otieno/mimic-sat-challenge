@@ -75,6 +75,8 @@ const TestInterface = () => {
   const [partTimes, setPartTimes] = useState<{ [moduleType: string]: number }>({});
   const [showReference, setShowReference] = useState(false);
   const [showMathReference, setShowMathReference] = useState(false);
+  // Track the last saved question for each module/part
+  const [lastSavedQuestions, setLastSavedQuestions] = useState<{ [key: string]: number }>({});
   const [crossOutMode, setCrossOutMode] = useState(() => {
     // Persist for the session
     const saved = sessionStorage.getItem('crossOutMode');
@@ -122,7 +124,8 @@ const TestInterface = () => {
       showModuleSelection,
       completedModules: Array.from(completedModules),
       showModuleScores,
-      showPartTransition
+      showPartTransition,
+      lastSavedQuestions
     };
     sessionStorage.setItem(`completeTestState_${permalink}`, JSON.stringify(completeState));
   };
@@ -146,14 +149,16 @@ const TestInterface = () => {
         setCurrentModuleTimeLeft(state.currentModuleTimeLeft || 0);
         setCurrentPartTimeLeft(state.currentPartTimeLeft || 0);
         setTimerRunning(state.timerRunning !== false);
-        setTimerVisible(state.timerVisible !== false);
+        setTimerVisible(state.timerVisible !== false); // Default to true if not saved
         setCurrentPart(state.currentPart || { reading_writing: 1, math: 1 });
         setSelectedModule(state.selectedModule || null);
         setPartTimes(state.partTimes || {});
-        setShowModuleSelection(state.showModuleSelection !== false);
+        // Always show module selection when resuming a saved test
+        setShowModuleSelection(true);
         setCompletedModules(new Set(state.completedModules || []));
         setShowModuleScores(state.showModuleScores || false);
         setShowPartTransition(state.showPartTransition || false);
+        setLastSavedQuestions(state.lastSavedQuestions || {});
         return true;
       } catch (error) {
         console.error('Error loading complete test state:', error);
@@ -173,7 +178,8 @@ const TestInterface = () => {
         setCurrentPart(timerState.currentPart || { reading_writing: 1, math: 1 });
         setSelectedModule(timerState.selectedModule || null);
         setPartTimes(timerState.partTimes || {});
-        setShowModuleSelection(timerState.showModuleSelection !== false); // Default to true if not saved
+        // Always show module selection when resuming a saved test
+        setShowModuleSelection(true);
         setCompletedModules(new Set(timerState.completedModules || []));
         setShowModuleScores(timerState.showModuleScores || false);
         setShowPartTransition(timerState.showPartTransition || false);
@@ -218,10 +224,12 @@ const TestInterface = () => {
           setCurrentPart(saved.currentPart);
           setSelectedModule(saved.selectedModule);
           setPartTimes(saved.partTimes);
-          setShowModuleSelection(saved.showModuleSelection);
+          // Always show module selection when resuming a saved test
+          setShowModuleSelection(true);
           setCompletedModules(saved.completedModules);
           setShowModuleScores(saved.showModuleScores);
           setShowPartTransition(saved.showPartTransition);
+          setLastSavedQuestions(saved.lastSavedQuestions || {});
           setStateLoaded(true);
           
           return;
@@ -718,12 +726,25 @@ const TestInterface = () => {
     // Set the current part
     setCurrentPart(prev => ({ ...prev, [moduleType]: partNumber as 1 | 2 }));
     
-    // Find the first question of the selected part
+    // Find the last saved question for this module/part
+    const key = `${moduleType}-part-${partNumber}`;
+    const lastSavedQuestionIndex = lastSavedQuestions[key];
+    
     const partQuestions = moduleParts[moduleType]?.[partNumber - 1] || [];
     if (partQuestions.length > 0) {
-      const firstIndex = questions.findIndex(q => q.id === partQuestions[0].id);
-      if (firstIndex !== -1) {
-        setCurrentQuestionIndex(firstIndex);
+      const partStartIndex = questions.findIndex(q => q.id === partQuestions[0].id);
+      const partEndIndex = partStartIndex + partQuestions.length - 1;
+      
+      if (lastSavedQuestionIndex !== undefined && 
+          lastSavedQuestionIndex >= partStartIndex && 
+          lastSavedQuestionIndex <= partEndIndex) {
+        // Use the last saved question for this module/part
+        setCurrentQuestionIndex(lastSavedQuestionIndex);
+        console.log(`Resuming ${moduleType} Part ${partNumber} from saved question:`, lastSavedQuestionIndex);
+      } else {
+        // Start from the first question of the part
+        setCurrentQuestionIndex(partStartIndex);
+        console.log(`Starting ${moduleType} Part ${partNumber} from first question:`, partStartIndex);
       }
     } else {
       // Fallback to first question of the module
@@ -780,11 +801,27 @@ const TestInterface = () => {
   const handleProceedToPart2 = () => {
     const moduleType = selectedModule || getCurrentModuleType();
     setCurrentPart(prev => ({ ...prev, [moduleType]: 2 }));
-    // Move to first question of Part 2
+    
+    // Find the last saved question for Part 2 of this module
+    const key = `${moduleType}-part-2`;
+    const lastSavedQuestionIndex = lastSavedQuestions[key];
+    
     const part2Questions = moduleParts[moduleType]?.[1] || [];
     if (part2Questions.length > 0) {
-      const firstIndex = questions.findIndex(q => q.id === part2Questions[0].id);
-      setCurrentQuestionIndex(firstIndex);
+      const partStartIndex = questions.findIndex(q => q.id === part2Questions[0].id);
+      const partEndIndex = partStartIndex + part2Questions.length - 1;
+      
+      if (lastSavedQuestionIndex !== undefined && 
+          lastSavedQuestionIndex >= partStartIndex && 
+          lastSavedQuestionIndex <= partEndIndex) {
+        // Use the last saved question for Part 2
+        setCurrentQuestionIndex(lastSavedQuestionIndex);
+        console.log(`Resuming ${moduleType} Part 2 from saved question:`, lastSavedQuestionIndex);
+      } else {
+        // Start from the first question of Part 2
+        setCurrentQuestionIndex(partStartIndex);
+        console.log(`Starting ${moduleType} Part 2 from first question:`, partStartIndex);
+      }
     }
     setCurrentPartTimeLeft(partTimes[moduleType] || 0);
     setTimerRunning(true);
@@ -936,6 +973,16 @@ const TestInterface = () => {
     setIsSaving(true);
     try {
       console.log('Saving test state before exit...');
+      // Update the last saved question for the current module/part
+      const currentModuleType = selectedModule || getCurrentModuleType();
+      const currentPartNumber = currentPart[currentModuleType] || 1;
+      const key = `${currentModuleType}-part-${currentPartNumber}`;
+      const updatedLastSavedQuestions = {
+        ...lastSavedQuestions,
+        [key]: currentQuestionIndex
+      };
+      setLastSavedQuestions(updatedLastSavedQuestions);
+
       await saveTestState({
         currentQuestionIndex,
         userAnswers,
@@ -954,6 +1001,7 @@ const TestInterface = () => {
         completedModules,
         showModuleScores,
         showPartTransition,
+        lastSavedQuestions: updatedLastSavedQuestions,
       });
       console.log('Test state saved successfully');
       
@@ -1024,10 +1072,95 @@ const TestInterface = () => {
       }));
     };
 
+    // Check if there's saved progress
+    const hasSavedProgress = Object.keys(userAnswers).length > 0;
+    
+    // Find the module/part with the most recent progress
+    let savedModuleType = selectedModule;
+    let savedPart = savedModuleType ? currentPart[savedModuleType] : null;
+    
+    // If we have saved progress but no selected module, find the module with the most answers
+    if (hasSavedProgress && !savedModuleType) {
+      let maxAnswers = 0;
+      currentTest?.modules?.forEach((module: TestModule) => {
+        const moduleQuestions = questions.filter(q => q.module_type === module.type);
+        const answeredQuestions = moduleQuestions.filter(q => userAnswers[q.id]);
+        if (answeredQuestions.length > maxAnswers) {
+          maxAnswers = answeredQuestions.length;
+          savedModuleType = module.type;
+          // Find which part has the most answers
+          const parts = moduleParts[module.type];
+          if (parts) {
+            const part1Answers = parts[0]?.filter(q => userAnswers[q.id]).length || 0;
+            const part2Answers = parts[1]?.filter(q => userAnswers[q.id]).length || 0;
+            savedPart = part1Answers >= part2Answers ? 1 : 2;
+          }
+        }
+      });
+    }
+    
+    // Get the module name for display
+    const getModuleDisplayName = (moduleType: string) => {
+      const module = currentTest?.modules?.find((m: any) => m.type === moduleType);
+      return module?.name || moduleType;
+    };
+
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
         <Header />
         <main className="flex-1 container max-w-4xl mx-auto py-8 px-4">
+          {hasSavedProgress && (
+            <Alert className="mb-6">
+              <AlertDescription>
+                <strong>Saved Progress Detected!</strong> You have saved progress from a previous session. 
+                {savedModuleType && savedPart && (
+                  <span> You were working on <strong>{getModuleDisplayName(savedModuleType)} Part {savedPart}</strong>. </span>
+                )}
+                Your answers and progress are preserved. You can continue with the same module/part or start a different one.
+              </AlertDescription>
+              {savedModuleType && savedPart && (
+                <div className="mt-3">
+                  <Button 
+                    onClick={() => {
+                      // For continuing previous session, use the last saved question for this module/part
+                      setSelectedModule(savedModuleType);
+                      setShowModuleSelection(false);
+                      setCurrentPart(prev => ({ ...prev, [savedModuleType]: savedPart as 1 | 2 }));
+                      
+                      // Find the last saved question for this module/part
+                      const key = `${savedModuleType}-part-${savedPart}`;
+                      const lastSavedQuestionIndex = lastSavedQuestions[key];
+                      
+                      const partQuestions = moduleParts[savedModuleType]?.[savedPart - 1] || [];
+                      if (partQuestions.length > 0) {
+                        const partStartIndex = questions.findIndex(q => q.id === partQuestions[0].id);
+                        const partEndIndex = partStartIndex + partQuestions.length - 1;
+                        
+                        if (lastSavedQuestionIndex !== undefined && 
+                            lastSavedQuestionIndex >= partStartIndex && 
+                            lastSavedQuestionIndex <= partEndIndex) {
+                          // Use the last saved question
+                          setCurrentQuestionIndex(lastSavedQuestionIndex);
+                          console.log('Continuing from last saved question:', lastSavedQuestionIndex);
+                        } else {
+                          // Start from the first question of the part
+                          setCurrentQuestionIndex(partStartIndex);
+                          console.log('Starting from first question of part:', partStartIndex);
+                        }
+                      }
+                      
+                      setCurrentPartTimeLeft(partTimes[savedModuleType] || 0);
+                      setTimerRunning(true);
+                    }}
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    Continue Previous Session
+                  </Button>
+                </div>
+              )}
+            </Alert>
+          )}
+          
           <Card className="mb-8">
             <CardHeader>
               <CardTitle>Select Module Part to Start</CardTitle>
@@ -1038,26 +1171,50 @@ const TestInterface = () => {
                   const partInfo = getPartInfo(module.type);
                   const isModuleCompleted = completedModules.has(module.type);
                   
+                  // Check if there are any answered questions in this module
+                  const moduleQuestions = questions.filter(q => q.module_type === module.type);
+                  const answeredQuestionsInModule = moduleQuestions.filter(q => userAnswers[q.id]);
+                  const hasProgressInModule = answeredQuestionsInModule.length > 0;
+                  
                   return (
                     <div key={module.type} className="space-y-3">
                       <h3 className="text-lg font-semibold text-gray-700 border-b pb-2">
                         {module.name} Module
                         {isModuleCompleted && <span className="ml-2 text-green-600">✓ Completed</span>}
+                        {hasProgressInModule && !isModuleCompleted && (
+                          <span className="ml-2 text-blue-600">💾 Has Saved Progress</span>
+                        )}
                       </h3>
                       <div className="grid gap-3">
-                        {partInfo.map((part) => (
-                          <Button
-                            key={`${module.type}-part-${part.partNumber}`}
-                            onClick={() => handleModuleSelection(module.type, part.partNumber)}
-                            className="w-full py-4 text-left justify-start bg-blue-600 hover:bg-blue-700 focus:bg-blue-800 whitespace-normal break-words"
-                            disabled={isModuleCompleted}
-                            variant={isModuleCompleted ? "outline" : "default"}
-                          >
-                            <span className="text-white w-full truncate break-words whitespace-normal font-medium">
-                              {part.moduleName} Part {part.partNumber}: {part.questionCount} questions in {part.timeMinutes} minutes
-                            </span>
-                          </Button>
-                        ))}
+                        {partInfo.map((part) => {
+                          const partQuestions = moduleParts[module.type]?.[part.partNumber - 1] || [];
+                          const answeredQuestions = partQuestions.filter(q => userAnswers[q.id]).length;
+                          const totalQuestions = partQuestions.length;
+                          const isSavedPart = answeredQuestions > 0;
+                          
+                          return (
+                            <Button
+                              key={`${module.type}-part-${part.partNumber}`}
+                              onClick={() => handleModuleSelection(module.type, part.partNumber)}
+                              className={`w-full py-4 text-left justify-start whitespace-normal break-words ${
+                                isSavedPart 
+                                  ? 'bg-green-600 hover:bg-green-700 focus:bg-green-800' 
+                                  : 'bg-blue-600 hover:bg-blue-700 focus:bg-blue-800'
+                              }`}
+                              disabled={isModuleCompleted}
+                              variant={isModuleCompleted ? "outline" : "default"}
+                            >
+                              <div className="text-white w-full">
+                                <div className="font-medium">
+                                  {part.moduleName} Part {part.partNumber}: {part.questionCount} questions in {part.timeMinutes} minutes
+                                  {isSavedPart && answeredQuestions > 0 && (
+                                    <span className="text-sm opacity-90"> (💾 {answeredQuestions} of {totalQuestions} answered)</span>
+                                  )}
+                                </div>
+                              </div>
+                            </Button>
+                          );
+                        })}
                       </div>
                     </div>
                   );
