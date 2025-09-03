@@ -767,8 +767,16 @@ const TestInterface = () => {
     setCurrentModuleScores(moduleScores);
     setShowModuleScores(true);
     
-    // Mark module as completed
-    setCompletedModules(prev => new Set([...prev, selectedModule]));
+    // Only mark module as completed if both parts have at least one attempted answer
+    const part1Questions = moduleParts[selectedModule]?.[0] || [];
+    const part2Questions = moduleParts[selectedModule]?.[1] || [];
+    const attemptedInPart = (qs: QuestionData[]) => qs.some(q => !!userAnswers[q.id]);
+    const hasAttemptedPart1 = attemptedInPart(part1Questions);
+    const hasAttemptedPart2 = attemptedInPart(part2Questions);
+    
+    if (hasAttemptedPart1 && hasAttemptedPart2) {
+      setCompletedModules(prev => new Set([...prev, selectedModule]));
+    }
   };
 
   // Add function to proceed to next module
@@ -1285,6 +1293,9 @@ const TestInterface = () => {
                     ? "Proceed to Next Module" 
                     : "View Final Results"}
                 </Button>
+                <Button onClick={handleSaveAndExit} className="w-full mt-3" variant="outline">
+                  Return to Dashboard
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -1309,6 +1320,9 @@ const TestInterface = () => {
             </p>
             <Button className="w-full" onClick={handleProceedToPart2}>
               Start Part 2
+            </Button>
+            <Button className="w-full mt-3" variant="outline" onClick={handleSaveAndExit}>
+              Return to Dashboard
             </Button>
           </CardContent>
         </Card>

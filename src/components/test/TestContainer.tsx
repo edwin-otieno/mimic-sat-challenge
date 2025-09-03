@@ -106,10 +106,10 @@ export const TestContainer: React.FC<TestContainerProps> = ({
 
   useEffect(() => {
     // Reset state when question changes
-    setSelectedOption(null);
+    setSelectedOption(selectedAnswer || null);
     // Don't reset textAnswer here as it's managed by the parent
     setShowExplanation(false);
-  }, [currentQuestionIndex]);
+  }, [currentQuestionIndex, selectedAnswer]);
 
   const handleAnswerChange = (answer: string) => {
     if (currentQuestion.question_type === QuestionType.TextInput) {
