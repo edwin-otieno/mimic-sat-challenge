@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 
 interface AccessCodeGuardProps {
   children: React.ReactNode;
-  accessCode: string;
+  accessCode: string | string[];
 }
 
 const AccessCodeGuard: React.FC<AccessCodeGuardProps> = ({ children, accessCode }) => {
@@ -15,7 +15,8 @@ const AccessCodeGuard: React.FC<AccessCodeGuardProps> = ({ children, accessCode 
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (enteredCode === accessCode) {
+    const validCodes = Array.isArray(accessCode) ? accessCode : [accessCode];
+    if (validCodes.includes(enteredCode)) {
       setIsAuthenticated(true);
       setError('');
     } else {

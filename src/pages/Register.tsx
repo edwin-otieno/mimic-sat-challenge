@@ -47,7 +47,7 @@ const Register = () => {
   }, []);
 
   return (
-    <AccessCodeGuard accessCode="@SAT2025">
+    <AccessCodeGuard accessCode={["#Tutors", "#tutors"]}>
       <div className="min-h-screen bg-white flex flex-col">
         <header className="flex justify-between items-center py-6 px-8 relative">
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate("/")}> 
