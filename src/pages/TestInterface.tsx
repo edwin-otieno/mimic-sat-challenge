@@ -722,6 +722,7 @@ const TestInterface = () => {
   const handleModuleSelection = (moduleType: string, partNumber: number = 1) => {
     setSelectedModule(moduleType);
     setShowModuleSelection(false);
+    setShowModuleScores(false); // Ensure we go to test questions, not module results
     
     // Set the current part
     setCurrentPart(prev => ({ ...prev, [moduleType]: partNumber as 1 | 2 }));
@@ -975,6 +976,52 @@ const TestInterface = () => {
   }, [user, testData, testDataLoading, testDataError, stateLoaded, toast]);
 
   const [showSaveExitDialog, setShowSaveExitDialog] = useState(false);
+
+  // Auto-save functionality - save every 5 minutes
+  useEffect(() => {
+    if (!user || !permalink || !stateLoaded) return;
+
+    const autoSaveInterval = setInterval(async () => {
+      try {
+        console.log('Auto-saving test state...');
+        const currentModuleType = selectedModule || getCurrentModuleType();
+        const currentPartNumber = currentPart[currentModuleType] || 1;
+        const key = `${currentModuleType}-part-${currentPartNumber}`;
+        const updatedLastSavedQuestions = {
+          ...lastSavedQuestions,
+          [key]: currentQuestionIndex
+        };
+        setLastSavedQuestions(updatedLastSavedQuestions);
+
+        await saveTestState({
+          currentQuestionIndex,
+          userAnswers,
+          flaggedQuestions,
+          crossedOutOptions,
+          testStartTime,
+          currentModuleStartTime,
+          currentModuleTimeLeft,
+          currentPartTimeLeft,
+          timerRunning,
+          timerVisible,
+          currentPart,
+          selectedModule,
+          partTimes,
+          showModuleSelection,
+          completedModules,
+          showModuleScores,
+          showPartTransition,
+          lastSavedQuestions: updatedLastSavedQuestions,
+        });
+        console.log('Auto-save completed successfully');
+      } catch (error) {
+        console.error('Auto-save failed:', error);
+        // Don't show toast for auto-save failures to avoid interrupting the user
+      }
+    }, 5 * 60 * 1000); // 5 minutes in milliseconds
+
+    return () => clearInterval(autoSaveInterval);
+  }, [user, permalink, stateLoaded, currentQuestionIndex, userAnswers, flaggedQuestions, crossedOutOptions, testStartTime, currentModuleStartTime, currentModuleTimeLeft, currentPartTimeLeft, timerRunning, timerVisible, currentPart, selectedModule, partTimes, showModuleSelection, completedModules, showModuleScores, showPartTransition, lastSavedQuestions, saveTestState]);
 
   // Add function to handle Save & Exit
   const handleSaveAndExit = async () => {
@@ -1335,6 +1382,12 @@ const TestInterface = () => {
   const partStartIndex = questions.findIndex(q => q.id === partQuestions[0]?.id);
   const partRelativeIndex = currentQuestionIndex - partStartIndex;
   
+  // Filter userAnswers to only include answers for the current part
+  const partQuestionIds = partQuestions.map(q => q.id);
+  const filteredUserAnswers = Object.fromEntries(
+    Object.entries(userAnswers).filter(([questionId]) => partQuestionIds.includes(questionId))
+  );
+  
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <Header showLogout={false} onSaveAndExit={handleSaveExitClick} isSaving={isSaving} />
@@ -1459,8 +1512,8 @@ const TestInterface = () => {
         
         {showReviewPage ? (
           <ReviewPage
-            questions={questions}
-            userAnswers={userAnswers}
+            questions={partQuestions}
+            userAnswers={filteredUserAnswers}
             flaggedQuestions={flaggedQuestions}
             onGoToQuestion={handleGoToQuestion}
             onSubmitTest={handleSubmitTest}
@@ -1470,7 +1523,7 @@ const TestInterface = () => {
           <TestContainer
             questions={partQuestions}
             currentQuestionIndex={partRelativeIndex}
-            userAnswers={userAnswers}
+            userAnswers={filteredUserAnswers}
             onSelectOption={handleSelectOption}
             onPreviousQuestion={handlePreviousQuestion}
             onNextQuestion={handleNextQuestion}
