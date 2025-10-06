@@ -46,6 +46,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.0.0",
     "date-fns": "^3.6.0",
+    "docx": "^8.5.0",
     "embla-carousel-react": "^8.3.0",
     "input-otp": "^1.2.4",
     "lucide-react": "^0.462.0",
@@ -81,5 +82,18 @@
     "typescript": "^5.5.3",
     "typescript-eslint": "^8.0.1",
     "vite": "^5.4.1"
-  }
+  },
+  "description": "Custom-built SAT app for Tutors Across America with the following features; Line reader, ability for students to pause timer, ability for students to cross out wrong answers, question navigator, auto-save, student can start with whichever module they prefer, custom scoring feature, external calculator form Math module.",
+  "main": "eslint.config.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/edwin-otieno/mimic-sat-challenge.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/edwin-otieno/mimic-sat-challenge/issues"
+  },
+  "homepage": "https://github.com/edwin-otieno/mimic-sat-challenge#readme"
 }
