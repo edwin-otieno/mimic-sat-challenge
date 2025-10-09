@@ -42,6 +42,7 @@ interface TestResult {
   scaled_score: number | null;
   created_at: string;
   time_taken: number | null;
+  answers?: Record<string, string> | null;
 }
 
 interface ModuleResult {
@@ -66,6 +67,12 @@ const Results = () => {
   const [viewingHistory, setViewingHistory] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [historyQuestions, setHistoryQuestions] = useState<QuestionData[] | null>(null);
+  const [historyAnswers, setHistoryAnswers] = useState<Record<string, string> | null>(null);
+  const [isLoadingHistoryReview, setIsLoadingHistoryReview] = useState(false);
+  const [historyTestTitle, setHistoryTestTitle] = useState<string | null>(null);
+  const [currentTestTitle, setCurrentTestTitle] = useState<string | null>(null);
+  const [historyReviewCache, setHistoryReviewCache] = useState<Record<string, { questions: QuestionData[]; answers: Record<string, string> | null; testTitle: string | null }>>({});
   
   const state = location.state as ResultsState;
   
@@ -103,7 +110,7 @@ const Results = () => {
       // Fetch user's test results
       const { data: testResults, error: testError } = await supabase
         .from('test_results')
-        .select('*')
+        .select('id, test_id, total_score, total_questions, scaled_score, created_at, time_taken, answers')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
       
@@ -143,11 +150,112 @@ const Results = () => {
     }
   };
   
+  
+  // Load current test title when viewing immediate results (non-history)
+  useEffect(() => {
+    const loadCurrentTestTitle = async () => {
+      if (!state || !state.questions || state.questions.length === 0) return;
+      const firstQuestion: any = state.questions[0] as any;
+      const testId = firstQuestion?.test_id;
+      if (!testId) return;
+      const { data, error } = await supabase
+        .from('tests')
+        .select('title')
+        .eq('id', testId)
+        .single();
+      if (!error && data) {
+        setCurrentTestTitle(data.title || null);
+      }
+    };
+    loadCurrentTestTitle();
+  }, [state]);
+
   // Only toggle the view, don't fetch again
   const toggleHistory = () => {
     setViewingHistory(!viewingHistory);
   };
   
+  // Persist and load historical review data
+  useEffect(() => {
+    const loadHistoryReview = async () => {
+      // Load if we're viewing history OR if we have a selected result (for history view)
+      if (!viewingHistory && !selectedResult) return;
+      const current = savedResults.find(r => r.testResult.id === selectedResult);
+      if (!current) return;
+      
+      // Use cache if available
+      const cached = historyReviewCache[current.testResult.id];
+      if (cached) {
+        setHistoryQuestions(cached.questions);
+        setHistoryAnswers(cached.answers);
+        setHistoryTestTitle(cached.testTitle);
+        return;
+      }
+      
+      try {
+        setIsLoadingHistoryReview(true);
+        const answers = current.testResult.answers || null;
+        setHistoryAnswers(answers);
+
+        const testIdentifier = current.testResult.test_id;
+        let testRow = await supabase
+          .from('tests')
+          .select('id, title')
+          .eq('id', testIdentifier)
+          .single();
+        if (testRow.error || !testRow.data) {
+          testRow = await supabase
+            .from('tests')
+            .select('id, title')
+            .eq('permalink', testIdentifier)
+            .single();
+        }
+        if (testRow.error || !testRow.data) {
+          console.error('Could not resolve test id for history review:', testRow.error);
+          setHistoryQuestions(null);
+          return;
+        }
+        setHistoryTestTitle(testRow.data.title || null);
+
+        const { data: questionsData, error: questionsError } = await supabase
+          .from('test_questions')
+          .select(`
+            *,
+            test_question_options (*)
+          `)
+          .eq('test_id', testRow.data.id)
+          .order('question_order', { ascending: true });
+        if (questionsError) {
+          console.error('Error loading questions for history:', questionsError);
+          setHistoryQuestions(null);
+          return;
+        }
+
+        // Transform the data to match QuestionData format
+        const questions = (questionsData || []).map((q: any) => ({
+          ...q,
+          options: q.test_question_options?.map((opt: any) => ({
+            id: opt.id,
+            text: opt.text,
+            is_correct: opt.is_correct
+          })) || []
+        })) as unknown as QuestionData[];
+        setHistoryQuestions(questions);
+        setHistoryReviewCache(prev => ({
+          ...prev,
+          [current.testResult.id]: {
+            questions,
+            answers,
+            testTitle: testRow.data.title || null,
+          }
+        }));
+      } finally {
+        setIsLoadingHistoryReview(false);
+      }
+    };
+    loadHistoryReview();
+  }, [viewingHistory, selectedResult, savedResults]);
+
   // Calculate total scaled score from module scores
   const calculateTotalScaledScore = (moduleScores: ModuleScore[]) => {
     if (!state.scaledScoring || state.scaledScoring.length === 0) {
@@ -181,10 +289,20 @@ const Results = () => {
     const currentResult = savedResults.find(r => r.testResult.id === selectedResult);
     console.log('Rendering history view. savedResults:', savedResults, 'selectedResult:', selectedResult, 'currentResult:', currentResult);
     
+    // If we're in history view but viewingHistory is false, set it to true
+    if (!state && !viewingHistory) {
+      setViewingHistory(true);
+    }
+
     content = (
       <>
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-semibold">Test Results History</h2>
+          <div>
+            <h2 className="text-xl font-semibold">Test Results History</h2>
+            {historyTestTitle && (
+              <div className="text-sm text-gray-500 mt-1">{historyTestTitle}</div>
+            )}
+          </div>
           {state && (
             <Button variant="outline" onClick={toggleHistory}>
               Return to Current Result
@@ -227,8 +345,7 @@ const Results = () => {
                   <SummaryCard 
                     score={currentResult.testResult.total_score}
                     total={currentResult.testResult.total_questions}
-                    answeredCount={currentResult.testResult.total_score + 
-                      (currentResult.testResult.total_questions - currentResult.testResult.total_score)} 
+                    answeredCount={currentResult.testResult.total_questions}
                   />
                 </div>
                 
@@ -283,6 +400,27 @@ const Results = () => {
                 )}
               </div>
             )}
+
+            {/* Historical answer review */}
+            {currentResult && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Answer Review</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {isLoadingHistoryReview ? (
+                    <div className="text-center py-6">
+                      <div className="animate-spin h-6 w-6 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-3"></div>
+                      <p className="text-gray-500">Loading answer review...</p>
+                    </div>
+                  ) : historyQuestions ? (
+                    <QuestionReview questions={historyQuestions} userAnswers={historyAnswers as Record<string, string> || {}} />
+                  ) : (
+                    <p className="text-gray-500">Answer details are not available for this attempt.</p>
+                  )}
+                </CardContent>
+              </Card>
+            )}
           </div>
         ) : (
           <div className="text-center py-8 bg-gray-50 rounded-md">
@@ -296,6 +434,9 @@ const Results = () => {
     content = (
       <>
         <ResultsHeader />
+        {currentTestTitle && (
+          <div className="text-sm text-gray-500 mb-4">{currentTestTitle}</div>
+        )}
         
         <div className="flex justify-end mb-4">
           <Button variant="outline" onClick={toggleHistory}>

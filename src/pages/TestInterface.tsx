@@ -61,6 +61,7 @@ const TestInterface = () => {
   const [currentModuleStartTime, setCurrentModuleStartTime] = useState<Date>(new Date());
   const [currentModuleTimeLeft, setCurrentModuleTimeLeft] = useState<number>(0);
   const [isSaving, setIsSaving] = useState(false);
+  const [isAutoSaving, setIsAutoSaving] = useState(false);
   const [showModuleSelection, setShowModuleSelection] = useState(true);
   const [selectedModule, setSelectedModule] = useState<string | null>(null);
   const [completedModules, setCompletedModules] = useState<Set<string>>(new Set());
@@ -210,7 +211,7 @@ const TestInterface = () => {
         }
         
         if (saved && typeof saved === 'object') {
-          console.log('🔍 Loading saved state, setting currentQuestionIndex to:', saved.currentQuestionIndex);
+          console.log('🔍 Loading saved state from database, setting currentQuestionIndex to:', saved.currentQuestionIndex);
           setCurrentQuestionIndex(saved.currentQuestionIndex);
           setUserAnswers(saved.userAnswers);
           setFlaggedQuestions(saved.flaggedQuestions);
@@ -233,6 +234,41 @@ const TestInterface = () => {
           setStateLoaded(true);
           
           return;
+        }
+        
+        // Check for sessionStorage backup (created during beforeunload)
+        const sessionBackup = sessionStorage.getItem(`test_state_${permalink}`);
+        if (sessionBackup) {
+          try {
+            const saved = JSON.parse(sessionBackup);
+            console.log('🔍 Loading saved state from sessionStorage backup, setting currentQuestionIndex to:', saved.currentQuestionIndex);
+            setCurrentQuestionIndex(saved.currentQuestionIndex);
+            setUserAnswers(saved.userAnswers);
+            setFlaggedQuestions(new Set(saved.flaggedQuestions));
+            setCrossedOutOptions(saved.crossedOutOptions);
+            setTestStartTime(new Date(saved.testStartTime));
+            setCurrentModuleStartTime(new Date(saved.currentModuleStartTime));
+            setCurrentModuleTimeLeft(saved.currentModuleTimeLeft);
+            setCurrentPartTimeLeft(saved.currentPartTimeLeft);
+            setTimerRunning(saved.timerRunning);
+            setTimerVisible(saved.timerVisible !== false);
+            setCurrentPart(saved.currentPart);
+            setSelectedModule(saved.selectedModule);
+            setPartTimes(saved.partTimes);
+            setShowModuleSelection(true);
+            setCompletedModules(new Set(saved.completedModules));
+            setShowModuleScores(saved.showModuleScores);
+            setShowPartTransition(saved.showPartTransition);
+            setLastSavedQuestions(saved.lastSavedQuestions || {});
+            setStateLoaded(true);
+            
+            // Clear the sessionStorage backup after loading
+            sessionStorage.removeItem(`test_state_${permalink}`);
+            return;
+          } catch (error) {
+            console.error('Error parsing sessionStorage backup:', error);
+            sessionStorage.removeItem(`test_state_${permalink}`);
+          }
         }
         // Fallback to complete sessionStorage state
         const completeStateLoaded = loadCompleteTestState();
@@ -984,6 +1020,7 @@ const TestInterface = () => {
     const autoSaveInterval = setInterval(async () => {
       try {
         console.log('Auto-saving test state...');
+        setIsAutoSaving(true);
         const currentModuleType = selectedModule || getCurrentModuleType();
         const currentPartNumber = currentPart[currentModuleType] || 1;
         const key = `${currentModuleType}-part-${currentPartNumber}`;
@@ -1017,10 +1054,134 @@ const TestInterface = () => {
       } catch (error) {
         console.error('Auto-save failed:', error);
         // Don't show toast for auto-save failures to avoid interrupting the user
+      } finally {
+        setIsAutoSaving(false);
       }
     }, 5 * 60 * 1000); // 5 minutes in milliseconds
 
     return () => clearInterval(autoSaveInterval);
+  }, [user, permalink, stateLoaded, currentQuestionIndex, userAnswers, flaggedQuestions, crossedOutOptions, testStartTime, currentModuleStartTime, currentModuleTimeLeft, currentPartTimeLeft, timerRunning, timerVisible, currentPart, selectedModule, partTimes, showModuleSelection, completedModules, showModuleScores, showPartTransition, lastSavedQuestions, saveTestState]);
+
+  // Save state when answers change (debounced)
+  useEffect(() => {
+    if (!user || !permalink || !stateLoaded) return;
+
+    const saveTimeout = setTimeout(async () => {
+      try {
+        console.log('Saving state due to answer changes...');
+        setIsAutoSaving(true);
+        const currentModuleType = selectedModule || getCurrentModuleType();
+        const currentPartNumber = currentPart[currentModuleType] || 1;
+        const key = `${currentModuleType}-part-${currentPartNumber}`;
+        const updatedLastSavedQuestions = {
+          ...lastSavedQuestions,
+          [key]: currentQuestionIndex
+        };
+        setLastSavedQuestions(updatedLastSavedQuestions);
+
+        await saveTestState({
+          currentQuestionIndex,
+          userAnswers,
+          flaggedQuestions,
+          crossedOutOptions,
+          testStartTime,
+          currentModuleStartTime,
+          currentModuleTimeLeft,
+          currentPartTimeLeft,
+          timerRunning,
+          timerVisible,
+          currentPart,
+          selectedModule,
+          partTimes,
+          showModuleSelection,
+          completedModules,
+          showModuleScores,
+          showPartTransition,
+          lastSavedQuestions: updatedLastSavedQuestions,
+        });
+        console.log('Answer change save completed successfully');
+      } catch (error) {
+        console.error('Answer change save failed:', error);
+      } finally {
+        setIsAutoSaving(false);
+      }
+    }, 2000); // Save 2 seconds after last change
+
+    return () => clearTimeout(saveTimeout);
+  }, [userAnswers, currentQuestionIndex, flaggedQuestions, crossedOutOptions]);
+
+  // Save state when browser is about to close
+  useEffect(() => {
+    if (!user || !permalink || !stateLoaded) return;
+
+    const handleBeforeUnload = async (event: BeforeUnloadEvent) => {
+      try {
+        console.log('Browser closing, saving state...');
+        const currentModuleType = selectedModule || getCurrentModuleType();
+        const currentPartNumber = currentPart[currentModuleType] || 1;
+        const key = `${currentModuleType}-part-${currentPartNumber}`;
+        const updatedLastSavedQuestions = {
+          ...lastSavedQuestions,
+          [key]: currentQuestionIndex
+        };
+
+        // Use synchronous storage for beforeunload
+        const stateToSave = {
+          currentQuestionIndex,
+          userAnswers,
+          flaggedQuestions: Array.from(flaggedQuestions),
+          crossedOutOptions,
+          testStartTime: testStartTime.toISOString(),
+          currentModuleStartTime: currentModuleStartTime.toISOString(),
+          currentModuleTimeLeft,
+          currentPartTimeLeft,
+          timerRunning,
+          timerVisible,
+          currentPart,
+          selectedModule,
+          partTimes,
+          showModuleSelection,
+          completedModules: Array.from(completedModules),
+          showModuleScores,
+          showPartTransition,
+          lastSavedQuestions: updatedLastSavedQuestions,
+        };
+
+        // Save to sessionStorage as backup
+        sessionStorage.setItem(`test_state_${permalink}`, JSON.stringify(stateToSave));
+        
+        // Try to save to database (may not complete due to page unload)
+        saveTestState({
+          currentQuestionIndex,
+          userAnswers,
+          flaggedQuestions,
+          crossedOutOptions,
+          testStartTime,
+          currentModuleStartTime,
+          currentPartTimeLeft,
+          timerRunning,
+          timerVisible,
+          currentPart,
+          selectedModule,
+          partTimes,
+          showModuleSelection,
+          completedModules,
+          showModuleScores,
+          showPartTransition,
+          lastSavedQuestions: updatedLastSavedQuestions,
+        }).catch(error => {
+          console.error('Failed to save on beforeunload:', error);
+        });
+      } catch (error) {
+        console.error('Error in beforeunload handler:', error);
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
   }, [user, permalink, stateLoaded, currentQuestionIndex, userAnswers, flaggedQuestions, crossedOutOptions, testStartTime, currentModuleStartTime, currentModuleTimeLeft, currentPartTimeLeft, timerRunning, timerVisible, currentPart, selectedModule, partTimes, showModuleSelection, completedModules, showModuleScores, showPartTransition, lastSavedQuestions, saveTestState]);
 
   // Add function to handle Save & Exit
@@ -1429,6 +1590,12 @@ const TestInterface = () => {
                 {currentPartTimeLeft <= 0 && (
                   <span className="text-sm text-red-600 font-medium">(Time expired)</span>
                 )}
+              </div>
+            )}
+            {isAutoSaving && (
+              <div className="flex items-center gap-1 text-sm text-gray-600">
+                <div className="animate-spin h-3 w-3 border border-gray-400 border-t-transparent rounded-full"></div>
+                <span>Auto-saving...</span>
               </div>
             )}
           </div>

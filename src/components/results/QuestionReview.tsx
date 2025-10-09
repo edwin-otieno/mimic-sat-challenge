@@ -10,6 +10,13 @@ interface QuestionReviewProps {
 }
 
 const QuestionReview: React.FC<QuestionReviewProps> = React.memo(({ questions, userAnswers, moduleType }) => {
+  console.log('QuestionReview received:', { 
+    questionsLength: questions.length, 
+    userAnswersKeys: Object.keys(userAnswers).length,
+    firstQuestion: questions[0],
+    firstAnswer: userAnswers[questions[0]?.id]
+  });
+  
   // Group questions by module type - memoize to prevent recalculation
   const { readingWritingQuestions, mathQuestions } = useMemo(() => {
     let filteredQuestions = questions;
