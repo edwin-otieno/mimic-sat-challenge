@@ -8,10 +8,12 @@ CREATE INDEX IF NOT EXISTS idx_test_questions_passage_id ON test_questions(passa
 CREATE INDEX IF NOT EXISTS idx_test_questions_passage_question_number ON test_questions(passage_id, question_number);
 
 -- Add constraint to ensure question_number is set when passage_id is present
-ALTER TABLE test_questions 
-ADD CONSTRAINT check_passage_question_number 
+ALTER TABLE test_questions
+DROP CONSTRAINT IF EXISTS check_passage_question_number;
+ALTER TABLE test_questions
+ADD CONSTRAINT check_passage_question_number
 CHECK (
-    (passage_id IS NULL AND question_number IS NULL) OR 
+    (passage_id IS NULL AND question_number IS NULL) OR
     (passage_id IS NOT NULL AND question_number IS NOT NULL AND question_number > 0)
 );
 

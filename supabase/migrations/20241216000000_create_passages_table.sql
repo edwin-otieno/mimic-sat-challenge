@@ -18,6 +18,10 @@ CREATE INDEX IF NOT EXISTS idx_passages_test_module_order ON passages(test_id, m
 -- Add RLS policies
 ALTER TABLE passages ENABLE ROW LEVEL SECURITY;
 
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Users can view passages for accessible tests" ON passages;
+DROP POLICY IF EXISTS "Admins can manage passages" ON passages;
+
 -- Allow users to view passages for tests they have access to
 CREATE POLICY "Users can view passages for accessible tests"
     ON passages
@@ -49,6 +53,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS update_passages_updated_at ON passages;
 CREATE TRIGGER update_passages_updated_at
     BEFORE UPDATE ON passages
     FOR EACH ROW

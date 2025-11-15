@@ -12,6 +12,13 @@ CREATE INDEX IF NOT EXISTS idx_schools_name ON schools(name);
 -- Enable RLS
 ALTER TABLE schools ENABLE ROW LEVEL SECURITY;
 
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Admins can view all schools" ON schools;
+DROP POLICY IF EXISTS "Admins can insert schools" ON schools;
+DROP POLICY IF EXISTS "Admins can update schools" ON schools;
+DROP POLICY IF EXISTS "Admins can delete schools" ON schools;
+DROP POLICY IF EXISTS "Authenticated users can view schools" ON schools;
+
 -- Allow admins to view all schools
 CREATE POLICY "Admins can view all schools" ON schools
     FOR SELECT USING (
