@@ -47,8 +47,12 @@ const TestDialogManager: React.FC<TestDialogManagerProps> = () => {
         return;
       }
 
+      console.log("=== DIALOG MANAGER DEBUG ===");
       console.log("Form submission values:", JSON.stringify(values, null, 2));
       console.log("Current editing state:", { isEditing, currentTest });
+      console.log("Test category from values:", values.test_category);
+      console.log("Modules from values:", values.modules);
+      console.log("Scaled scoring from values:", values.scaled_scoring);
 
       if (isEditing && currentTest) {
         // Update existing test
@@ -57,6 +61,7 @@ const TestDialogManager: React.FC<TestDialogManagerProps> = () => {
           title: values.title,
           description: values.description,
           is_active: values.is_active,
+          test_category: values.test_category, // Include test category
           created_at: currentTest.created_at, // Preserve the original creation date
           // Ensure we properly save the scaled scoring data
           scaled_scoring: values.scaled_scoring ? values.scaled_scoring.map(item => ({
@@ -82,8 +87,12 @@ const TestDialogManager: React.FC<TestDialogManagerProps> = () => {
         }
         
         try {
-          const result = await updateTest(updatedTest);
+          const result = await updateTest(updatedTest.id, updatedTest);
+          console.log("=== UPDATE RESULT DEBUG ===");
           console.log("Update test result:", result);
+          console.log("Result test_category:", result?.test_category);
+          console.log("Result category:", result?.category);
+          console.log("=== END UPDATE RESULT DEBUG ===");
           toast({
             title: 'Success',
             description: 'Test updated successfully'
@@ -110,6 +119,7 @@ const TestDialogManager: React.FC<TestDialogManagerProps> = () => {
           title: values.title,
           description: values.description,
           is_active: values.is_active,
+          test_category: values.test_category, // Include test category
           created_at: new Date().toISOString(),
           // Ensure we properly save the scaled scoring data
           scaled_scoring: values.scaled_scoring ? values.scaled_scoring.map(item => ({

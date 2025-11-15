@@ -136,3 +136,25 @@ li::marker {
 .text-yellow-500 {
   color: #C7282E;
 }
+
+/* Table styles for question text - automatically apply borders and padding to all cells */
+.question-table-wrapper table,
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 10px 0;
+}
+
+.question-table-wrapper table th,
+.question-table-wrapper table td,
+table th,
+table td {
+  border: 1px solid #000 !important;
+  padding: 8px !important;
+}
+
+.question-table-wrapper table th,
+table th {
+  background-color: #f0f0f0;
+  font-weight: bold;
+}

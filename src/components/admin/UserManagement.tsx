@@ -37,7 +37,7 @@ interface User {
   email: string;
   first_name: string | null;
   last_name: string | null;
-  role: "admin" | "student";
+  role: "admin" | "student" | "teacher";
 }
 
 const UserManagement = () => {
@@ -46,7 +46,7 @@ const UserManagement = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isResetPasswordDialogOpen, setIsResetPasswordDialogOpen] = useState(false);
-  const [newRole, setNewRole] = useState<"admin" | "student">("student");
+  const [newRole, setNewRole] = useState<"admin" | "student" | "teacher">("student");
   const [newPassword, setNewPassword] = useState("");
   
   // Fetch all users from Supabase profiles table
@@ -57,8 +57,9 @@ const UserManagement = () => {
       // Make sure we're not filtering the profiles table
       const { data, error } = await supabase
         .from('profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
+        .select('id, email, first_name, last_name, role, created_at')
+        .order('created_at', { ascending: false })
+        .limit(100);
       
       if (error) {
         console.error('Error fetching users:', error);
@@ -90,13 +91,38 @@ const UserManagement = () => {
   const saveRole = async () => {
     if (!selectedUser || !newRole) return;
     
+    console.log('Attempting to update role:', {
+      userId: selectedUser.id,
+      newRole: newRole,
+      roleType: typeof newRole
+    });
+    
     try {
       const { error } = await supabaseAdmin
         .from('profiles')
         .update({ role: newRole })
         .eq('id', selectedUser.id);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Database error details:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        });
+        
+        // Special handling for teacher role enum error
+        if (error.code === '22P02' && newRole === 'teacher') {
+          toast({ 
+            title: "Teacher Role Not Available", 
+            description: "The teacher role is not yet available in the database. Please contact the administrator to add this role to the database enum.", 
+            variant: "destructive" 
+          });
+          return;
+        }
+        
+        throw error;
+      }
       
       toast({ 
         title: "Success", 
@@ -106,9 +132,10 @@ const UserManagement = () => {
       setIsDialogOpen(false);
       refetch();
     } catch (error: any) {
+      console.error('Full error object:', error);
       toast({ 
         title: "Error", 
-        description: error.message || "Failed to update user role", 
+        description: `Failed to update user role: ${error.message || "Unknown error"}. Check console for details.`, 
         variant: "destructive" 
       });
     }
@@ -269,12 +296,13 @@ const UserManagement = () => {
             <p className="mb-4">
               Changing role for: {selectedUser?.first_name} {selectedUser?.last_name}
             </p>
-            <Select value={newRole} onValueChange={(value: "admin" | "student") => setNewRole(value)}>
+            <Select value={newRole} onValueChange={(value: "admin" | "student" | "teacher") => setNewRole(value)}>
               <SelectTrigger>
                 <SelectValue placeholder="Select a role" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="admin">Admin</SelectItem>
+                <SelectItem value="teacher">Teacher</SelectItem>
                 <SelectItem value="student">Student</SelectItem>
               </SelectContent>
             </Select>

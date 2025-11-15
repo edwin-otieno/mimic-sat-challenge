@@ -1,8 +1,16 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 import Footer from "@/components/Footer";
 import AccessCodeGuard from "@/components/AccessCodeGuard";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const Register = () => {
   const { signUp } = useAuth();
@@ -11,9 +19,33 @@ const Register = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [selectedSchool, setSelectedSchool] = useState<string>("");
+  const [schools, setSchools] = useState<Array<{ id: string; name: string }>>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingSchools, setLoadingSchools] = useState(true);
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    const fetchSchools = async () => {
+      try {
+        setLoadingSchools(true);
+        const { data, error } = await supabase
+          .from('schools')
+          .select('id, name')
+          .order('name', { ascending: true });
+
+        if (error) throw error;
+        setSchools(data || []);
+      } catch (error) {
+        console.error('Error fetching schools:', error);
+      } finally {
+        setLoadingSchools(false);
+      }
+    };
+
+    fetchSchools();
+  }, []);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,7 +54,7 @@ const Register = () => {
       return;
     }
     setIsLoading(true);
-    await signUp(email, password, firstName, lastName);
+    await signUp(email, password, firstName, lastName, selectedSchool || undefined);
     setIsLoading(false);
   };
 
@@ -55,8 +87,8 @@ const Register = () => {
           </div>
           {/* Desktop Nav */}
           <nav className="hidden md:flex flex-row gap-4 text-[#1a3c7c] font-semibold text-base">
-            <a href="/login" className="hover:underline">Sat Tests</a>
-            <a href="#" className="hover:underline">ACT Tests</a>
+            <a href="/login" className="hover:underline">SAT Tests</a>
+            <a href="/login" className="hover:underline">ACT Tests</a>
             <a href="/#contact-form" className="hover:underline">Contact Us</a>
             <a href="https://tutorsacrossamerica.com/faqs/faq-students/" target="_blank" className="hover:underline">FAQ's</a>
           </nav>
@@ -69,15 +101,15 @@ const Register = () => {
           {/* Mobile dropdown menu */}
           {menuOpen && (
             <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-lg shadow-lg z-50 flex flex-col p-4 md:hidden animate-fade-in">
-              <a href="/login" className="py-2 px-3 text-[#1a3c7c] hover:underline" onClick={() => setMenuOpen(false)}>Sat Tests</a>
-              <a href="#" className="py-2 px-3 text-[#1a3c7c] hover:underline" onClick={() => setMenuOpen(false)}>ACT Tests</a>
+              <a href="/login?category=SAT" className="py-2 px-3 text-[#1a3c7c] hover:underline" onClick={() => setMenuOpen(false)}>SAT Tests</a>
+              <a href="/login?category=ACT" className="py-2 px-3 text-[#1a3c7c] hover:underline" onClick={() => setMenuOpen(false)}>ACT Tests</a>
               <a href="/#contact-form" className="py-2 px-3 text-[#1a3c7c] hover:underline" onClick={() => setMenuOpen(false)}>Contact Us</a>
               <a href="https://tutorsacrossamerica.com/faqs/faq-students/" target="_blank" className="py-2 px-3 text-[#1a3c7c] hover:underline" onClick={() => setMenuOpen(false)}>FAQ's</a>
             </div>
           )}
-          <div className="flex gap-4">
-            <button onClick={() => navigate("/register")} className="bg-[#e74c3c] text-white font-semibold rounded-full px-6 py-2 text-base shadow hover:bg-[#c0392b] transition">Create An Account</button>
-            <button onClick={() => navigate("/login")} className="bg-[#1a3c7c] text-white font-semibold rounded-full px-6 py-2 text-base shadow hover:bg-[#17407c] transition">Login</button>
+          <div className="flex gap-2 sm:gap-4">
+            <button onClick={() => navigate("/register")} className="bg-[#e74c3c] text-white font-semibold rounded-full px-3 sm:px-6 py-2 text-xs sm:text-base shadow hover:bg-[#c0392b] transition whitespace-nowrap">Create An Account</button>
+            <button onClick={() => navigate("/login")} className="bg-[#1a3c7c] text-white font-semibold rounded-full px-3 sm:px-6 py-2 text-xs sm:text-base shadow hover:bg-[#17407c] transition whitespace-nowrap">Login</button>
           </div>
         </header>
         <main className="flex flex-1 flex-col items-center justify-center px-2 py-8">
@@ -131,6 +163,30 @@ const Register = () => {
                 required 
                 className="rounded-full border border-gray-300 px-5 py-3 text-base focus:outline-none focus:ring-2 focus:ring-[#1a3c7c]" 
               />
+              <div>
+                <label htmlFor="school" className="block text-sm font-medium text-gray-700 mb-2">
+                  School (Optional)
+                </label>
+                <Select value={selectedSchool} onValueChange={setSelectedSchool}>
+                  <SelectTrigger className="rounded-full border border-gray-300 px-5 py-3 text-base focus:outline-none focus:ring-2 focus:ring-[#1a3c7c]">
+                    <SelectValue placeholder="Select your school" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">None</SelectItem>
+                    {loadingSchools ? (
+                      <SelectItem value="" disabled>Loading schools...</SelectItem>
+                    ) : schools.length === 0 ? (
+                      <SelectItem value="" disabled>No schools available</SelectItem>
+                    ) : (
+                      schools.map((school) => (
+                        <SelectItem key={school.id} value={school.id}>
+                          {school.name}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
               <button type="submit" disabled={isLoading} className="bg-[#e74c3c] text-white font-semibold rounded-full px-6 py-3 text-lg shadow hover:bg-[#c0392b] transition w-full mt-2">{isLoading ? "Creating Account..." : "Create Account"}</button>
             </form>
             <div className="text-center mt-2">

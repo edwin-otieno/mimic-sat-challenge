@@ -3,8 +3,9 @@ import Question, { QuestionData, QuestionType } from '@/components/Question';
 import TestNavigation from './TestNavigation';
 import ProgressBar from '@/components/ProgressBar';
 import LineReader from './LineReader';
+import TextHighlighter from '@/components/TextHighlighter';
 import { Button } from '@/components/ui/button';
-import { Flag, Calculator } from 'lucide-react';
+import { Flag, Calculator, Highlighter, X, Eye, EyeOff } from 'lucide-react';
 import QuestionNavigator from './QuestionNavigator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -31,6 +32,11 @@ interface TestContainerProps {
   currentPart?: 1 | 2;
   crossOutMode: boolean;
   setCrossOutMode: React.Dispatch<React.SetStateAction<boolean>>;
+  isAnswerMasking: boolean;
+  setIsAnswerMasking: React.Dispatch<React.SetStateAction<boolean>>;
+  unmaskedAnswers: Set<string>;
+  setUnmaskedAnswers: React.Dispatch<React.SetStateAction<Set<string>>>;
+  testCategory?: 'SAT' | 'ACT';
 }
 
 export const TestContainer: React.FC<TestContainerProps> = ({
@@ -53,6 +59,11 @@ export const TestContainer: React.FC<TestContainerProps> = ({
   currentPart = 1,
   crossOutMode,
   setCrossOutMode,
+  isAnswerMasking,
+  setIsAnswerMasking,
+  unmaskedAnswers,
+  setUnmaskedAnswers,
+  testCategory = 'SAT',
 }) => {
   const [showLineReader, setShowLineReader] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -60,6 +71,9 @@ export const TestContainer: React.FC<TestContainerProps> = ({
   const [textAnswer, setTextAnswer] = useState<string>("");
   const [showExplanation, setShowExplanation] = useState(false);
   const [showEndModuleDialog, setShowEndModuleDialog] = useState(false);
+  const [isHighlighting, setIsHighlighting] = useState(false);
+  const [selectedColor, setSelectedColor] = useState<string>('yellow');
+  const [highlights, setHighlights] = useState<Array<{id: string, start: number, end: number, color: string}>>([]);
 
   // Always call hooks; avoid early return to keep hook order stable
   const safeQuestions = Array.isArray(questions) ? questions : [];
@@ -80,10 +94,36 @@ export const TestContainer: React.FC<TestContainerProps> = ({
   // Group questions by module type
   const readingWritingQuestions = safeQuestions.filter(q => q.module_type === "reading_writing");
   const mathQuestions = safeQuestions.filter(q => q.module_type === "math");
+  const englishQuestions = safeQuestions.filter(q => q.module_type === "english");
+  const readingQuestions = safeQuestions.filter(q => q.module_type === "reading");
+  const scienceQuestions = safeQuestions.filter(q => q.module_type === "science");
+  const writingQuestions = safeQuestions.filter(q => q.module_type === "writing");
 
   // Find the current module type
   const currentModuleType = currentQuestion?.module_type || "reading_writing";
-  const moduleName = currentModuleType === "reading_writing" ? "Reading & Writing" : "Math";
+  const getModuleName = (moduleType: string) => {
+    switch (moduleType) {
+      case "reading_writing": return "Reading & Writing";
+      case "math": return "Math";
+      case "english": return "English";
+      case "reading": return "Reading";
+      case "science": return "Science";
+      case "writing": return "Writing";
+      default: return moduleType;
+    }
+  };
+  const moduleName = getModuleName(currentModuleType);
+  
+  // Calculate sequential question number for ACT Math (1-based position within math questions)
+  const getSequentialQuestionNumber = (): number | undefined => {
+    if (testCategory === 'ACT' && currentModuleType === 'math' && currentQuestion) {
+      // Find the index of current question within all math questions
+      const mathQuestionIndex = mathQuestions.findIndex(q => q.id === currentQuestion.id);
+      return mathQuestionIndex >= 0 ? mathQuestionIndex + 1 : undefined;
+    }
+    return undefined;
+  };
+  const sequentialQuestionNumber = getSequentialQuestionNumber();
 
   // Determine if this is the last question of the module (end of Part 2)
   const isLastQuestion = currentQuestionIndex === safeQuestions.length - 1;
@@ -147,7 +187,7 @@ export const TestContainer: React.FC<TestContainerProps> = ({
       
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-2xl font-bold">
-          {moduleName} - Part {currentPart}
+          {moduleName}{testCategory === 'SAT' ? ` - Part ${currentPart}` : ''}
         </h2>
         <div className="flex items-center gap-4">
           {/* Removed saving indicator since auto-save is disabled */}
@@ -157,6 +197,30 @@ export const TestContainer: React.FC<TestContainerProps> = ({
               onCheckedChange={setShowLineReader}
             />
             <span className="text-sm">Line Reader</span>
+          </div>
+          <div className="flex items-center space-x-2">
+            <Switch
+              checked={isHighlighting}
+              onCheckedChange={setIsHighlighting}
+            />
+            <Highlighter className="h-4 w-4" />
+            <span className="text-sm">Text Highlighter</span>
+            {isHighlighting && (
+              <div className="flex items-center space-x-1 ml-2">
+                <span className="text-xs text-gray-600">Color:</span>
+                {['yellow', 'green', 'blue', 'pink', 'orange', 'purple'].map((color) => (
+                  <button
+                    key={color}
+                    className={`w-4 h-4 rounded-full border-2 ${
+                      selectedColor === color ? 'border-gray-800' : 'border-gray-300'
+                    }`}
+                    style={{ backgroundColor: color === 'yellow' ? '#fef08a' : color === 'green' ? '#bbf7d0' : color === 'blue' ? '#bfdbfe' : color === 'pink' ? '#fce7f3' : color === 'orange' ? '#fed7aa' : '#e9d5ff' }}
+                    onClick={() => setSelectedColor(color)}
+                    title={color}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -177,7 +241,20 @@ export const TestContainer: React.FC<TestContainerProps> = ({
                 aria-pressed={crossOutMode}
                 style={{ textDecoration: 'line-through' }}
               >
-                ABC
+                {testCategory === 'ACT' ? 'X' : 'ABC'}
+              </button>
+              <button
+                className={`px-[25px] py-1 rounded border flex items-center justify-center text-sm font-bold w-8 h-8 ml-2 ${isAnswerMasking ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300'} transition`}
+                title={isAnswerMasking ? 'Disable answer masking' : 'Enable answer masking'}
+                onClick={() => {
+                  setIsAnswerMasking((prev) => !prev);
+                  if (!isAnswerMasking) {
+                    setUnmaskedAnswers(new Set()); // Clear unmasked answers when enabling masking
+                  }
+                }}
+                aria-pressed={isAnswerMasking}
+              >
+                <span className="font-bold text-sm">M</span>
               </button>
             </>
           )}
@@ -201,6 +278,26 @@ export const TestContainer: React.FC<TestContainerProps> = ({
               Math ({mathQuestions.length} questions)
             </TabsTrigger>
           )}
+          {currentModuleType === "english" && (
+            <TabsTrigger value="english">
+              English ({englishQuestions.length} questions)
+            </TabsTrigger>
+          )}
+          {currentModuleType === "reading" && (
+            <TabsTrigger value="reading">
+              Reading ({readingQuestions.length} questions)
+            </TabsTrigger>
+          )}
+          {currentModuleType === "science" && (
+            <TabsTrigger value="science">
+              Science ({scienceQuestions.length} questions)
+            </TabsTrigger>
+          )}
+          {currentModuleType === "writing" && (
+            <TabsTrigger value="writing">
+              Writing ({writingQuestions.length} questions)
+            </TabsTrigger>
+          )}
         </TabsList>
         {currentModuleType === "reading_writing" && (
           <TabsContent value="reading_writing">
@@ -220,6 +317,25 @@ export const TestContainer: React.FC<TestContainerProps> = ({
                     crossedOutOptions={questionCrossedOuts}
                     onToggleCrossOut={crossOutMode ? (optionId => onToggleCrossOut(currentQuestion.id, optionId)) : undefined}
                     crossOutMode={crossOutMode}
+                    testCategory={testCategory}
+                    isAdmin={false}
+                    isHighlighting={isHighlighting}
+                    selectedColor={selectedColor}
+                    highlights={highlights}
+                    onHighlightsChange={setHighlights}
+                    isAnswerMasking={isAnswerMasking}
+                    unmaskedAnswers={unmaskedAnswers}
+                    onToggleUnmask={(optionId) => {
+                      setUnmaskedAnswers(prev => {
+                        const newSet = new Set(prev);
+                        if (newSet.has(optionId)) {
+                          newSet.delete(optionId);
+                        } else {
+                          newSet.add(optionId);
+                        }
+                        return newSet;
+                      });
+                    }}
                   />
                 )}
               </CardContent>
@@ -228,22 +344,134 @@ export const TestContainer: React.FC<TestContainerProps> = ({
         )}
         {currentModuleType === "math" && (
           <TabsContent value="math">
+            {/* For ACT Math, show vertical navigator on left side */}
+            {testCategory === 'ACT' ? (
+              <div className="flex gap-4">
+                <div className="w-40 border-r overflow-y-auto bg-gray-50 p-3">
+                  <QuestionNavigator
+                    questions={safeQuestions}
+                    currentIndex={currentQuestionIndex}
+                    userAnswers={userAnswers}
+                    flaggedQuestions={flaggedQuestions}
+                    onQuestionClick={onGoToQuestion}
+                    layout="vertical"
+                  />
+                </div>
+                <div className="flex-1">
+                  <Card>
+                    <CardHeader>
+                      <div className="flex justify-between items-center">
+                        <CardTitle>Math Questions</CardTitle>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => window.open('https://www.desmos.com/testing/digital-act/graphing', '_blank')}
+                        >
+                          <Calculator className="mr-2 h-4 w-4" />
+                          Calculator
+                        </Button>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      {!noQuestions && currentQuestion && currentQuestion.module_type === "math" && (
+                        <Question
+                          question={currentQuestion}
+                          onAnswerChange={handleAnswerChange}
+                          selectedOption={selectedOption}
+                          textAnswer={textAnswer}
+                          onTextAnswerChange={handleTextAnswerChange}
+                          showExplanation={showExplanation}
+                          crossedOutOptions={questionCrossedOuts}
+                          onToggleCrossOut={crossOutMode ? (optionId => onToggleCrossOut(currentQuestion.id, optionId)) : undefined}
+                          crossOutMode={crossOutMode}
+                          testCategory={testCategory}
+                          isAdmin={false}
+                          isHighlighting={isHighlighting}
+                          selectedColor={selectedColor}
+                          highlights={highlights}
+                          onHighlightsChange={setHighlights}
+                          isAnswerMasking={isAnswerMasking}
+                          unmaskedAnswers={unmaskedAnswers}
+                          onToggleUnmask={(optionId) => {
+                            setUnmaskedAnswers(prev => {
+                              const newSet = new Set(prev);
+                              if (newSet.has(optionId)) {
+                                newSet.delete(optionId);
+                              } else {
+                                newSet.add(optionId);
+                              }
+                              return newSet;
+                            });
+                          }}
+                          sequentialQuestionNumber={sequentialQuestionNumber}
+                        />
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
+            ) : (
+              <Card>
+                <CardHeader>
+                  <div className="flex justify-between items-center">
+                    <CardTitle>Math Questions</CardTitle>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => window.open('https://www.desmos.com/testing/digital-act/graphing', '_blank')}
+                    >
+                      <Calculator className="mr-2 h-4 w-4" />
+                      Calculator
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {!noQuestions && currentQuestion && currentQuestion.module_type === "math" && (
+                    <Question
+                      question={currentQuestion}
+                      onAnswerChange={handleAnswerChange}
+                      selectedOption={selectedOption}
+                      textAnswer={textAnswer}
+                      onTextAnswerChange={handleTextAnswerChange}
+                      showExplanation={showExplanation}
+                      crossedOutOptions={questionCrossedOuts}
+                      onToggleCrossOut={crossOutMode ? (optionId => onToggleCrossOut(currentQuestion.id, optionId)) : undefined}
+                      crossOutMode={crossOutMode}
+                      testCategory={testCategory}
+                      isAdmin={false}
+                      isHighlighting={isHighlighting}
+                      selectedColor={selectedColor}
+                      highlights={highlights}
+                      onHighlightsChange={setHighlights}
+                      isAnswerMasking={isAnswerMasking}
+                      unmaskedAnswers={unmaskedAnswers}
+                      onToggleUnmask={(optionId) => {
+                        setUnmaskedAnswers(prev => {
+                          const newSet = new Set(prev);
+                          if (newSet.has(optionId)) {
+                            newSet.delete(optionId);
+                          } else {
+                            newSet.add(optionId);
+                          }
+                          return newSet;
+                        });
+                      }}
+                      sequentialQuestionNumber={sequentialQuestionNumber}
+                    />
+                  )}
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+        )}
+        {currentModuleType === "english" && (
+          <TabsContent value="english">
             <Card>
               <CardHeader>
-                <div className="flex justify-between items-center">
-                  <CardTitle>Math Questions</CardTitle>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => window.open('https://www.desmos.com/testing/digital-act/graphing', '_blank')}
-                  >
-                    <Calculator className="mr-2 h-4 w-4" />
-                    Calculator
-                  </Button>
-                </div>
+                <CardTitle>English Questions</CardTitle>
               </CardHeader>
               <CardContent>
-                                 {!noQuestions && currentQuestion && currentQuestion.module_type === "math" && (
+                {!noQuestions && currentQuestion && currentQuestion.module_type === "english" && (
                   <Question
                     question={currentQuestion}
                     onAnswerChange={handleAnswerChange}
@@ -254,6 +482,154 @@ export const TestContainer: React.FC<TestContainerProps> = ({
                     crossedOutOptions={questionCrossedOuts}
                     onToggleCrossOut={crossOutMode ? (optionId => onToggleCrossOut(currentQuestion.id, optionId)) : undefined}
                     crossOutMode={crossOutMode}
+                    testCategory={testCategory}
+                    isAdmin={false}
+                    isHighlighting={isHighlighting}
+                    selectedColor={selectedColor}
+                    highlights={highlights}
+                    onHighlightsChange={setHighlights}
+                    isAnswerMasking={isAnswerMasking}
+                    unmaskedAnswers={unmaskedAnswers}
+                    onToggleUnmask={(optionId) => {
+                      setUnmaskedAnswers(prev => {
+                        const newSet = new Set(prev);
+                        if (newSet.has(optionId)) {
+                          newSet.delete(optionId);
+                        } else {
+                          newSet.add(optionId);
+                        }
+                        return newSet;
+                      });
+                    }}
+                  />
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
+        {currentModuleType === "reading" && (
+          <TabsContent value="reading">
+            <Card>
+              <CardHeader>
+                <CardTitle>Reading Questions</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {!noQuestions && currentQuestion && currentQuestion.module_type === "reading" && (
+                  <Question
+                    question={currentQuestion}
+                    onAnswerChange={handleAnswerChange}
+                    selectedOption={selectedOption}
+                    textAnswer={textAnswer}
+                    onTextAnswerChange={handleTextAnswerChange}
+                    showExplanation={showExplanation}
+                    crossedOutOptions={questionCrossedOuts}
+                    onToggleCrossOut={crossOutMode ? (optionId => onToggleCrossOut(currentQuestion.id, optionId)) : undefined}
+                    crossOutMode={crossOutMode}
+                    testCategory={testCategory}
+                    isAdmin={false}
+                    isHighlighting={isHighlighting}
+                    selectedColor={selectedColor}
+                    highlights={highlights}
+                    onHighlightsChange={setHighlights}
+                    isAnswerMasking={isAnswerMasking}
+                    unmaskedAnswers={unmaskedAnswers}
+                    onToggleUnmask={(optionId) => {
+                      setUnmaskedAnswers(prev => {
+                        const newSet = new Set(prev);
+                        if (newSet.has(optionId)) {
+                          newSet.delete(optionId);
+                        } else {
+                          newSet.add(optionId);
+                        }
+                        return newSet;
+                      });
+                    }}
+                  />
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
+        {currentModuleType === "science" && (
+          <TabsContent value="science">
+            <Card>
+              <CardHeader>
+                <CardTitle>Science Questions</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {!noQuestions && currentQuestion && currentQuestion.module_type === "science" && (
+                  <Question
+                    question={currentQuestion}
+                    onAnswerChange={handleAnswerChange}
+                    selectedOption={selectedOption}
+                    textAnswer={textAnswer}
+                    onTextAnswerChange={handleTextAnswerChange}
+                    showExplanation={showExplanation}
+                    crossedOutOptions={questionCrossedOuts}
+                    onToggleCrossOut={crossOutMode ? (optionId => onToggleCrossOut(currentQuestion.id, optionId)) : undefined}
+                    crossOutMode={crossOutMode}
+                    testCategory={testCategory}
+                    isAdmin={false}
+                    isHighlighting={isHighlighting}
+                    selectedColor={selectedColor}
+                    highlights={highlights}
+                    onHighlightsChange={setHighlights}
+                    isAnswerMasking={isAnswerMasking}
+                    unmaskedAnswers={unmaskedAnswers}
+                    onToggleUnmask={(optionId) => {
+                      setUnmaskedAnswers(prev => {
+                        const newSet = new Set(prev);
+                        if (newSet.has(optionId)) {
+                          newSet.delete(optionId);
+                        } else {
+                          newSet.add(optionId);
+                        }
+                        return newSet;
+                      });
+                    }}
+                  />
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
+        {currentModuleType === "writing" && (
+          <TabsContent value="writing">
+            <Card>
+              <CardHeader>
+                <CardTitle>Writing Questions</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {!noQuestions && currentQuestion && currentQuestion.module_type === "writing" && (
+                  <Question
+                    question={currentQuestion}
+                    onAnswerChange={handleAnswerChange}
+                    selectedOption={selectedOption}
+                    textAnswer={textAnswer}
+                    onTextAnswerChange={handleTextAnswerChange}
+                    showExplanation={showExplanation}
+                    crossedOutOptions={questionCrossedOuts}
+                    onToggleCrossOut={crossOutMode ? (optionId => onToggleCrossOut(currentQuestion.id, optionId)) : undefined}
+                    crossOutMode={crossOutMode}
+                    testCategory={testCategory}
+                    isAdmin={false}
+                    isHighlighting={isHighlighting}
+                    selectedColor={selectedColor}
+                    highlights={highlights}
+                    onHighlightsChange={setHighlights}
+                    isAnswerMasking={isAnswerMasking}
+                    unmaskedAnswers={unmaskedAnswers}
+                    onToggleUnmask={(optionId) => {
+                      setUnmaskedAnswers(prev => {
+                        const newSet = new Set(prev);
+                        if (newSet.has(optionId)) {
+                          newSet.delete(optionId);
+                        } else {
+                          newSet.add(optionId);
+                        }
+                        return newSet;
+                      });
+                    }}
                   />
                 )}
               </CardContent>
@@ -270,15 +646,18 @@ export const TestContainer: React.FC<TestContainerProps> = ({
           {isLastQuestion ? 'Finish Module' : 'Next Question'}
         </Button>
       </div>
-      <div className="mt-8">
-        <QuestionNavigator
-          questions={safeQuestions}
-          currentIndex={currentQuestionIndex}
-          userAnswers={userAnswers}
-          flaggedQuestions={flaggedQuestions}
-          onQuestionClick={onGoToQuestion}
-        />
-      </div>
+      {/* Only show horizontal navigator if not ACT Math (which has vertical navigator) and not Essay/Writing module */}
+      {!(testCategory === 'ACT' && currentModuleType === "math") && currentModuleType !== "writing" && (
+        <div className="mt-8">
+          <QuestionNavigator
+            questions={safeQuestions}
+            currentIndex={currentQuestionIndex}
+            userAnswers={userAnswers}
+            flaggedQuestions={flaggedQuestions}
+            onQuestionClick={onGoToQuestion}
+          />
+        </div>
+      )}
       <Dialog open={showEndModuleDialog} onOpenChange={setShowEndModuleDialog}>
         <DialogContent>
           <DialogHeader>

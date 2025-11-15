@@ -7,7 +7,7 @@ import { toast } from '@/hooks/use-toast';
 type Profile = {
   id: string;
   email: string;
-  role: 'admin' | 'student';
+  role: 'admin' | 'student' | 'teacher';
   first_name: string | null;
   last_name: string | null;
 };
@@ -18,8 +18,9 @@ type AuthContextType = {
   profile: Profile | null;
   isLoading: boolean;
   isAdmin: boolean;
+  isTeacher: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string, firstName: string, lastName: string) => Promise<void>;
+  signUp: (email: string, password: string, firstName: string, lastName: string, schoolId?: string) => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -99,7 +100,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.log("Fetching profile for user:", userId);
       const { data, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, email, role, first_name, last_name, created_at')
         .eq('id', userId)
         .single();
 
@@ -141,31 +142,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const signUp = async (email: string, password: string, firstName: string, lastName: string) => {
+  const signUp = async (email: string, password: string, firstName: string, lastName: string, schoolId?: string) => {
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: {
             first_name: firstName,
             last_name: lastName,
+            school_id: schoolId,
           },
         },
       });
 
-      if (error) {
+      if (authError) {
         toast({
           title: 'Error signing up',
-          description: error.message,
+          description: authError.message,
           variant: 'destructive',
         });
-      } else {
-        toast({
-          title: 'Success!',
-          description: 'Please check your email to confirm your account',
-        });
+        return;
       }
+
+      // Update profile with school_id if provided
+      if (authData.user && schoolId) {
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update({ school_id: schoolId })
+          .eq('id', authData.user.id);
+
+        if (profileError) {
+          console.error('Error updating profile with school:', profileError);
+        }
+      }
+
+      toast({
+        title: 'Success!',
+        description: 'Please check your email to confirm your account',
+      });
     } catch (error: any) {
       toast({
         title: 'Error signing up',
@@ -192,7 +207,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const isAdmin = profile?.role === 'admin';
-  console.log("Admin status:", isAdmin, "Profile:", profile);
+  const isTeacher = profile?.role === 'teacher';
+  console.log("Admin status:", isAdmin, "Teacher status:", isTeacher, "Profile:", profile);
 
   const value = {
     session,
@@ -200,6 +216,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     profile,
     isLoading,
     isAdmin,
+    isTeacher,
     signIn,
     signUp,
     signOut,

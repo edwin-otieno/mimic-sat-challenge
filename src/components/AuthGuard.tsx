@@ -13,7 +13,7 @@ const AuthGuard = ({
   requireAdmin = false,
   requireAuth = true 
 }: AuthGuardProps) => {
-  const { user, isLoading, isAdmin } = useAuth();
+  const { user, isLoading, isAdmin, isTeacher } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -25,8 +25,8 @@ const AuthGuard = ({
       return;
     }
 
-    // Redirect to dashboard if admin privileges are required but user isn't admin
-    if (requireAdmin && !isAdmin) {
+    // Redirect to dashboard if admin privileges are required but user isn't admin or teacher
+    if (requireAdmin && !isAdmin && !isTeacher) {
       navigate('/dashboard');
       return;
     }
@@ -35,7 +35,7 @@ const AuthGuard = ({
     if (!requireAuth && user) {
       navigate('/dashboard');
     }
-  }, [user, isLoading, isAdmin, navigate, requireAuth, requireAdmin]);
+  }, [user, isLoading, isAdmin, isTeacher, navigate, requireAuth, requireAdmin]);
 
   if (isLoading) {
     return (
@@ -49,7 +49,7 @@ const AuthGuard = ({
   }
 
   if (requireAuth && !user) return null;
-  if (requireAdmin && !isAdmin) return null;
+  if (requireAdmin && !isAdmin && !isTeacher) return null;
 
   return <>{children}</>;
 };

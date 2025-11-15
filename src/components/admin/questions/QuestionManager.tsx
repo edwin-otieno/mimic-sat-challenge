@@ -6,6 +6,9 @@ import QuestionHeader, { QuestionFilters } from './components/QuestionHeader';
 import { useQuestionManagement } from './hooks/useQuestionManagement';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useTests } from '@/hooks/useTests';
+import { DEFAULT_SAT_MODULES, DEFAULT_ACT_MODULES } from '../tests/types';
+import PassageManager from '../passages/PassageManager';
 
 interface QuestionManagerProps {
   testId: string;
@@ -19,6 +22,12 @@ const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
   const [filteredQuestions, setFilteredQuestions] = useState<Question[]>([]);
   const [filters, setFilters] = useState<QuestionFilters>({});
+  
+  // Get test category to determine available modules
+  const { tests } = useTests();
+  const currentTest = tests.find(test => test.id === testId);
+  const testCategory = currentTest?.test_category || 'SAT';
+  const availableModules = testCategory === 'ACT' ? DEFAULT_ACT_MODULES : DEFAULT_SAT_MODULES;
 
   const handleOpenDialog = (question?: Question) => {
     if (question) {
@@ -67,15 +76,17 @@ const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
     ? filteredQuestions
     : questions;
 
-  // Group questions by module type
-  const readingWritingQuestions = displayQuestions.filter(q => q.module_type === "reading_writing");
-  const mathQuestions = displayQuestions.filter(q => q.module_type === "math");
+  // Group questions by module type dynamically based on test category
+  const moduleGroups = availableModules.reduce((groups, module) => {
+    groups[module.type] = displayQuestions.filter(q => q.module_type === module.type);
+    return groups;
+  }, {} as Record<string, Question[]>);
 
   const filterOptions = {
-    moduleTypes: [
-      { value: 'reading_writing', label: 'Reading & Writing' },
-      { value: 'math', label: 'Math' }
-    ],
+    moduleTypes: availableModules.map(module => ({
+      value: module.type,
+      label: module.name
+    })),
     questionTypes: [
       { value: QuestionType.MultipleChoice, label: 'Multiple Choice' },
       { value: QuestionType.TextInput, label: 'Text Input' }
@@ -96,45 +107,42 @@ const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
           <p className="text-gray-500">Loading questions...</p>
         </div>
       ) : (
-        <Tabs defaultValue="reading_writing" className="w-full">
+        <Tabs defaultValue={testCategory === 'ACT' ? "passages" : (availableModules[0]?.type || "reading_writing")} className="w-full">
           <TabsList className="mb-4">
-            <TabsTrigger value="reading_writing">
-              Reading & Writing ({readingWritingQuestions.length} questions)
-            </TabsTrigger>
-            <TabsTrigger value="math">
-              Math ({mathQuestions.length} questions)
-            </TabsTrigger>
+            {testCategory === 'ACT' && (
+              <TabsTrigger value="passages">
+                Passages
+              </TabsTrigger>
+            )}
+            {availableModules.map((module) => (
+              <TabsTrigger key={module.type} value={module.type}>
+                {module.name} ({moduleGroups[module.type]?.length || 0} questions)
+              </TabsTrigger>
+            ))}
           </TabsList>
           
-          <TabsContent value="reading_writing">
-            <Card>
-              <CardHeader>
-                <CardTitle>Reading & Writing Questions</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <QuestionList 
-                  questions={readingWritingQuestions} 
-                  onEditQuestion={handleOpenDialog}
-                  onDeleteQuestion={handleDeleteQuestion}
-                />
-              </CardContent>
-            </Card>
-          </TabsContent>
+          {testCategory === 'ACT' && (
+            <TabsContent value="passages">
+              <PassageManager testId={testId} testTitle={testTitle} />
+            </TabsContent>
+          )}
           
-          <TabsContent value="math">
-            <Card>
-              <CardHeader>
-                <CardTitle>Math Questions</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <QuestionList 
-                  questions={mathQuestions} 
-                  onEditQuestion={handleOpenDialog}
-                  onDeleteQuestion={handleDeleteQuestion}
-                />
-              </CardContent>
-            </Card>
-          </TabsContent>
+          {availableModules.map((module) => (
+            <TabsContent key={module.type} value={module.type}>
+              <Card>
+                <CardHeader>
+                  <CardTitle>{module.name} Questions</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <QuestionList 
+                    questions={moduleGroups[module.type] || []} 
+                    onEditQuestion={handleOpenDialog}
+                    onDeleteQuestion={handleDeleteQuestion}
+                  />
+                </CardContent>
+              </Card>
+            </TabsContent>
+          ))}
         </Tabs>
       )}
 

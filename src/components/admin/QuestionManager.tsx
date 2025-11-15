@@ -24,6 +24,9 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DEFAULT_SAT_MODULES, DEFAULT_ACT_MODULES } from './tests/types';
+import { useOptimizedTest } from '@/hooks/useTests';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
@@ -53,6 +56,7 @@ const questionFormSchema = z.object({
   test_id: z.string(),
   text: z.string().min(3, { message: "Question text must be at least 3 characters" }),
   explanation: z.string().optional(),
+  module_type: z.enum(["reading_writing", "math", "english", "reading", "science", "writing"]).default("reading_writing"),
   options: z.array(
     z.object({
       id: z.string().optional(),
@@ -110,12 +114,18 @@ const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
     setQuestions(sampleQuestions);
   }, [testId]);
 
+  // Load test to determine category
+  const { testData } = useOptimizedTest(testId);
+  const testCategory = testData?.test?.test_category || testData?.test?.category || 'SAT';
+  const availableModules = testCategory === 'ACT' ? DEFAULT_ACT_MODULES : DEFAULT_SAT_MODULES;
+
   const form = useForm<z.infer<typeof questionFormSchema>>({
     resolver: zodResolver(questionFormSchema),
     defaultValues: {
       test_id: testId,
       text: '',
       explanation: '',
+      module_type: availableModules[0]?.type || 'reading_writing',
       options: [
         { text: '', is_correct: false },
         { text: '', is_correct: false }
@@ -150,6 +160,7 @@ const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
         test_id: testId,
         text: question.text,
         explanation: question.explanation || '',
+        module_type: (question as any).module_type || availableModules[0]?.type || 'reading_writing',
         options: question.options
       });
     } else {
@@ -159,6 +170,7 @@ const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
         test_id: testId,
         text: '',
         explanation: '',
+        module_type: availableModules[0]?.type || 'reading_writing',
         options: [
           { text: '', is_correct: false },
           { text: '', is_correct: false }
@@ -255,6 +267,32 @@ const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
                       <FormControl>
                         <Textarea placeholder="Enter explanation..." {...field} />
                       </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Module selection - dynamic by test category */}
+                <FormField
+                  control={form.control}
+                  name="module_type"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Module</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select a module" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {availableModules.map((m) => (
+                            <SelectItem key={m.type} value={m.type}>
+                              {m.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}

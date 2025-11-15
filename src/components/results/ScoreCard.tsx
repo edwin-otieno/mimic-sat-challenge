@@ -7,9 +7,10 @@ interface ScoreCardProps {
   total: number;
   scaledScoring?: ScaledScore[];
   scaledScore?: number | null;
+  testCategory?: 'SAT' | 'ACT';
 }
 
-const ScoreCard: React.FC<ScoreCardProps> = ({ score, total, scaledScoring, scaledScore: providedScaledScore }) => {
+const ScoreCard: React.FC<ScoreCardProps> = ({ score, total, scaledScoring, scaledScore: providedScaledScore, testCategory = 'SAT' }) => {
   // Calculate scaled score if available and not already provided
   const getScaledScore = () => {
     // If a scaled score is already provided, use that
@@ -52,12 +53,16 @@ const ScoreCard: React.FC<ScoreCardProps> = ({ score, total, scaledScoring, scal
           {scaledScoreValue !== null ? (
             <>
               <p className="text-5xl font-bold mb-2">{scaledScoreValue}</p>
-              <p className="text-sm text-gray-500 mb-4">Scaled Score</p>
+              <p className="text-sm text-gray-500 mb-4">
+                {testCategory === 'ACT' ? 'Composite Score' : 'Scaled Score'}
+              </p>
             </>
           ) : (
             <>
               <p className="text-5xl font-bold mb-2">N/A</p>
-              <p className="text-sm text-gray-500">No scaled score available</p>
+              <p className="text-sm text-gray-500">
+                {testCategory === 'ACT' ? 'No composite score available' : 'No scaled score available'}
+              </p>
             </>
           )}
         </div>

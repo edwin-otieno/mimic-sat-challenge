@@ -52,10 +52,12 @@ export const TestOperationsProvider: React.FC<TestOperationsProviderProps> = ({ 
         title: test.title,
         description: test.description,
         is_active: test.is_active,
+        test_category: test.test_category || test.category || 'SAT', // Include test category
         created_at: test.created_at,
         modules: test.modules || [],
         scaled_scoring: test.scaled_scoring || []
       };
+      console.log('Complete test object being set:', JSON.stringify(completeTest, null, 2));
       setCurrentTest(completeTest);
     } else {
       console.log('Setting create mode');

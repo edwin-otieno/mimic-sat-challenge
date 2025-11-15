@@ -3,10 +3,12 @@ import { useFieldArray, useFormContext } from 'react-hook-form';
 import { FormField, FormItem, FormControl, FormLabel, FormMessage } from '@/components/ui/form';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Trash, Plus, Image } from 'lucide-react';
+import { Trash, Plus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { QuestionFormValues } from '../schema';
+import TextHighlighter from '@/components/TextHighlighter';
 import { Textarea } from '@/components/ui/textarea';
+import OptionImageUpload from './OptionImageUpload';
 
 interface MultipleChoiceOptionsProps {
   // No additional props needed as we'll use useFormContext
@@ -37,13 +39,10 @@ const MultipleChoiceOptions = ({}: MultipleChoiceOptionsProps) => {
     remove(index);
   };
 
-  const insertImageLink = (index: number, currentText: string) => {
-    const imageUrl = prompt('Enter image URL:');
-    if (imageUrl) {
-      const imageHtml = `<img src="${imageUrl}" alt="Option image" style="max-width: 100%; height: auto;" />`;
-      const newText = currentText ? `${currentText}\n${imageHtml}` : imageHtml;
+  const handleImageUploaded = (index: number) => {
+    return (newText: string) => {
       setValue(`options.${index}.text`, newText);
-    }
+    };
   };
 
   return (
@@ -74,16 +73,10 @@ const MultipleChoiceOptions = ({}: MultipleChoiceOptionsProps) => {
                       {...field} 
                       className="min-h-[100px]"
                     />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => insertImageLink(index, field.value)}
-                      className="w-full"
-                    >
-                      <Image className="h-4 w-4 mr-1" />
-                      Add Image
-                    </Button>
+                    <OptionImageUpload
+                      onImageUploaded={handleImageUploaded(index)}
+                      currentText={field.value}
+                    />
                   </div>
                 </FormControl>
                 <FormMessage />

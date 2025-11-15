@@ -4,11 +4,13 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useTests, useOptimizedTest } from '@/hooks/useTests';
 import { useTestAutoSave } from '@/hooks/useTestAutoSave';
 import { useToast } from '@/hooks/use-toast';
-import { getTestQuestions } from '@/services/testService';
+import { getTestQuestions, getTestPassagesByModule } from '@/services/testService';
 import { QuestionData } from '@/components/Question';
 import { TestModule } from '@/components/admin/tests/types';
 import { ScaledScore } from '@/components/admin/tests/types';
+import { Passage } from '@/components/admin/passages/types';
 import TestContainer from '@/components/test/TestContainer';
+import PassageQuestion from '@/components/PassageQuestion';
 import TestNavigation from '@/components/test/TestNavigation';
 import QuestionNavigator from '@/components/test/QuestionNavigator';
 import Timer from '@/components/Timer';
@@ -30,6 +32,7 @@ import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, Dialog
 import QuestionReview from '@/components/results/QuestionReview';
 import Footer from "@/components/Footer";
 import { supabase } from "@/integrations/supabase/client";
+import { cn } from "@/lib/utils";
 
 const TestInterface = () => {
   const navigate = useNavigate();
@@ -46,6 +49,9 @@ const TestInterface = () => {
   const [userAnswers, setUserAnswers] = useState<Record<string, string>>({});
   const [questions, setQuestions] = useState<QuestionData[]>([]);
   const [scaledScoring, setScaledScoring] = useState<ScaledScore[]>([]);
+  const [passages, setPassages] = useState<Record<string, Passage[]>>({});
+  const [currentPassageIndex, setCurrentPassageIndex] = useState(0);
+  const [currentQuestionInPassage, setCurrentQuestionInPassage] = useState(0);
   const [showConfirmSubmit, setShowConfirmSubmit] = useState(false);
   const [showTimeUpDialog, setShowTimeUpDialog] = useState(false);
   const [flaggedQuestions, setFlaggedQuestions] = useState<Set<string>>(new Set());
@@ -55,6 +61,7 @@ const TestInterface = () => {
   const [testStartTime, setTestStartTime] = useState<Date>(new Date());
   const { tests } = useTests();
   const [currentTest, setCurrentTest] = useState<any>(null);
+  const [currentTestResultId, setCurrentTestResultId] = useState<string | null>(null);
   
   // Use optimized test loading directly by permalink or id from route
   const { testData, isLoading: testDataLoading, error: testDataError } = useOptimizedTest(permalink || null);
@@ -82,6 +89,31 @@ const TestInterface = () => {
     // Persist for the session
     const saved = sessionStorage.getItem('crossOutMode');
     return saved === 'true';
+  });
+  const [isAnswerMasking, setIsAnswerMasking] = useState(() => {
+    // Persist for the session
+    const saved = sessionStorage.getItem('isAnswerMasking');
+    return saved === 'true';
+  });
+  const [unmaskedAnswers, setUnmaskedAnswers] = useState<Set<string>>(() => {
+    // Persist for the session
+    const saved = sessionStorage.getItem('unmaskedAnswers');
+    return saved ? new Set(JSON.parse(saved)) : new Set();
+  });
+  const [isHighlighting, setIsHighlighting] = useState(() => {
+    // Persist for the session
+    const saved = sessionStorage.getItem('isHighlighting');
+    return saved === 'true';
+  });
+  const [selectedColor, setSelectedColor] = useState<string>(() => {
+    // Persist for the session
+    const saved = sessionStorage.getItem('selectedColor');
+    return saved || 'yellow';
+  });
+  const [highlights, setHighlights] = useState<Array<{id: string, start: number, end: number, color: string}>>(() => {
+    // Persist for the session
+    const saved = sessionStorage.getItem('highlights');
+    return saved ? JSON.parse(saved) : [];
   });
   
   const { saveTestState, loadTestState, clearTestState, isRestoring, setIsRestoring } = useTestAutoSave(permalink || '');
@@ -298,6 +330,26 @@ const TestInterface = () => {
     sessionStorage.setItem('crossOutMode', crossOutMode ? 'true' : 'false');
   }, [crossOutMode]);
 
+  useEffect(() => {
+    sessionStorage.setItem('isAnswerMasking', isAnswerMasking ? 'true' : 'false');
+  }, [isAnswerMasking]);
+
+  useEffect(() => {
+    sessionStorage.setItem('unmaskedAnswers', JSON.stringify(Array.from(unmaskedAnswers)));
+  }, [unmaskedAnswers]);
+
+  useEffect(() => {
+    sessionStorage.setItem('isHighlighting', isHighlighting ? 'true' : 'false');
+  }, [isHighlighting]);
+
+  useEffect(() => {
+    sessionStorage.setItem('selectedColor', selectedColor);
+  }, [selectedColor]);
+
+  useEffect(() => {
+    sessionStorage.setItem('highlights', JSON.stringify(highlights));
+  }, [highlights]);
+
   // Auto-save complete test state to sessionStorage
   useEffect(() => {
     if (stateLoaded && permalink) {
@@ -354,6 +406,13 @@ const TestInterface = () => {
     }
   }, [currentQuestionIndex, questions, currentTest]);
 
+  // Initialize test result when test starts
+  useEffect(() => {
+    if (currentTest && user && !currentTestResultId && stateLoaded) {
+      getOrCreateTestResult();
+    }
+  }, [currentTest, user, stateLoaded]);
+
   // Update module time left
   useEffect(() => {
     if (!timerEnabled || currentModuleTimeLeft <= 0) return;
@@ -400,8 +459,18 @@ const TestInterface = () => {
     if (currentQuestionIndex < partEndIndex) {
       setCurrentQuestionIndex(currentQuestionIndex + 1);
     } else if (part === 1) {
-      // End of Part 1, prompt for Part 2
-      setShowPartTransition(true);
+      // Check if this is an ACT test
+      const isACTTest = currentTest?.test_category === 'ACT' || 
+        (currentTest?.modules && Array.isArray(currentTest.modules) && 
+         currentTest.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type)));
+      
+      if (isACTTest) {
+        // For ACT tests, complete module directly (no part transition)
+        handleModuleCompletion();
+      } else {
+        // For SAT tests, prompt for Part 2
+        setShowPartTransition(true);
+      }
     } else {
       // End of Part 2, complete module as before
       handleModuleCompletion();
@@ -416,6 +485,67 @@ const TestInterface = () => {
   
   const handleGoToQuestion = (index: number) => {
     setCurrentQuestionIndex(index);
+  };
+
+  // Helper function to convert global question index to passage indices
+  const convertGlobalIndexToPassageIndices = (globalIndex: number, modulePassages: Passage[]) => {
+    let questionCount = 0;
+    for (let i = 0; i < modulePassages.length; i++) {
+      const passage = modulePassages[i];
+      const passageQuestionCount = passage.questions?.length || 0;
+      if (globalIndex < questionCount + passageQuestionCount) {
+        return {
+          passageIndex: i,
+          questionInPassage: globalIndex - questionCount
+        };
+      }
+      questionCount += passageQuestionCount;
+    }
+    // Default to first passage, first question if index is out of bounds
+    return { passageIndex: 0, questionInPassage: 0 };
+  };
+
+  // Passage navigation functions
+  const handleNextPassageQuestion = () => {
+    const passageData = getCurrentPassageData();
+    if (!passageData) return;
+
+    const newGlobalIndex = passageData.globalQuestionIndex + 1;
+    
+    if (currentQuestionInPassage < passageData.totalQuestions - 1) {
+      setCurrentQuestionInPassage(prev => prev + 1);
+      setCurrentQuestionIndex(newGlobalIndex);
+    } else {
+      // End of current passage, go to next passage or complete module
+      const modulePassages = getCurrentModulePassages();
+      if (currentPassageIndex < modulePassages.length - 1) {
+        setCurrentPassageIndex(prev => prev + 1);
+        setCurrentQuestionInPassage(0);
+        setCurrentQuestionIndex(newGlobalIndex);
+      } else {
+        // End of all passages in module
+        handleModuleCompletion();
+      }
+    }
+  };
+
+  const handlePreviousPassageQuestion = () => {
+    const passageData = getCurrentPassageData();
+    if (!passageData) return;
+
+    const newGlobalIndex = passageData.globalQuestionIndex - 1;
+    
+    if (currentQuestionInPassage > 0) {
+      setCurrentQuestionInPassage(prev => prev - 1);
+      setCurrentQuestionIndex(newGlobalIndex);
+    } else if (currentPassageIndex > 0) {
+      // Go to previous passage
+      const modulePassages = getCurrentModulePassages();
+      const prevPassage = modulePassages[currentPassageIndex - 1];
+      setCurrentPassageIndex(prev => prev - 1);
+      setCurrentQuestionInPassage(prevPassage.questions?.length - 1 || 0);
+      setCurrentQuestionIndex(newGlobalIndex);
+    }
   };
 
   const handleToggleFlag = (questionId: string) => {
@@ -456,7 +586,19 @@ const TestInterface = () => {
     
     questions.forEach(question => {
       const moduleType = question.module_type || 'reading_writing'; 
-      const moduleName = moduleType === 'reading_writing' ? 'Reading & Writing' : 'Math';
+      
+      // Map module types to display names
+      const moduleNameMap: Record<string, string> = {
+        'reading_writing': 'Reading & Writing',
+        'math': 'Math',
+        'english': 'English',
+        'reading': 'Reading',
+        'science': 'Science',
+        'writing': 'Essay',
+        'essay': 'Essay'
+      };
+      
+      const moduleName = moduleNameMap[moduleType] || moduleType;
       // Use the module type as the ID to match with scaled scoring
       const moduleId = moduleType;
       
@@ -536,7 +678,171 @@ const TestInterface = () => {
     });
   };
 
-  // Save results to database
+  // Initialize or get existing test result for in-progress test
+  const getOrCreateTestResult = async () => {
+    if (!user) return null;
+    
+    try {
+      // Check if there's an existing in-progress test result
+      const { data: existingResult } = await supabase
+        .from('test_results')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('test_id', currentTest?.id || permalink || '')
+        .eq('is_completed', false)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+      
+      if (existingResult) {
+        setCurrentTestResultId(existingResult.id);
+        return existingResult.id;
+      }
+      
+      // Create new test result for in-progress test
+      const { data: newResult, error } = await supabase
+        .from('test_results')
+        .insert({
+          user_id: user.id,
+          test_id: currentTest?.id || permalink || '',
+          total_score: 0,
+          total_questions: 0,
+          scaled_score: null,
+          answers: userAnswers,
+          time_taken: null,
+          is_completed: false,
+          created_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+      
+      if (error) throw error;
+      
+      if (newResult) {
+        setCurrentTestResultId(newResult.id);
+        return newResult.id;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error("Error getting or creating test result:", error);
+      return null;
+    }
+  };
+
+  // Save module results incrementally when a module is completed
+  const saveModuleResults = async (moduleType: string) => {
+    console.log('🔵 saveModuleResults called for module:', moduleType);
+    if (!user) {
+      console.error("❌ User not authenticated");
+      return;
+    }
+    
+    try {
+      // Ensure test result exists before saving module results
+      let testResultId = currentTestResultId;
+      console.log('📋 Current testResultId:', testResultId);
+      
+      if (!testResultId) {
+        console.log("⚠️ Test result not initialized, creating one...");
+        testResultId = await getOrCreateTestResult();
+        if (testResultId) {
+          console.log('✅ Created test result:', testResultId);
+          setCurrentTestResultId(testResultId);
+        } else {
+          console.error("❌ Failed to create test result");
+          return;
+        }
+      }
+      
+      const moduleScores = calculateModuleScores();
+      console.log('📊 All module scores:', moduleScores);
+      const completedModule = moduleScores.find(m => m.moduleId === moduleType);
+      
+      if (!completedModule) {
+        console.error("❌ Module not found in scores:", moduleType, "Available modules:", moduleScores.map(m => m.moduleId));
+        return;
+      }
+      
+      console.log('✅ Found completed module:', {
+        moduleId: completedModule.moduleId,
+        moduleName: completedModule.moduleName,
+        correctAnswers: completedModule.correctAnswers,
+        totalQuestions: completedModule.totalQuestions,
+        scaledScore: completedModule.scaledScore
+      });
+      
+      // Check if module result already exists
+      console.log('🔍 Checking for existing module result with test_result_id:', testResultId, 'module_id:', moduleType);
+      const { data: existingModule, error: checkError } = await supabase
+        .from('module_results')
+        .select('id')
+        .eq('test_result_id', testResultId)
+        .eq('module_id', moduleType)
+        .maybeSingle();
+      
+      if (checkError && checkError.code !== 'PGRST116') { // PGRST116 is "not found" which is fine
+        console.error('❌ Error checking for existing module:', checkError);
+        throw checkError;
+      }
+      
+      if (existingModule) {
+        console.log('🔄 Updating existing module result:', existingModule.id);
+        // Update existing module result
+        const { data: updatedData, error } = await supabase
+          .from('module_results')
+          .update({
+            module_name: completedModule.moduleName,
+            score: completedModule.correctAnswers,
+            total: completedModule.totalQuestions,
+            scaled_score: completedModule.scaledScore,
+          })
+          .eq('id', existingModule.id)
+          .select();
+        
+        if (error) {
+          console.error('❌ Error updating module result:', error);
+          throw error;
+        }
+        console.log('✅ Module results updated successfully:', updatedData);
+      } else {
+        console.log('➕ Inserting new module result');
+        const insertData = {
+          test_result_id: testResultId,
+          module_id: completedModule.moduleId,
+          module_name: completedModule.moduleName,
+          score: completedModule.correctAnswers,
+          total: completedModule.totalQuestions,
+          scaled_score: completedModule.scaledScore,
+          created_at: new Date().toISOString()
+        };
+        console.log('📝 Insert data:', insertData);
+        
+        // Insert new module result
+        const { data: insertedData, error } = await supabase
+          .from('module_results')
+          .insert(insertData)
+          .select();
+        
+        if (error) {
+          console.error('❌ Error inserting module result:', error);
+          console.error('❌ Error details:', JSON.stringify(error, null, 2));
+          throw error;
+        }
+        console.log('✅ Module results saved successfully:', insertedData);
+      }
+    } catch (error) {
+      console.error("❌ Error saving module results:", error);
+      console.error("❌ Error stack:", error instanceof Error ? error.stack : 'No stack trace');
+      toast({
+        title: "Error",
+        description: `Failed to save module results: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        variant: "destructive"
+      });
+    }
+  };
+
+  // Save results to database (final save when test is completed)
   const saveResults = async (
     correctAnswers: number, 
     totalQuestions: number, 
@@ -552,46 +858,81 @@ const TestInterface = () => {
       const testEndTime = new Date();
       const timeTaken = Math.floor((testEndTime.getTime() - testStartTime.getTime()) / 1000);
       
-      // Save test results first
-      const { data: testResult, error: testError } = await supabase
-        .from('test_results')
-        .insert({
-          user_id: user.id,
-          test_id: currentTest?.id || permalink || '',
-          total_score: correctAnswers,
-          total_questions: totalQuestions,
-          scaled_score: scaledScore,
-          answers: userAnswers,
-          time_taken: timeTaken,
-          created_at: new Date().toISOString()
-        })
-        .select()
-        .single();
+      let testResultId = currentTestResultId;
       
-      if (testError) {
-        console.error("Error saving test results:", testError);
-        toast({
-          title: "Error",
-          description: "There was a problem saving your results. Please contact support.",
-          variant: "destructive"
-        });
-        return;
+      // If we have an existing test result, update it; otherwise create new
+      if (testResultId) {
+        const { error: updateError } = await supabase
+          .from('test_results')
+          .update({
+            total_score: correctAnswers,
+            total_questions: totalQuestions,
+            scaled_score: scaledScore,
+            answers: userAnswers,
+            time_taken: timeTaken,
+            is_completed: true
+          })
+          .eq('id', testResultId);
+        
+        if (updateError) throw updateError;
+      } else {
+        // Save test results first
+        const { data: testResult, error: testError } = await supabase
+          .from('test_results')
+          .insert({
+            user_id: user.id,
+            test_id: currentTest?.id || permalink || '',
+            total_score: correctAnswers,
+            total_questions: totalQuestions,
+            scaled_score: scaledScore,
+            answers: userAnswers,
+            time_taken: timeTaken,
+            is_completed: true,
+            created_at: new Date().toISOString()
+          })
+          .select()
+          .single();
+        
+        if (testError) throw testError;
+        testResultId = testResult.id;
       }
       
-      // Save module results
-      if (testResult) {
-        const moduleResultsPromises = moduleScores.map(module => {
-          return supabase
+      // Save module results (upsert to handle incremental saves)
+      if (testResultId) {
+        const moduleResultsPromises = moduleScores.map(async (module) => {
+          // Check if module result exists
+          const { data: existing } = await supabase
             .from('module_results')
-            .insert({
-              test_result_id: testResult.id,
-              module_id: module.moduleId,
-              module_name: module.moduleName,
-              score: module.correctAnswers,
-              total: module.totalQuestions,
-              scaled_score: module.scaledScore,
-              created_at: new Date().toISOString()
-            });
+            .select('id')
+            .eq('test_result_id', testResultId)
+            .eq('module_id', module.moduleId)
+            .single();
+          
+          if (existing) {
+            // Update existing
+            return supabase
+              .from('module_results')
+              .update({
+                module_name: module.moduleName,
+                score: module.correctAnswers,
+                total: module.totalQuestions,
+                scaled_score: module.scaledScore,
+              })
+              .eq('id', existing.id);
+          } else {
+            // Insert new
+            return supabase
+              .from('module_results')
+              .insert({
+                test_result_id: testResultId,
+                module_id: module.moduleId,
+                module_name: module.moduleName,
+                score: module.correctAnswers,
+                total: module.totalQuestions,
+                scaled_score: module.scaledScore,
+                created_at: new Date().toISOString()
+              });
+          }
         });
         
         // Wait for all module results to be saved
@@ -683,8 +1024,22 @@ const TestInterface = () => {
       // Calculate overall scaled score (if available)
       let overallScaledScore;
       if (moduleScores.length > 0) {
-        // Sum the scaled scores of the two modules
-        overallScaledScore = moduleScores.reduce((sum, module) => sum + (module.scaledScore || 0), 0);
+        const testCategory = testData?.test?.test_category || currentTest?.test_category || 'SAT';
+        
+        if (testCategory === 'ACT') {
+          // For ACT: Composite Score = average of English, Math, and Reading
+          const compositeModules = moduleScores.filter(module => 
+            ['english', 'math', 'reading'].includes(module.moduleId)
+          );
+          
+          if (compositeModules.length > 0) {
+            const sum = compositeModules.reduce((sum, module) => sum + (module.scaledScore || 0), 0);
+            overallScaledScore = Math.round(sum / compositeModules.length);
+          }
+        } else {
+          // For SAT: Sum the scaled scores of the modules
+          overallScaledScore = moduleScores.reduce((sum, module) => sum + (module.scaledScore || 0), 0);
+        }
       }
       
       console.log('Saving results to database...');
@@ -693,6 +1048,7 @@ const TestInterface = () => {
       
       console.log('Navigating to results page...');
       // Navigate to results page with score data
+      const testCategory = testData?.test?.test_category || currentTest?.test_category || 'SAT';
       navigate("/results", {
         state: {
           score: correctAnswers,
@@ -709,7 +1065,8 @@ const TestInterface = () => {
             totalQuestions: module.totalQuestions,
             scaledScore: module.scaledScore
           })),
-          overallScaledScore: overallScaledScore
+          overallScaledScore: overallScaledScore,
+          testCategory: testCategory
         }
       });
       console.log('Navigation completed');
@@ -760,6 +1117,10 @@ const TestInterface = () => {
     setShowModuleSelection(false);
     setShowModuleScores(false); // Ensure we go to test questions, not module results
     
+    // Reset passage indices when switching modules (for ACT tests with passages)
+    setCurrentPassageIndex(0);
+    setCurrentQuestionInPassage(0);
+    
     // Set the current part
     setCurrentPart(prev => ({ ...prev, [moduleType]: partNumber as 1 | 2 }));
     
@@ -796,11 +1157,16 @@ const TestInterface = () => {
   };
 
   // Add function to handle module completion
-  const handleModuleCompletion = () => {
-    if (!selectedModule) return;
+  const handleModuleCompletion = async () => {
+    console.log('🟢 handleModuleCompletion called, selectedModule:', selectedModule);
+    if (!selectedModule) {
+      console.log('❌ No selectedModule, returning');
+      return;
+    }
     
     // Calculate scores for the completed module
     const moduleScores = calculateModuleScores();
+    console.log('📊 Calculated module scores:', moduleScores);
     setCurrentModuleScores(moduleScores);
     setShowModuleScores(true);
     
@@ -811,8 +1177,42 @@ const TestInterface = () => {
     const hasAttemptedPart1 = attemptedInPart(part1Questions);
     const hasAttemptedPart2 = attemptedInPart(part2Questions);
     
-    if (hasAttemptedPart1 && hasAttemptedPart2) {
+    console.log(`🔍 Module ${selectedModule} completion check:`, {
+      hasAttemptedPart1,
+      hasAttemptedPart2,
+      part1QuestionsCount: part1Questions.length,
+      part2QuestionsCount: part2Questions.length,
+      part1QuestionIds: part1Questions.map(q => q.id),
+      part2QuestionIds: part2Questions.map(q => q.id),
+      userAnswersKeys: Object.keys(userAnswers),
+      testCategory: currentTest?.test_category
+    });
+    
+    // Always save module results when handleModuleCompletion is called
+    // This function is only called when the user has completed/finished the module
+    // So we should save the results regardless of answer conditions
+    const isACTTest = currentTest?.test_category === 'ACT';
+    const hasPart2 = part2Questions.length > 0;
+    const hasAnyAnswers = hasAttemptedPart1 || hasAttemptedPart2;
+    
+    console.log(`💾 Module completion details:`, {
+      isACTTest,
+      hasPart2,
+      hasAttemptedPart1,
+      hasAttemptedPart2,
+      hasAnyAnswers
+    });
+    
+    // Always save if handleModuleCompletion was called (user completed the module)
+    // Only skip if there are literally no answers at all
+    if (hasAnyAnswers || moduleScores.some(m => m.moduleId === selectedModule && m.correctAnswers >= 0)) {
       setCompletedModules(prev => new Set([...prev, selectedModule]));
+      
+      // Save module results incrementally
+      console.log(`💾 Saving module results for ${selectedModule}...`);
+      await saveModuleResults(selectedModule);
+    } else {
+      console.log(`⚠️ Module ${selectedModule} not saved: no answers found at all`);
     }
   };
 
@@ -889,6 +1289,126 @@ const TestInterface = () => {
     return () => clearInterval(timer);
   }, [timerRunning, currentPartTimeLeft]);
 
+  // Load passages for a test
+  const loadPassages = async (testId: string) => {
+    try {
+      const passagesData = await getTestPassagesByModule(testId);
+      setPassages(passagesData);
+      console.log('Passages loaded:', passagesData);
+      console.log('Passages by module:', Object.keys(passagesData).map(module => ({
+        module,
+        count: passagesData[module]?.length || 0,
+        passages: passagesData[module]?.map(p => ({ id: p.id, title: p.title, order: p.passage_order, questionCount: p.questions?.length || 0 })) || []
+      })));
+    } catch (error) {
+      console.error('Error loading passages:', error);
+    }
+  };
+
+  // Check if current module has passages
+  const getCurrentModulePassages = () => {
+    const moduleType = selectedModule || getCurrentModuleType();
+    const modulePassages = passages[moduleType] || [];
+    console.log(`[getCurrentModulePassages] Module: ${moduleType}, Passages found: ${modulePassages.length}`, modulePassages.map(p => ({ id: p.id, title: p.title, order: p.passage_order })));
+    return modulePassages;
+  };
+
+  // Track last restored module to avoid restoring multiple times
+  const lastRestoredModuleRef = useRef<string | null>(null);
+  const hasRestoredForCurrentStateRef = useRef<boolean>(false);
+
+  // Reset or restore passage indices when selected module changes or state is loaded
+  useEffect(() => {
+    if (!selectedModule) return;
+    
+    const modulePassages = passages[selectedModule] || [];
+    const isPassageModule = modulePassages.length > 0;
+    const moduleChanged = lastRestoredModuleRef.current !== selectedModule;
+    
+    // Restore passage indices when:
+    // 1. State is loaded AND (module changed OR we haven't restored for this state yet)
+    // 2. This is a passage module
+    if (stateLoaded && isPassageModule && (moduleChanged || !hasRestoredForCurrentStateRef.current)) {
+      const indices = convertGlobalIndexToPassageIndices(currentQuestionIndex, modulePassages);
+      console.log(`[useEffect] Module: ${selectedModule}, Restoring passage indices from global index ${currentQuestionIndex} to passage ${indices.passageIndex}, question ${indices.questionInPassage}`);
+      setCurrentPassageIndex(indices.passageIndex);
+      setCurrentQuestionInPassage(indices.questionInPassage);
+      lastRestoredModuleRef.current = selectedModule;
+      hasRestoredForCurrentStateRef.current = true;
+    } else if (moduleChanged) {
+      // Module changed but state not loaded yet, or not a passage module - reset to defaults
+      console.log(`[useEffect] Module changed to: ${selectedModule}, Resetting passage indices. Passages available: ${modulePassages.length}, State loaded: ${stateLoaded}`);
+      setCurrentPassageIndex(0);
+      setCurrentQuestionInPassage(0);
+      lastRestoredModuleRef.current = selectedModule;
+      hasRestoredForCurrentStateRef.current = false;
+    }
+  }, [selectedModule, passages, stateLoaded]);
+  
+  // Also restore when currentQuestionIndex changes after state is loaded (for initial restore)
+  useEffect(() => {
+    if (!selectedModule || !stateLoaded) return;
+    
+    const modulePassages = passages[selectedModule] || [];
+    const isPassageModule = modulePassages.length > 0;
+    
+    // Only restore if we haven't restored yet for this state
+    if (isPassageModule && !hasRestoredForCurrentStateRef.current) {
+      const indices = convertGlobalIndexToPassageIndices(currentQuestionIndex, modulePassages);
+      console.log(`[useEffect] Restoring passage indices from currentQuestionIndex change: ${currentQuestionIndex} to passage ${indices.passageIndex}, question ${indices.questionInPassage}`);
+      setCurrentPassageIndex(indices.passageIndex);
+      setCurrentQuestionInPassage(indices.questionInPassage);
+      hasRestoredForCurrentStateRef.current = true;
+    }
+  }, [currentQuestionIndex, selectedModule, passages, stateLoaded]);
+
+  // Get all questions from all passages in current module with sequential numbering
+  const getAllModulePassageQuestions = () => {
+    const modulePassages = getCurrentModulePassages();
+    const allQuestions: QuestionData[] = [];
+    let sequentialQuestionNumber = 1;
+    
+    modulePassages.forEach(passage => {
+      if (passage.questions && passage.questions.length > 0) {
+        passage.questions.forEach(question => {
+          // Assign sequential question number across all passages
+          allQuestions.push({
+            ...question,
+            question_number: sequentialQuestionNumber
+          });
+          sequentialQuestionNumber++;
+        });
+      }
+    });
+    return allQuestions;
+  };
+
+  // Get current passage and question
+  const getCurrentPassageData = () => {
+    const modulePassages = getCurrentModulePassages();
+    if (modulePassages.length === 0) return null;
+    
+    const passage = modulePassages[currentPassageIndex];
+    if (!passage || !passage.questions) return null;
+    
+    // Calculate global question index across all passages
+    let globalQuestionIndex = 0;
+    for (let i = 0; i < currentPassageIndex; i++) {
+      if (modulePassages[i]?.questions) {
+        globalQuestionIndex += modulePassages[i].questions.length;
+      }
+    }
+    globalQuestionIndex += currentQuestionInPassage;
+    
+    return {
+      passage,
+      currentQuestion: passage.questions[currentQuestionInPassage],
+      totalQuestions: passage.questions.length,
+      globalQuestionIndex,
+      totalQuestionsInModule: getAllModulePassageQuestions().length
+    };
+  };
+
   // Optimized test loading effect
   useEffect(() => {
     if (!user) {
@@ -919,6 +1439,8 @@ const TestInterface = () => {
 
     console.log('Setting up test with optimized data');
     console.log('Raw modules data:', testData.test.modules);
+    console.log('Test category from testData:', testData.test.test_category);
+    console.log('Full test data:', testData.test);
     
     // Parse modules first before using them
     let modules = testData.test.modules;
@@ -953,16 +1475,34 @@ const TestInterface = () => {
     console.log('Questions set:', testData.questions.length);
     console.log('Scaled scoring set:', testData.scaledScoring.length);
     
-    // Split each module's questions into two parts
-    const grouped: { [moduleType: string]: QuestionData[] } = { reading_writing: [], math: [] };
+    // Load passages for ACT tests
+    if (testData.test.test_category === 'ACT') {
+      loadPassages(testData.test.id);
+    }
+    
+    // Group questions by module type dynamically
+    const grouped: { [moduleType: string]: QuestionData[] } = {};
     testData.questions.forEach(q => {
-      if (q.module_type === 'math') grouped.math.push(q);
-      else grouped.reading_writing.push(q);
+      const moduleType = q.module_type || 'reading_writing';
+      if (!grouped[moduleType]) {
+        grouped[moduleType] = [];
+      }
+      grouped[moduleType].push(q);
     });
+    
+    // Split each module's questions into two parts (only for SAT tests)
     const parts: { [moduleType: string]: [QuestionData[], QuestionData[]] } = {};
+    const testCategory = testData.test.test_category || 'SAT';
+    
     Object.entries(grouped).forEach(([moduleType, qs]) => {
-      const half = Math.ceil(qs.length / 2);
-      parts[moduleType] = [qs.slice(0, half), qs.slice(half)];
+      if (testCategory === 'ACT') {
+        // For ACT tests, keep each module as a single part
+        parts[moduleType] = [qs, []];
+      } else {
+        // For SAT tests, split into two parts
+        const half = Math.ceil(qs.length / 2);
+        parts[moduleType] = [qs.slice(0, half), qs.slice(half)];
+      }
     });
     setModuleParts(parts);
     
@@ -976,12 +1516,18 @@ const TestInterface = () => {
       console.log('State was loaded, ensuring proper module selection');
     }
     
-    // Set per-part time (half the module time, rounded down)
+    // Set per-part time (half the module time for SAT, full time for ACT)
     const partTimes: { [moduleType: string]: number } = {};
     
     if (modules.length > 0) {
       modules.forEach((m: any) => {
-        partTimes[m.type] = Math.floor((m.time || 0) * 60 / 2); // seconds
+        if (testCategory === 'ACT') {
+          // For ACT tests, use full module time
+          partTimes[m.type] = (m.time || 0) * 60; // seconds
+        } else {
+          // For SAT tests, split time in half
+          partTimes[m.type] = Math.floor((m.time || 0) * 60 / 2); // seconds
+        }
       });
     }
     
@@ -1267,25 +1813,44 @@ const TestInterface = () => {
     const getPartInfo = (moduleType: string) => {
       const module = currentTest?.modules?.find((m: any) => m.type === moduleType);
       const parts = moduleParts[moduleType];
-      const partTimes = module ? Math.floor((module.time || 0) / 2) : 0; // Half the module time in minutes
       
-      if (!parts || parts.length < 1) {
+      // Check if this is an ACT test
+      const isACTTest = currentTest?.test_category === 'ACT' || 
+        (currentTest?.modules && Array.isArray(currentTest.modules) && 
+         currentTest.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type)));
+      
+      if (isACTTest) {
+        // For ACT tests, show only one part per module
+        const partQuestions = parts?.[0] || [];
         return [{
           partNumber: 1,
-          questionCount: 0,
-          timeMinutes: module?.time || 0,
+          questionCount: partQuestions.length,
+          timeMinutes: module?.time || 0, // Full module time for ACT
           moduleType,
           moduleName: module?.name || moduleType
         }];
+      } else {
+        // For SAT tests, show two parts per module
+        const partTimes = module ? Math.floor((module.time || 0) / 2) : 0; // Half the module time in minutes
+        
+        if (!parts || parts.length < 1) {
+          return [{
+            partNumber: 1,
+            questionCount: 0,
+            timeMinutes: module?.time || 0,
+            moduleType,
+            moduleName: module?.name || moduleType
+          }];
+        }
+        
+        return parts.map((partQuestions, index) => ({
+          partNumber: index + 1,
+          questionCount: partQuestions.length,
+          timeMinutes: partTimes,
+          moduleType,
+          moduleName: module?.name || moduleType
+        }));
       }
-      
-      return parts.map((partQuestions, index) => ({
-        partNumber: index + 1,
-        questionCount: partQuestions.length,
-        timeMinutes: partTimes,
-        moduleType,
-        moduleName: module?.name || moduleType
-      }));
     };
 
     // Check if there's saved progress
@@ -1321,16 +1886,37 @@ const TestInterface = () => {
       return module?.name || moduleType;
     };
 
+    // Determine test category for conditional styling
+    // Use testData if available, fallback to currentTest
+    const testCategory = testData?.test?.test_category || currentTest?.test_category || 'SAT';
+    const isACTTest = testCategory === 'ACT' || 
+      (testData?.test?.modules && Array.isArray(testData.test.modules) && 
+       testData.test.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type))) ||
+      (currentTest?.modules && Array.isArray(currentTest.modules) && 
+       currentTest.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type)));
+
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
         <Header />
-        <main className="flex-1 container max-w-4xl mx-auto py-8 px-4">
+        <main 
+          className={cn("flex-1 container mx-auto py-4 sm:py-8 px-4", !isACTTest && "max-w-4xl")}
+          style={isACTTest ? { maxWidth: '70rem' } : undefined}
+        >
           {hasSavedProgress && (
             <Alert className="mb-6">
               <AlertDescription>
                 <strong>Saved Progress Detected!</strong> You have saved progress from a previous session. 
                 {savedModuleType && savedPart && (
-                  <span> You were working on <strong>{getModuleDisplayName(savedModuleType)} Part {savedPart}</strong>. </span>
+                  <span> You were working on <strong>
+                    {getModuleDisplayName(savedModuleType)}
+                    {(() => {
+                      // Check if this is an ACT test
+                      const isACTTest = currentTest?.test_category === 'ACT' || 
+                        (currentTest?.modules && Array.isArray(currentTest.modules) && 
+                         currentTest.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type)));
+                      return isACTTest ? '' : ` Part ${savedPart}`;
+                    })()}
+                  </strong>. </span>
                 )}
                 Your answers and progress are preserved. You can continue with the same module/part or start a different one.
               </AlertDescription>
@@ -1422,7 +2008,13 @@ const TestInterface = () => {
                             >
                               <div className="text-white w-full">
                                 <div className="font-medium">
-                                  {part.moduleName} Part {part.partNumber}: {part.questionCount} questions in {part.timeMinutes} minutes
+                                  {part.moduleName}{(() => {
+                                    // Check if this is an ACT test
+                                    const isACTTest = currentTest?.test_category === 'ACT' || 
+                                      (currentTest?.modules && Array.isArray(currentTest.modules) && 
+                                       currentTest.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type)));
+                                    return isACTTest ? '' : ` Part ${part.partNumber}`;
+                                  })()}: {part.questionCount} questions in {part.timeMinutes} minutes
                                   {isSavedPart && answeredQuestions > 0 && (
                                     <span className="text-sm opacity-90"> (💾 {answeredQuestions} of {totalQuestions} answered)</span>
                                   )}
@@ -1449,10 +2041,21 @@ const TestInterface = () => {
     const currentModuleType = selectedModule || getCurrentModuleType();
     const currentModuleQuestions = questions.filter(q => q.module_type === currentModuleType);
     
+    // Determine test category for conditional styling
+    const testCategoryForScores = testData?.test?.test_category || currentTest?.test_category || 'SAT';
+    const isACTTestForScores = testCategoryForScores === 'ACT' || 
+      (testData?.test?.modules && Array.isArray(testData.test.modules) && 
+       testData.test.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type))) ||
+      (currentTest?.modules && Array.isArray(currentTest.modules) && 
+       currentTest.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type)));
+    
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
         <Header />
-        <main className="flex-1 container max-w-4xl mx-auto py-8 px-4">
+        <main 
+          className={cn("flex-1 container mx-auto py-4 sm:py-8 px-4", !isACTTestForScores && "max-w-4xl")}
+          style={isACTTestForScores ? { maxWidth: '70rem' } : undefined}
+        >
           <Card className="mb-8">
             <CardHeader>
               <CardTitle>Module Results</CardTitle>
@@ -1464,17 +2067,17 @@ const TestInterface = () => {
                   return (
                     <div key={module.moduleId} className="mb-6">
                       <h3 className="text-xl font-semibold mb-2">{module.moduleName}</h3>
-                      <div className="grid md:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="bg-white rounded-lg p-4 border">
-                          <h4 className="text-lg font-medium mb-2">Raw Score</h4>
-                          <div className="text-3xl font-bold">
+                          <h4 className="text-base sm:text-lg font-medium mb-2">Raw Score</h4>
+                          <div className="text-2xl sm:text-3xl font-bold">
                             {module.correctAnswers} / {module.totalQuestions}
                           </div>
                         </div>
                         {module.scaledScore !== undefined && (
                           <div className="bg-white rounded-lg p-4 border">
-                            <h4 className="text-lg font-medium mb-2">Scaled Score</h4>
-                            <div className="text-3xl font-bold">
+                            <h4 className="text-base sm:text-lg font-medium mb-2">Scaled Score</h4>
+                            <div className="text-2xl sm:text-3xl font-bold">
                               {module.scaledScore}
                             </div>
                           </div>
@@ -1492,6 +2095,7 @@ const TestInterface = () => {
                   questions={currentModuleQuestions}
                   userAnswers={userAnswers}
                   moduleType={currentModuleType}
+                  testCategory={testCategoryForScores as 'SAT' | 'ACT'}
                 />
               </div>
               
@@ -1549,14 +2153,25 @@ const TestInterface = () => {
     Object.entries(userAnswers).filter(([questionId]) => partQuestionIds.includes(questionId))
   );
   
+  // Determine test category for conditional styling
+  const testCategory = testData?.test?.test_category || currentTest?.test_category || 'SAT';
+  const isACTTest = testCategory === 'ACT' || 
+    (testData?.test?.modules && Array.isArray(testData.test.modules) && 
+     testData.test.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type))) ||
+    (currentTest?.modules && Array.isArray(currentTest.modules) && 
+     currentTest.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type)));
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <Header showLogout={false} onSaveAndExit={handleSaveExitClick} isSaving={isSaving} />
       
-      <main className="flex-1 container max-w-4xl mx-auto py-6 px-4">
-        <div className="flex justify-between items-center mb-6 border-b pb-4">
-          <h2 className="text-2xl font-bold">{currentTest?.title || 'Practice Test'}</h2>
-          <div className="flex items-center gap-4">
+      <main 
+        className={cn("flex-1 container mx-auto py-6 px-4", !isACTTest && "max-w-4xl")}
+        style={isACTTest ? { maxWidth: '70rem' } : undefined}
+      >
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6 border-b pb-4">
+          <h2 className="text-xl sm:text-2xl font-bold">{currentTest?.title || 'Practice Test'}</h2>
+          <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
             <div className="flex items-center gap-2">
               <button
                 className={`px-3 py-1 rounded ${timerRunning ? 'bg-yellow-500 text-white' : 'bg-gray-200 text-gray-700'}`}
@@ -1609,46 +2224,234 @@ const TestInterface = () => {
                 const moduleType = selectedModule || getCurrentModuleType();
                 const moduleName = currentTest.modules?.find((m: any) => m.type === moduleType)?.name || 'Module';
                 const part = currentPart[moduleType] || 1;
-                return `${moduleName} - Part ${part}`;
+                
+                // Check if this is an ACT test
+                const isACTTest = currentTest?.test_category === 'ACT' || 
+                  (currentTest?.modules && Array.isArray(currentTest.modules) && 
+                   currentTest.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type)));
+                
+                return isACTTest ? moduleName : `${moduleName} - Part ${part}`;
               })()}
             </div>
             <div className="text-sm text-center mb-2">
               {(() => {
                 const moduleType = selectedModule || getCurrentModuleType();
                 const part = currentPart[moduleType] || 1;
-                const questionsInPart = moduleParts[moduleType]?.[part - 1]?.length || 0;
-                const totalTime = partTimes[moduleType] ? Math.floor(partTimes[moduleType] / 60) : 0;
+                
+                // Check if this is an ACT test
+                const isACTTest = currentTest?.test_category === 'ACT' || 
+                  (currentTest?.modules && Array.isArray(currentTest.modules) && 
+                   currentTest.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type)));
+                
+                // For ACT tests with passages, count questions from passages
+                // For ACT Math and Writing/Essay (which don't use passages), count from moduleParts
+                let questionsInPart = 0;
+                if (isACTTest) {
+                  if (moduleType === 'math' || moduleType === 'writing') {
+                    // Math and Writing modules don't use passages, use moduleParts
+                    questionsInPart = moduleParts[moduleType]?.[0]?.length || 0;
+                  } else {
+                    // Other ACT modules use passages
+                  const allModuleQuestions = getAllModulePassageQuestions();
+                  questionsInPart = allModuleQuestions.length || 0;
+                  }
+                } else {
+                  questionsInPart = moduleParts[moduleType]?.[part - 1]?.length || 0;
+                }
+                
+                // For ACT tests, use full module time (not divided by part)
+                // For SAT tests, use partTimes which is already divided by 2
+                let totalTime = 0;
+                if (isACTTest) {
+                  const module = currentTest?.modules?.find((m: any) => m.type === moduleType);
+                  totalTime = module?.time || 0; // Already in minutes
+                } else {
+                  totalTime = partTimes[moduleType] ? Math.floor(partTimes[moduleType] / 60) : 0;
+                }
+                
                 return `Questions: ${questionsInPart} | Time: ${totalTime} min`;
               })()}
             </div>
             <div className="flex justify-center gap-2">
               <Dialog open={showReference} onOpenChange={setShowReference}>
                 <DialogTrigger asChild>
-                  <Button variant="outline">Instructions</Button>
+                  <Button variant="outline">
+                    {(() => {
+                      const moduleType = selectedModule || getCurrentModuleType();
+                      return moduleType === 'writing' ? 'Planning Your Essay' : 'Instructions';
+                    })()}
+                  </Button>
                 </DialogTrigger>
                 <DialogContent className="max-w-3xl w-full">
                   <DialogHeader>
-                    <DialogTitle>Reference Directions</DialogTitle>
+                    <DialogTitle>
+                      {(() => {
+                        const moduleType = selectedModule || getCurrentModuleType();
+                        return moduleType === 'writing' ? 'Planning Your Essay' : 'Reference Directions';
+                      })()}
+                    </DialogTitle>
                   </DialogHeader>
-                  <div className="w-full h-[70vh]">
-                    <iframe
-                      src="/docs/directions.pdf"
-                      title="Reference Directions"
-                      width="100%"
-                      height="100%"
-                      style={{ border: 0 }}
-                    />
-                  </div>
-                  <DialogClose asChild>
-                    <Button variant="secondary" className="mt-4 w-full">Close</Button>
-                  </DialogClose>
+                  {(() => {
+                    // Check if this is an ACT test
+                    const isACTTest = currentTest?.test_category === 'ACT' || 
+                      (currentTest?.modules && Array.isArray(currentTest.modules) && 
+                       currentTest.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type)));
+                    
+                    // Get current module type
+                    const moduleType = selectedModule || getCurrentModuleType();
+                    
+                    if (isACTTest && moduleType === 'writing') {
+                      // Show essay planning instructions for ACT Writing
+                      return (
+                        <>
+                          <div className="w-full max-h-[70vh] overflow-y-auto p-4">
+                            <div className="prose max-w-none">
+                              <p className="mb-4">
+                                You may wish to consider the following as you think critically about the task:
+                              </p>
+                              <div className="mb-4">
+                                <p className="font-semibold mb-2">Strengths and weaknesses of different perspectives on the issue</p>
+                                <ul className="list-disc list-inside space-y-1 ml-4">
+                                  <li>What insights do they offer, and what do they fail to consider?</li>
+                                  <li>Why might they be persuasive to others, or why might they fail to persuade?</li>
+                                </ul>
+                              </div>
+                              <div className="mb-4">
+                                <p className="font-semibold mb-2">Your own knowledge, experience, and values</p>
+                                <ul className="list-disc list-inside space-y-1 ml-4">
+                                  <li>What is your perspective on this issue, and what are its strengths and weaknesses?</li>
+                                  <li>How will you support your perspective in your essay?</li>
+                                </ul>
+                              </div>
+                            </div>
+                          </div>
+                          <DialogClose asChild>
+                            <Button variant="secondary" className="mt-4 w-full">Close</Button>
+                          </DialogClose>
+                        </>
+                      );
+                    } else if (isACTTest && moduleType === 'math') {
+                      // Show Math-specific instructions for ACT Math
+                      return (
+                        <>
+                          <div className="w-full max-h-[70vh] overflow-y-auto p-4">
+                            <div className="prose max-w-none">
+                              <p className="mb-4">
+                                <strong>DIRECTIONS:</strong> Solve each problem, choose the correct answer, and then fill in the corresponding oval on your answer document.
+                              </p>
+                              <p className="mb-4">
+                                Do not linger over problems that take too much time. Solve as many as you can; then return to the others in the time you have left for this test.
+                              </p>
+                              <p className="mb-4">
+                                You are permitted to use a calculator on this test. You may use your calculator for any problems you choose, but some of the problems may best be done without using a calculator.
+                              </p>
+                              <p className="mb-4">
+                                <strong>Note:</strong> Unless otherwise stated, all of the following should be assumed.
+                              </p>
+                              <ol className="list-decimal list-inside mb-4 space-y-2">
+                                <li>Illustrative figures are not necessarily drawn to scale.</li>
+                                <li>Geometric figures lie in a plane.</li>
+                                <li>The word "line" indicates a straight line.</li>
+                                <li>The word "average" indicates arithmetic mean.</li>
+                              </ol>
+                            </div>
+                          </div>
+                          <DialogClose asChild>
+                            <Button variant="secondary" className="mt-4 w-full">Close</Button>
+                          </DialogClose>
+                        </>
+                      );
+                    } else if (isACTTest && moduleType === 'reading') {
+                      // Show Reading-specific instructions for ACT Reading
+                      return (
+                        <>
+                          <div className="w-full max-h-[70vh] overflow-y-auto p-4">
+                            <div className="prose max-w-none">
+                              <p className="mb-4">
+                                <strong>DIRECTIONS:</strong> There are several passages in this test. Each passage is accompanied by several questions. After reading a passage, choose the best answer to each question and fill in the corresponding oval on your answer document. You may refer to the passages as often as necessary.
+                              </p>
+                            </div>
+                          </div>
+                          <DialogClose asChild>
+                            <Button variant="secondary" className="mt-4 w-full">Close</Button>
+                          </DialogClose>
+                        </>
+                      );
+                    } else if (isACTTest && moduleType === 'science') {
+                      // Show Science-specific instructions for ACT Science
+                      return (
+                        <>
+                          <div className="w-full max-h-[70vh] overflow-y-auto p-4">
+                            <div className="prose max-w-none">
+                              <p className="mb-4">
+                                <strong>DIRECTIONS:</strong> There are several passages in this test.
+                              </p>
+                              <p className="mb-4">
+                                Each passage is followed by several questions. After reading a passage, choose the best answer to each question and fill in the corresponding oval on your answer document. You may refer to the passages as often as necessary.
+                              </p>
+                              <p className="mb-4">
+                                You are not permitted to use a calculator on this test.
+                              </p>
+                            </div>
+                          </div>
+                          <DialogClose asChild>
+                            <Button variant="secondary" className="mt-4 w-full">Close</Button>
+                          </DialogClose>
+                        </>
+                      );
+                    } else if (isACTTest) {
+                      // Show text instructions for other ACT tests
+                      return (
+                        <>
+                          <div className="w-full max-h-[70vh] overflow-y-auto p-4">
+                            <div className="prose max-w-none">
+                              <p className="mb-4">
+                                <strong>DIRECTIONS:</strong> In the passages that follow, certain words and phrases are underlined and numbered. In the right-hand column, you will find alternatives for the underlined part. You are to choose the best answer to each question. If you think the original version is best, choose "No Change."
+                              </p>
+                              <p className="mb-4">
+                                You will also find questions about a section of the passage, or about the passage as a whole. These questions do not refer to an underlined portion of the passage, but rather are identified by a number or numbers in a box.
+                              </p>
+                              <p className="mb-4">
+                                For each question, choose the alternative you consider best and fill in the corresponding oval on your answer document. Read each passage through once before you begin to answer the questions that accompany it. For many of the questions, you must read several sentences beyond the question to determine the answer. Be sure that you have read far enough ahead each time you choose an alternative.
+                              </p>
+                            </div>
+                          </div>
+                          <DialogClose asChild>
+                            <Button variant="secondary" className="mt-4 w-full">Close</Button>
+                          </DialogClose>
+                        </>
+                      );
+                    } else {
+                      // Show PDF for SAT tests
+                      return (
+                        <>
+                          <div className="w-full h-[70vh]">
+                            <iframe
+                              src="/docs/directions.pdf"
+                              title="Reference Directions"
+                              width="100%"
+                              height="100%"
+                              style={{ border: 0 }}
+                            />
+                          </div>
+                          <DialogClose asChild>
+                            <Button variant="secondary" className="mt-4 w-full">Close</Button>
+                          </DialogClose>
+                        </>
+                      );
+                    }
+                  })()}
                 </DialogContent>
               </Dialog>
               
-              {/* Show Reference button only for Math module */}
+              {/* Show Reference button only for Math module (not ACT Math) */}
               {(() => {
                 const moduleType = selectedModule || getCurrentModuleType();
-                return moduleType === 'math' ? (
+                const isACTTest = currentTest?.test_category === 'ACT' || 
+                  (currentTest?.modules && Array.isArray(currentTest.modules) && 
+                   currentTest.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type)));
+                // Show Reference button only for Math module, but not for ACT Math
+                return moduleType === 'math' && !isACTTest ? (
                   <Dialog open={showMathReference} onOpenChange={setShowMathReference}>
                     <DialogTrigger asChild>
                       <Button variant="outline">Reference</Button>
@@ -1686,31 +2489,105 @@ const TestInterface = () => {
             onSubmitTest={handleSubmitTest}
             onCancel={() => setShowReviewPage(false)}
           />
-        ) : (
-          <TestContainer
-            questions={partQuestions}
-            currentQuestionIndex={partRelativeIndex}
-            userAnswers={filteredUserAnswers}
-            onSelectOption={handleSelectOption}
-            onPreviousQuestion={handlePreviousQuestion}
-            onNextQuestion={handleNextQuestion}
-            onConfirmSubmit={() => setShowConfirmSubmit(true)}
-            onGoToQuestion={index => {
-              const newIndex = partStartIndex + index;
-              setCurrentQuestionIndex(newIndex);
-            }}
-            flaggedQuestions={flaggedQuestions}
-            onToggleFlag={handleToggleFlag}
-            crossedOutOptions={crossedOutOptions}
-            onToggleCrossOut={handleToggleCrossOut}
-            onOpenReviewPage={handleOpenReviewPage}
-            onSaveStatusChange={setIsSaving}
-            showSubmitButton={showSubmitButton}
-            currentPart={currentPart[selectedModule || getCurrentModuleType()] || 1}
-            crossOutMode={crossOutMode}
-            setCrossOutMode={setCrossOutMode}
-          />
-        )}
+        ) : (() => {
+          // Determine if we should show passage-based questions
+          const testCategory = currentTest?.test_category || 'SAT';
+          const isACTTest = testCategory === 'ACT' || 
+            (currentTest?.modules && Array.isArray(currentTest.modules) && 
+             currentTest.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type)));
+          
+          const passageData = getCurrentPassageData();
+          
+          if (isACTTest && passageData) {
+            // Show passage-based questions for ACT tests
+            // Get ALL questions from ALL passages in the module for QuestionNavigator
+            const allModuleQuestions = getAllModulePassageQuestions();
+            console.log('[TestInterface] All module questions:', allModuleQuestions.length, allModuleQuestions.map(q => ({ id: q.id, question_number: q.question_number })));
+            
+            return (
+              <div className="h-full flex flex-col" style={{ height: 'calc(100vh - 250px)', minHeight: '1000px' }}>
+                <PassageQuestion
+                  passage={passageData.passage}
+                  currentQuestionIndex={passageData.globalQuestionIndex}
+                  totalQuestions={passageData.totalQuestionsInModule}
+                  userAnswers={userAnswers}
+                  onAnswerChange={handleSelectOption}
+                  onPreviousQuestion={handlePreviousPassageQuestion}
+                  onNextQuestion={handleNextPassageQuestion}
+                  onToggleFlag={handleToggleFlag}
+                  onToggleCrossOut={handleToggleCrossOut}
+                  onToggleUnmask={(questionId, optionId) => {
+                    setUnmaskedAnswers(prev => {
+                      const newSet = new Set(prev);
+                      if (newSet.has(optionId)) {
+                        newSet.delete(optionId);
+                      } else {
+                        newSet.add(optionId);
+                      }
+                      return newSet;
+                    });
+                  }}
+                  flaggedQuestions={flaggedQuestions}
+                  crossedOutOptions={crossedOutOptions}
+                  unmaskedAnswers={unmaskedAnswers}
+                  setUnmaskedAnswers={setUnmaskedAnswers}
+                  crossOutMode={crossOutMode}
+                  setCrossOutMode={setCrossOutMode}
+                  isAnswerMasking={isAnswerMasking}
+                  setIsAnswerMasking={setIsAnswerMasking}
+                  isHighlighting={isHighlighting}
+                  selectedColor={selectedColor}
+                  highlights={highlights}
+                  onHighlightsChange={setHighlights}
+                  onToggleHighlighting={() => setIsHighlighting(!isHighlighting)}
+                  onColorChange={setSelectedColor}
+                  testCategory={testCategory}
+                  allQuestions={allModuleQuestions}
+                  onGoToQuestion={(globalIndex) => {
+                    // Convert global question index to passage and question indices
+                    const modulePassages = getCurrentModulePassages();
+                    const indices = convertGlobalIndexToPassageIndices(globalIndex, modulePassages);
+                    setCurrentPassageIndex(indices.passageIndex);
+                    setCurrentQuestionInPassage(indices.questionInPassage);
+                    setCurrentQuestionIndex(globalIndex);
+                  }}
+                />
+              </div>
+            );
+          } else {
+            // Show regular questions for SAT tests or ACT tests without passages
+            return (
+              <TestContainer
+                questions={partQuestions}
+                currentQuestionIndex={partRelativeIndex}
+                userAnswers={filteredUserAnswers}
+                onSelectOption={handleSelectOption}
+                onPreviousQuestion={handlePreviousQuestion}
+                onNextQuestion={handleNextQuestion}
+                onConfirmSubmit={() => setShowConfirmSubmit(true)}
+                onGoToQuestion={index => {
+                  const newIndex = partStartIndex + index;
+                  setCurrentQuestionIndex(newIndex);
+                }}
+                flaggedQuestions={flaggedQuestions}
+                onToggleFlag={handleToggleFlag}
+                crossedOutOptions={crossedOutOptions}
+                onToggleCrossOut={handleToggleCrossOut}
+                onOpenReviewPage={handleOpenReviewPage}
+                onSaveStatusChange={setIsSaving}
+                showSubmitButton={showSubmitButton}
+                currentPart={currentPart[selectedModule || getCurrentModuleType()] || 1}
+                crossOutMode={crossOutMode}
+                setCrossOutMode={setCrossOutMode}
+                isAnswerMasking={isAnswerMasking}
+                setIsAnswerMasking={setIsAnswerMasking}
+                unmaskedAnswers={unmaskedAnswers}
+                setUnmaskedAnswers={setUnmaskedAnswers}
+                testCategory={testCategory}
+              />
+            );
+          }
+        })()}
       </main>
       
       <TestDialogs

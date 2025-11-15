@@ -51,8 +51,8 @@ const Index = () => {
         </div>
         {/* Desktop Nav */}
         <nav className="hidden md:flex flex-row gap-4 text-[#1a3c7c] font-semibold text-base">
-          <a href="/login" className="hover:underline">Sat Tests</a>
-          <a href="#" className="hover:underline">ACT Tests</a>
+          <a href="/login?category=SAT" className="hover:underline">SAT Tests</a>
+          <a href="/login?category=ACT" className="hover:underline">ACT Tests</a>
           <a href="#contact-form" className="hover:underline">Contact Us</a>
           <a href="https://tutorsacrossamerica.com/faqs/faq-students/" target="_blank" className="hover:underline">FAQ's</a>
         </nav>
@@ -65,8 +65,8 @@ const Index = () => {
         {/* Mobile dropdown menu */}
         {menuOpen && (
           <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-lg shadow-lg z-50 flex flex-col p-4 md:hidden animate-fade-in">
-            <a href="/login" className="py-2 px-3 text-[#1a3c7c] hover:underline" onClick={() => setMenuOpen(false)}>Sat Tests</a>
-            <a href="#" className="py-2 px-3 text-[#1a3c7c] hover:underline" onClick={() => setMenuOpen(false)}>ACT Tests</a>
+            <a href="/login?category=SAT" className="py-2 px-3 text-[#1a3c7c] hover:underline" onClick={() => setMenuOpen(false)}>SAT Tests</a>
+            <a href="/login?category=ACT" className="py-2 px-3 text-[#1a3c7c] hover:underline" onClick={() => setMenuOpen(false)}>ACT Tests</a>
             <a href="#contact-form" className="py-2 px-3 text-[#1a3c7c] hover:underline" onClick={() => setMenuOpen(false)}>Contact Us</a>
             <a href="https://tutorsacrossamerica.com/faqs/faq-students/" target="_blank" className="py-2 px-3 text-[#1a3c7c] hover:underline" onClick={() => setMenuOpen(false)}>FAQ's</a>
           </div>

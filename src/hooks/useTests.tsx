@@ -7,7 +7,8 @@ import {
   createTestInDb,
   updateTestInDb,
   deleteTestInDb,
-  getTestWithQuestionsOptimized
+  getTestWithQuestionsOptimized,
+  clearTestCache
 } from '@/services/testService';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -94,6 +95,11 @@ export const useTests = () => {
         ));
         // Invalidate the query cache to trigger a refetch
         queryClient.invalidateQueries({ queryKey: ['tests'] });
+        // Clear test cache is already handled in updateTestInDb, but ensure it's cleared here too
+        clearTestCache(id);
+        if (updatedTest.permalink) {
+          clearTestCache(updatedTest.permalink);
+        }
         return normalizedTest;
       }
     } catch (error) {
@@ -109,10 +115,17 @@ export const useTests = () => {
   // Delete a test
   const deleteTest = async (id: string) => {
     try {
+      // Get the test before deleting to clear cache by permalink
+      const testToDelete = tests.find(t => t.id === id);
       await deleteTestInDb(id);
       setTests(prev => prev.filter(test => test.id !== id));
       // Invalidate the query cache to trigger a refetch
       queryClient.invalidateQueries({ queryKey: ['tests'] });
+      // Clear test cache is already handled in deleteTestInDb, but ensure it's cleared here too
+      clearTestCache(id);
+      if (testToDelete?.permalink) {
+        clearTestCache(testToDelete.permalink);
+      }
     } catch (error) {
       console.error('Error deleting test:', error);
       toast({
@@ -168,9 +181,19 @@ export const useOptimizedTest = (testId: string | null) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cache = useRef<Map<string, any>>(new Map());
+  const previousTestId = useRef<string | null>(null);
 
   const loadTest = useCallback(async () => {
-    if (!testId) return;
+    if (!testId) {
+      setTestData(null);
+      return;
+    }
+
+    // Clear cache if test ID changed
+    if (previousTestId.current !== null && previousTestId.current !== testId) {
+      cache.current.delete(previousTestId.current);
+    }
+    previousTestId.current = testId;
 
     // Check cache first
     if (cache.current.has(testId)) {
@@ -185,6 +208,11 @@ export const useOptimizedTest = (testId: string | null) => {
     try {
       console.log('Loading test from database:', testId);
       const result = await getTestWithQuestionsOptimized(testId);
+      
+      // Map category to test_category for consistency
+      if (result.test) {
+        result.test.test_category = result.test.category || result.test.test_category || 'SAT';
+      }
       
       // Cache the result
       cache.current.set(testId, result);
@@ -208,6 +236,7 @@ export const useOptimizedTest = (testId: string | null) => {
 
   const clearCache = useCallback(() => {
     cache.current.clear();
+    previousTestId.current = null;
   }, []);
 
   return {

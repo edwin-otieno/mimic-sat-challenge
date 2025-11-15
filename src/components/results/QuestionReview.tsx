@@ -7,9 +7,10 @@ interface QuestionReviewProps {
   questions: QuestionData[];
   userAnswers: Record<string, string>;
   moduleType?: string; // Optional: filter questions by module type
+  testCategory?: 'SAT' | 'ACT'; // Test category for ACT alternating lettering
 }
 
-const QuestionReview: React.FC<QuestionReviewProps> = React.memo(({ questions, userAnswers, moduleType }) => {
+const QuestionReview: React.FC<QuestionReviewProps> = React.memo(({ questions, userAnswers, moduleType, testCategory }) => {
   console.log('QuestionReview received:', { 
     questionsLength: questions.length, 
     userAnswersKeys: Object.keys(userAnswers).length,
@@ -18,7 +19,7 @@ const QuestionReview: React.FC<QuestionReviewProps> = React.memo(({ questions, u
   });
   
   // Group questions by module type - memoize to prevent recalculation
-  const { readingWritingQuestions, mathQuestions } = useMemo(() => {
+  const { moduleGroups } = useMemo(() => {
     let filteredQuestions = questions;
     
     // If moduleType is specified, filter questions by that module
@@ -26,10 +27,32 @@ const QuestionReview: React.FC<QuestionReviewProps> = React.memo(({ questions, u
       filteredQuestions = questions.filter(q => q.module_type === moduleType);
     }
     
-    const readingWriting = filteredQuestions.filter(q => q.module_type === "reading_writing");
-    const math = filteredQuestions.filter(q => q.module_type === "math");
-    return { readingWritingQuestions: readingWriting, mathQuestions: math };
+    // Group questions by module type dynamically
+    const moduleGroups: { [moduleType: string]: QuestionData[] } = {};
+    filteredQuestions.forEach(q => {
+      const moduleType = q.module_type || 'reading_writing';
+      if (!moduleGroups[moduleType]) {
+        moduleGroups[moduleType] = [];
+      }
+      moduleGroups[moduleType].push(q);
+    });
+    return { moduleGroups };
   }, [questions, moduleType]);
+
+  // Function to get option letters based on test category and question number
+  // For ACT tests: alternate between A/B/C/D (odd) and F/G/H/J (even) based on question number
+  // For SAT tests: always use A/B/C/D/E
+  const getOptionLetter = (question: QuestionData, optionIndex: number): string => {
+    if (testCategory === 'ACT') {
+      // Use question_number, question_order, or fallback to index
+      const qNum = question.question_number ?? question.question_order ?? (questions.findIndex(q => q.id === question.id) + 1);
+      // ACT alternates: odd = A/B/C/D, even = F/G/H/J
+      const letters = qNum % 2 === 1 ? ['A', 'B', 'C', 'D'] : ['F', 'G', 'H', 'J'];
+      return letters[optionIndex] || String.fromCharCode(65 + optionIndex);
+    }
+    // Default: A, B, C, D, E
+    return String.fromCharCode(65 + optionIndex);
+  };
 
   const renderQuestionList = useMemo(() => {
     return (questions: QuestionData[]) => {
@@ -90,6 +113,7 @@ const QuestionReview: React.FC<QuestionReviewProps> = React.memo(({ questions, u
             } else {
               const userSelectedOption = question.options?.find(option => option.id === userAnswerId);
               const correctOption = question.options?.find(option => option.is_correct);
+              const correctOptionIndex = question.options?.findIndex(o => o.is_correct) ?? -1;
               
               if (userSelectedOption?.is_correct) {
                 resultIndicator = (
@@ -98,14 +122,13 @@ const QuestionReview: React.FC<QuestionReviewProps> = React.memo(({ questions, u
                   </div>
                 );
               } else {
+                // Use the alternating lettering function for ACT tests
+                const correctLetter = correctOptionIndex >= 0 
+                  ? getOptionLetter(question, correctOptionIndex)
+                  : '?';
                 resultIndicator = (
                   <div className="text-red-500 mb-2">
-                    Incorrect. The correct answer was: {
-                      question.options?.findIndex(o => o.is_correct) === 0 ? "A" :
-                      question.options?.findIndex(o => o.is_correct) === 1 ? "B" :
-                      question.options?.findIndex(o => o.is_correct) === 2 ? "C" :
-                      "D"
-                    }
+                    Incorrect. The correct answer was: {correctLetter}
                   </div>
                 );
               }
@@ -124,6 +147,8 @@ const QuestionReview: React.FC<QuestionReviewProps> = React.memo(({ questions, u
                   textAnswer={userAnswerId}
                   onAnswerChange={() => {}} // Read-only
                   showExplanation={true}
+                  testCategory={testCategory}
+                  sequentialQuestionNumber={question.question_number ?? question.question_order ?? (index + 1)}
                 />
               </div>
             );
@@ -131,7 +156,7 @@ const QuestionReview: React.FC<QuestionReviewProps> = React.memo(({ questions, u
         </div>
       );
     };
-  }, [userAnswers]);
+  }, [userAnswers, testCategory, questions]);
 
   return (
     <div className="mb-6">
@@ -142,46 +167,67 @@ const QuestionReview: React.FC<QuestionReviewProps> = React.memo(({ questions, u
         <Card>
           <CardHeader>
             <CardTitle>
-              {moduleType === 'reading_writing' ? 'Reading & Writing' : 'Math'} Questions ({readingWritingQuestions.length + mathQuestions.length} questions)
+              {moduleType === 'reading_writing' ? 'Reading & Writing' : 
+               moduleType === 'math' ? 'Math' :
+               moduleType === 'english' ? 'English' :
+               moduleType === 'reading' ? 'Reading' :
+               moduleType === 'science' ? 'Science' :
+               moduleType === 'writing' ? 'Writing' : moduleType} Questions ({Object.values(moduleGroups).flat().length} questions)
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {renderQuestionList([...readingWritingQuestions, ...mathQuestions])}
+            {renderQuestionList(Object.values(moduleGroups).flat())}
           </CardContent>
         </Card>
       ) : (
         /* Show tabs for full test review */
-        <Tabs defaultValue="reading_writing" className="w-full">
+        <Tabs defaultValue={Object.keys(moduleGroups)[0]} className="w-full">
           <TabsList className="mb-4">
-            <TabsTrigger value="reading_writing">
-              Reading & Writing ({readingWritingQuestions.length} questions)
-            </TabsTrigger>
-            <TabsTrigger value="math">
-              Math ({mathQuestions.length} questions)
-            </TabsTrigger>
+            {Object.entries(moduleGroups).map(([moduleType, moduleQuestions]) => {
+              const getModuleDisplayName = (type: string) => {
+                switch (type) {
+                  case "reading_writing": return "Reading & Writing";
+                  case "math": return "Math";
+                  case "english": return "English";
+                  case "reading": return "Reading";
+                  case "science": return "Science";
+                  case "writing": return "Writing";
+                  default: return type;
+                }
+              };
+              return (
+                <TabsTrigger key={moduleType} value={moduleType}>
+                  {getModuleDisplayName(moduleType)} ({moduleQuestions.length} questions)
+                </TabsTrigger>
+              );
+            })}
           </TabsList>
           
-          <TabsContent value="reading_writing">
-            <Card>
-              <CardHeader>
-                <CardTitle>Reading & Writing Questions</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {renderQuestionList(readingWritingQuestions)}
-              </CardContent>
-            </Card>
-          </TabsContent>
-          
-          <TabsContent value="math">
-            <Card>
-              <CardHeader>
-                <CardTitle>Math Questions</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {renderQuestionList(mathQuestions)}
-              </CardContent>
-            </Card>
-          </TabsContent>
+          {Object.entries(moduleGroups).map(([moduleType, moduleQuestions]) => {
+            const getModuleDisplayName = (type: string) => {
+              switch (type) {
+                case "reading_writing": return "Reading & Writing";
+                case "math": return "Math";
+                case "english": return "English";
+                case "reading": return "Reading";
+                case "science": return "Science";
+                case "writing": return "Writing";
+                default: return type;
+              }
+            };
+            return (
+              <TabsContent key={moduleType} value={moduleType}>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>{getModuleDisplayName(moduleType)} Questions</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {renderQuestionList(moduleQuestions)}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            );
+          })}
         </Tabs>
       )}
     </div>

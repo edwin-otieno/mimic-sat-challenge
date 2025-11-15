@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { QuestionData } from '@/components/Question';
 
 interface TextInputQuestionProps {
@@ -20,6 +21,7 @@ export const TextInputQuestion: React.FC<TextInputQuestionProps> = ({
   isSubmitted = false
 }) => {
   const [answer, setAnswer] = useState(value || '');
+  const isEssay = question.module_type === 'writing';
 
   useEffect(() => {
     if (value !== undefined) {
@@ -27,7 +29,7 @@ export const TextInputQuestion: React.FC<TextInputQuestionProps> = ({
     }
   }, [value]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const newValue = e.target.value;
     setAnswer(newValue);
     onChange?.(newValue);
@@ -46,14 +48,24 @@ export const TextInputQuestion: React.FC<TextInputQuestionProps> = ({
 
   return (
     <div className="space-y-4">
-      <Input
-        type="text"
-        value={answer}
-        onChange={handleChange}
-        placeholder="Enter your answer"
-        disabled={disabled}
-        className="w-full"
-      />
+      {isEssay ? (
+        <Textarea
+          value={answer}
+          onChange={handleChange}
+          placeholder="Write your essay here..."
+          disabled={disabled}
+          className="w-full min-h-[400px] text-base"
+        />
+      ) : (
+        <Input
+          type="text"
+          value={answer}
+          onChange={handleChange}
+          placeholder="Enter your answer"
+          disabled={disabled}
+          className="w-full"
+        />
+      )}
       {isSubmitted && (
         <div className={`mt-2 p-3 rounded-md ${isCorrect ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
           <div className="mb-2">

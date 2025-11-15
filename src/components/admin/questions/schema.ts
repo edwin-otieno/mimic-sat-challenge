@@ -16,8 +16,12 @@ export const questionFormSchema = z.object({
     is_correct: z.boolean()
   })).optional().nullable()
 }).refine((data) => {
-  // For text input questions, correct_answer is required
+  // For text input questions, correct_answer is required (except for essay questions)
   if (data.question_type === QuestionType.TextInput) {
+    // Essay questions (writing module) don't need a correct_answer since they're manually graded
+    if (data.module_type === "writing") {
+      return true; // Essay questions don't require correct_answer
+    }
     return !!data.correct_answer;
   }
   // For multiple choice questions, options are required

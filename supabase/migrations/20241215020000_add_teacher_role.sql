@@ -1,0 +1,3 @@
+-- This migration is now handled by the profiles table creation migration
+-- The user_role enum is created with all three values: 'admin', 'student', 'teacher'
+-- This file is kept for reference but the functionality is now in 20241215030000_create_profiles_table.sql

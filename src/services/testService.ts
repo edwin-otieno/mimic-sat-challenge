@@ -1,6 +1,7 @@
 import { QuestionData } from "@/components/Question";
 import { ScaledScore } from "@/components/admin/tests/types";
 import { QuestionType, QuestionOption } from "@/components/admin/questions/types";
+import { Passage, PassageQuestion, PassagePayload, PassageQuestionPayload } from "@/components/admin/passages/types";
 import { supabase } from '@/integrations/supabase/client';
 import { Test } from '@/types/Test';
 
@@ -21,7 +22,7 @@ const convertDbQuestionToQuestionData = (
     id: question.id,
     text: question.text,
     explanation: question.explanation,
-    module_type: question.module_type as "reading_writing" | "math",
+    module_type: question.module_type as "reading_writing" | "math" | "english" | "reading" | "science" | "writing",
     imageUrl: question.image_url,
     question_type: question.question_type,
     correct_answer: question.correct_answer,
@@ -278,7 +279,38 @@ export const getTests = async () => {
       throw error;
     }
     
-    return data || [];
+    // Map database 'category' field to 'test_category' for consistency with frontend
+    // Also parse modules and scaled_scoring if they're strings
+    const mappedData = (data || []).map(test => {
+      let modules = test.modules;
+      if (typeof modules === 'string') {
+        try {
+          modules = JSON.parse(modules);
+        } catch (error) {
+          console.error('Error parsing modules:', error);
+          modules = [];
+        }
+      }
+      
+      let scaledScoring = test.scaled_scoring;
+      if (typeof scaledScoring === 'string') {
+        try {
+          scaledScoring = JSON.parse(scaledScoring);
+        } catch (error) {
+          console.error('Error parsing scaled_scoring:', error);
+          scaledScoring = [];
+        }
+      }
+      
+      return {
+        ...test,
+        test_category: test.category || 'SAT', // Map category to test_category
+        modules: modules,
+        scaled_scoring: scaledScoring || []
+      };
+    });
+    
+    return mappedData;
   } catch (error) {
     console.error('Error in getTests:', error);
     throw error;
@@ -299,10 +331,12 @@ export const createTestInDb = async (test: Test): Promise<Test> => {
     
     console.log('Generated permalink:', permalink);
     
+    const { test_category, ...testWithoutCategory } = test;
     const { data, error } = await supabase
       .from('tests')
       .insert([{
-        ...test,
+        ...testWithoutCategory,
+        category: test.test_category || 'SAT', // Map test_category to category for database
         permalink,
         created_at: new Date().toISOString()
       }])
@@ -315,7 +349,11 @@ export const createTestInDb = async (test: Test): Promise<Test> => {
     }
     
     console.log('Test created successfully:', data);
-    return data;
+    // Map category back to test_category for consistency with frontend
+    return {
+      ...data,
+      test_category: data.category || 'SAT'
+    };
   } catch (error) {
     console.error('Error in createTestInDb:', error);
     throw error;
@@ -358,8 +396,11 @@ export const updateTestInDb = async (test) => {
   }
 
   // Prepare the test object for Supabase
+  const { test_category, ...testWithoutCategory } = test;
   const preparedTest = {
-    ...test,
+    ...testWithoutCategory,
+    // Map test_category to category for database
+    category: test.test_category || 'SAT',
     // Ensure modules and scaled_scoring are properly stringified
     modules: test.modules ? JSON.stringify(test.modules) : null,
     scaled_scoring: test.scaled_scoring ? JSON.stringify(test.scaled_scoring) : null,
@@ -367,7 +408,10 @@ export const updateTestInDb = async (test) => {
     user_id: user.id,
   };
 
-  console.log('Updating test with data:', JSON.stringify(preparedTest, null, 2));
+  console.log('=== UPDATE TEST DEBUG ===');
+  console.log('Original test data:', JSON.stringify(test, null, 2));
+  console.log('Prepared test data for database:', JSON.stringify(preparedTest, null, 2));
+  console.log('Test category mapping:', { original: test.test_category, mapped: preparedTest.category });
 
   // Update the existing test
   const { data: updatedTest, error: updateError } = await supabase
@@ -402,7 +446,24 @@ export const updateTestInDb = async (test) => {
   }
 
   console.log('Successfully updated test:', JSON.stringify(updatedTest, null, 2));
-  return updatedTest;
+  console.log('Database returned category:', updatedTest.category);
+  
+  // Clear cache for this test to ensure fresh data
+  clearTestCache(test.id);
+  if (updatedTest.permalink) {
+    clearTestCache(updatedTest.permalink);
+  }
+  
+  // Map category back to test_category for consistency with frontend
+  const mappedResult = {
+    ...updatedTest,
+    test_category: updatedTest.category || 'SAT'
+  };
+  
+  console.log('Mapped result for frontend:', JSON.stringify(mappedResult, null, 2));
+  console.log('=== END UPDATE TEST DEBUG ===');
+  
+  return mappedResult;
 };
 
 // Utility function to validate UUID
@@ -413,11 +474,26 @@ function isValidUUID(uuid: string): boolean {
 
 // Delete a test from the database
 export const deleteTestInDb = async (testId) => {
+  // Get the test first to clear cache by permalink too
+  const { data: test } = await supabase
+    .from('tests')
+    .select('id, permalink')
+    .eq('id', testId)
+    .single();
+  
   const { error } = await supabase
     .from('tests')
     .delete()
     .eq('id', testId);
+  
   if (error) throw error;
+  
+  // Clear cache for this test
+  clearTestCache(testId);
+  if (test?.permalink) {
+    clearTestCache(test.permalink);
+  }
+  
   return true;
 };
 
@@ -491,13 +567,11 @@ export const getTestWithQuestionsOptimized = async (testIdentifier: string): Pro
     
     const isUuid = /^[0-9a-fA-F-]{36}$/.test(testIdentifier);
     
-    // If we have a UUID, we can try the cache immediately
-    if (isUuid) {
-      const cached = testCache.get(testIdentifier);
-      if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-        console.log('Loading test from cache:', testIdentifier);
-        return cached.data;
-      }
+    // Check cache first - both by identifier (could be UUID or permalink)
+    const cached = testCache.get(testIdentifier);
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+      console.log('Loading test from cache:', testIdentifier);
+      return cached.data;
     }
     
     // First load the test row by id or permalink
@@ -516,12 +590,22 @@ export const getTestWithQuestionsOptimized = async (testIdentifier: string): Pro
     }
     
     const testId = testResult.data.id;
+    const testPermalink = testResult.data.permalink;
     
     // Check cache again using canonical test id
     const cachedById = testCache.get(testId);
     if (cachedById && Date.now() - cachedById.timestamp < CACHE_DURATION) {
       console.log('Loading test from cache by id:', testId);
       return cachedById.data;
+    }
+    
+    // Also check cache by permalink if it exists and differs from identifier
+    if (testPermalink && testPermalink !== testIdentifier) {
+      const cachedByPermalink = testCache.get(testPermalink);
+      if (cachedByPermalink && Date.now() - cachedByPermalink.timestamp < CACHE_DURATION) {
+        console.log('Loading test from cache by permalink:', testPermalink);
+        return cachedByPermalink.data;
+      }
     }
     
     // Load questions for this test id
@@ -586,6 +670,7 @@ export const getTestWithQuestionsOptimized = async (testIdentifier: string): Pro
     const result = { 
       test: {
         ...testResult.data,
+        test_category: testResult.data.category || testResult.data.test_category || 'SAT', // Map category to test_category
         modules: parsedModules,
         scaled_scoring: parsedScaledScoring
       },
@@ -596,6 +681,11 @@ export const getTestWithQuestionsOptimized = async (testIdentifier: string): Pro
     // Cache the result
     testCache.set(testId, { data: result, timestamp: Date.now() });
     
+    // Also cache by permalink if it exists
+    if (testResult.data.permalink) {
+      testCache.set(testResult.data.permalink, { data: result, timestamp: Date.now() });
+    }
+    
     return result;
   } catch (error) {
     console.error('Error getting test with questions optimized:', error);
@@ -604,7 +694,385 @@ export const getTestWithQuestionsOptimized = async (testIdentifier: string): Pro
 };
 
 // Clear cache function for testing or when needed
-export const clearTestCache = () => {
-  testCache.clear();
-  console.log('Test cache cleared');
+export const clearTestCache = (testId?: string) => {
+  if (testId) {
+    // Clear cache for a specific test (by ID or permalink)
+    testCache.delete(testId);
+    console.log('Test cache cleared for:', testId);
+  } else {
+    // Clear all cache
+    testCache.clear();
+    console.log('Test cache cleared');
+  }
+};
+
+// ---- Essay grading service ----
+export interface EssayGrade {
+  id?: string;
+  test_result_id: string;
+  grader_id?: string;
+  score: number | null;
+  comments?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export const fetchEssayGrade = async (testResultId: string): Promise<EssayGrade | null> => {
+  const { data, error } = await supabase
+    .from('essay_grades')
+    .select('*')
+    .eq('test_result_id', testResultId)
+    .maybeSingle();
+  if (error) throw error;
+  return data as EssayGrade | null;
+};
+
+export const upsertEssayGrade = async (grade: EssayGrade): Promise<EssayGrade> => {
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  
+  if (authError || !user) {
+    throw new Error('User must be authenticated to save essay grades');
+  }
+  
+  // First, check if a grade already exists for this test_result_id
+  const existing = await fetchEssayGrade(grade.test_result_id);
+  
+  const payload: any = {
+    test_result_id: grade.test_result_id,
+    grader_id: user.id, // Always use the authenticated user's ID
+    score: grade.score,
+    comments: grade.comments,
+    updated_at: new Date().toISOString(),
+  };
+  
+  let data, error;
+  
+  if (existing) {
+    // Update existing grade
+    ({ data, error } = await supabase
+      .from('essay_grades')
+      .update(payload)
+      .eq('id', existing.id)
+      .select()
+      .single());
+  } else {
+    // Insert new grade
+    ({ data, error } = await supabase
+      .from('essay_grades')
+      .insert(payload)
+      .select()
+      .single());
+  }
+    
+  if (error) {
+    console.error('Error saving essay grade:', error);
+    console.error('Error details:', JSON.stringify(error, null, 2));
+    throw new Error(error.message || 'Failed to save essay grade');
+  }
+  
+  return data as EssayGrade;
+};
+
+// ===== PASSAGE MANAGEMENT FUNCTIONS =====
+
+// Get all passages for a test
+export const getTestPassages = async (testId: string): Promise<Passage[]> => {
+  try {
+    const { data: passages, error: passagesError } = await supabase
+      .from('passages')
+      .select(`
+        *,
+        test_questions!inner(
+          id,
+          text,
+          explanation,
+          image_url,
+          question_type,
+          correct_answer,
+          question_number,
+          question_order,
+          sentence_references,
+          options:test_question_options(
+            id,
+            text,
+            is_correct
+          )
+        )
+      `)
+      .eq('test_id', testId)
+      .order('passage_order', { ascending: true });
+
+    if (passagesError) {
+      console.error('Error fetching passages:', passagesError);
+      throw passagesError;
+    }
+
+    // Transform the data to match our Passage interface
+    return passages.map(passage => ({
+      id: passage.id,
+      test_id: passage.test_id,
+      module_type: passage.module_type,
+      title: passage.title,
+      content: passage.content,
+      passage_order: passage.passage_order,
+      created_at: passage.created_at,
+      updated_at: passage.updated_at,
+      questions: passage.test_questions
+        .map((q: any) => ({
+          id: q.id,
+          test_id: q.test_id || testId,
+          passage_id: passage.id,
+          question_number: q.question_number,
+          text: q.text,
+          explanation: q.explanation,
+          imageUrl: q.image_url,
+          module_type: passage.module_type,
+          question_type: q.question_type,
+          correct_answer: q.correct_answer,
+          question_order: q.question_order,
+          sentence_references: q.sentence_references ? (typeof q.sentence_references === 'string' ? JSON.parse(q.sentence_references) : q.sentence_references) : [],
+          options: q.options?.map((opt: any) => ({
+            id: opt.id,
+            text: opt.text,
+            is_correct: opt.is_correct
+          })) || []
+        }))
+        .sort((a: any, b: any) => {
+          // Sort by question_number first, then question_order if question_number is not available
+          const aNum = a.question_number != null ? Number(a.question_number) : null;
+          const bNum = b.question_number != null ? Number(b.question_number) : null;
+          
+          if (aNum !== null && bNum !== null) {
+            return aNum - bNum;
+          }
+          if (aNum !== null) return -1;
+          if (bNum !== null) return 1;
+          // Fallback to question_order if question_number is not available
+          const aOrder = Number(a.question_order) || 0;
+          const bOrder = Number(b.question_order) || 0;
+          return aOrder - bOrder;
+        })
+    }));
+  } catch (error) {
+    console.error('Error in getTestPassages:', error);
+    throw error;
+  }
+};
+
+// Get a single passage with its questions
+export const getPassage = async (passageId: string): Promise<Passage> => {
+  try {
+    const { data: passage, error: passageError } = await supabase
+      .from('passages')
+      .select(`
+        *,
+        test_questions!inner(
+          id,
+          text,
+          explanation,
+          image_url,
+          question_type,
+          correct_answer,
+          question_number,
+          question_order,
+          sentence_references,
+          options:test_question_options(
+            id,
+            text,
+            is_correct
+          )
+        )
+      `)
+      .eq('id', passageId)
+      .single();
+
+    if (passageError) {
+      console.error('Error fetching passage:', passageError);
+      throw passageError;
+    }
+
+    return {
+      id: passage.id,
+      test_id: passage.test_id,
+      module_type: passage.module_type,
+      title: passage.title,
+      content: passage.content,
+      passage_order: passage.passage_order,
+      created_at: passage.created_at,
+      updated_at: passage.updated_at,
+      questions: passage.test_questions
+        .map((q: any) => ({
+          id: q.id,
+          test_id: q.test_id || passage.test_id,
+          passage_id: passage.id,
+          question_number: q.question_number,
+          text: q.text,
+          explanation: q.explanation,
+          imageUrl: q.image_url,
+          module_type: passage.module_type,
+          question_type: q.question_type,
+          correct_answer: q.correct_answer,
+          question_order: q.question_order,
+          sentence_references: q.sentence_references ? (typeof q.sentence_references === 'string' ? JSON.parse(q.sentence_references) : q.sentence_references) : [],
+          options: q.options?.map((opt: any) => ({
+            id: opt.id,
+            text: opt.text,
+            is_correct: opt.is_correct
+          })) || []
+        }))
+        .sort((a: any, b: any) => {
+          // Sort by question_number first, then question_order if question_number is not available
+          const aNum = a.question_number != null ? Number(a.question_number) : null;
+          const bNum = b.question_number != null ? Number(b.question_number) : null;
+          
+          if (aNum !== null && bNum !== null) {
+            return aNum - bNum;
+          }
+          if (aNum !== null) return -1;
+          if (bNum !== null) return 1;
+          // Fallback to question_order if question_number is not available
+          const aOrder = Number(a.question_order) || 0;
+          const bOrder = Number(b.question_order) || 0;
+          return aOrder - bOrder;
+        })
+    };
+  } catch (error) {
+    console.error('Error in getPassage:', error);
+    throw error;
+  }
+};
+
+// Save a passage with its questions
+export const savePassage = async (passageData: PassagePayload): Promise<Passage> => {
+  try {
+    // First, save the passage
+    const { data: savedPassage, error: passageError } = await supabase
+      .from('passages')
+      .upsert({
+        id: passageData.id || undefined,
+        test_id: passageData.test_id,
+        module_type: passageData.module_type,
+        title: passageData.title || null,
+        content: passageData.content,
+        passage_order: passageData.passage_order
+      })
+      .select()
+      .single();
+
+    if (passageError) {
+      console.error('Error saving passage:', passageError);
+      throw passageError;
+    }
+
+    // Then, save the questions
+    for (const questionData of passageData.questions) {
+      // Save the question
+      const { data: savedQuestion, error: questionError } = await supabase
+        .from('test_questions')
+        .upsert({
+          id: questionData.id || undefined,
+          test_id: passageData.test_id,
+          passage_id: savedPassage.id,
+          text: questionData.text,
+          explanation: questionData.explanation || null,
+          module_type: passageData.module_type,
+          question_type: questionData.question_type,
+          image_url: questionData.image_url || null,
+          correct_answer: questionData.correct_answer || null,
+          question_number: questionData.question_number,
+          question_order: questionData.question_number, // Use question_number as order for passage questions
+          sentence_references: questionData.sentence_references && questionData.sentence_references.length > 0 
+            ? JSON.stringify(questionData.sentence_references) 
+            : null
+        })
+        .select()
+        .single();
+
+      if (questionError) {
+        console.error('Error saving question:', questionError);
+        throw questionError;
+      }
+
+      // Save the options if it's a multiple choice question
+      if (questionData.question_type === QuestionType.MultipleChoice && questionData.options) {
+        // Delete existing options first
+        await supabase
+          .from('test_question_options')
+          .delete()
+          .eq('question_id', savedQuestion.id);
+
+        // Insert new options
+        const optionsToInsert = questionData.options.map(option => ({
+          id: option.id || generateUUID(),
+          question_id: savedQuestion.id,
+          text: option.text,
+          is_correct: option.is_correct
+        }));
+
+        const { error: optionsError } = await supabase
+          .from('test_question_options')
+          .insert(optionsToInsert);
+
+        if (optionsError) {
+          console.error('Error saving options:', optionsError);
+          throw optionsError;
+        }
+      }
+    }
+
+    // Return the complete passage with questions
+    return await getPassage(savedPassage.id);
+  } catch (error) {
+    console.error('Error in savePassage:', error);
+    throw error;
+  }
+};
+
+// Delete a passage and all its questions
+export const deletePassage = async (passageId: string): Promise<void> => {
+  try {
+    // Delete the passage (this will cascade delete the questions due to foreign key constraint)
+    const { error } = await supabase
+      .from('passages')
+      .delete()
+      .eq('id', passageId);
+
+    if (error) {
+      console.error('Error deleting passage:', error);
+      throw error;
+    }
+  } catch (error) {
+    console.error('Error in deletePassage:', error);
+    throw error;
+  }
+};
+
+// Get passages grouped by module type for a test
+export const getTestPassagesByModule = async (testId: string): Promise<Record<string, Passage[]>> => {
+  try {
+    const passages = await getTestPassages(testId);
+    
+    // Group passages by module_type
+    const groupedPassages: Record<string, Passage[]> = {};
+    passages.forEach(passage => {
+      if (!groupedPassages[passage.module_type]) {
+        groupedPassages[passage.module_type] = [];
+      }
+      groupedPassages[passage.module_type].push(passage);
+    });
+
+    // Sort passages within each module by passage_order
+    Object.keys(groupedPassages).forEach(moduleType => {
+      groupedPassages[moduleType].sort((a, b) => {
+        const aOrder = a.passage_order ?? 0;
+        const bOrder = b.passage_order ?? 0;
+        return aOrder - bOrder;
+      });
+    });
+
+    return groupedPassages;
+  } catch (error) {
+    console.error('Error in getTestPassagesByModule:', error);
+    throw error;
+  }
 };

@@ -32,6 +32,7 @@ interface ResultsState {
   scaledScoring?: ScaledScore[];
   moduleScores?: ModuleScore[];
   overallScaledScore?: number;
+  testCategory?: 'SAT' | 'ACT';
 }
 
 interface TestResult {
@@ -47,6 +48,7 @@ interface TestResult {
 
 interface ModuleResult {
   id: string;
+  module_id: string;
   module_name: string;
   score: number;
   total: number;
@@ -72,7 +74,9 @@ const Results = () => {
   const [isLoadingHistoryReview, setIsLoadingHistoryReview] = useState(false);
   const [historyTestTitle, setHistoryTestTitle] = useState<string | null>(null);
   const [currentTestTitle, setCurrentTestTitle] = useState<string | null>(null);
-  const [historyReviewCache, setHistoryReviewCache] = useState<Record<string, { questions: QuestionData[]; answers: Record<string, string> | null; testTitle: string | null }>>({});
+  const [historyTestCategory, setHistoryTestCategory] = useState<'SAT' | 'ACT' | null>(null);
+  const [currentTestCategory, setCurrentTestCategory] = useState<'SAT' | 'ACT' | null>(null);
+  const [historyReviewCache, setHistoryReviewCache] = useState<Record<string, { questions: QuestionData[]; answers: Record<string, string> | null; testTitle: string | null; testCategory?: 'SAT' | 'ACT' }>>({});
   
   const state = location.state as ResultsState;
   
@@ -107,12 +111,13 @@ const Results = () => {
     
     setIsLoadingHistory(true);
     try {
-      // Fetch user's test results
+      // Fetch user's test results (limit to last 50 to reduce egress)
       const { data: testResults, error: testError } = await supabase
         .from('test_results')
         .select('id, test_id, total_score, total_questions, scaled_score, created_at, time_taken, answers')
         .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(50);
       
       console.log('Fetched testResults:', testResults);
       if (testError) {
@@ -120,11 +125,11 @@ const Results = () => {
         return;
       }
       
-      // Fetch module results for each test result
+      // Fetch module results for each test result (limit fields to reduce egress)
       const moduleResultPromises = testResults.map(testResult => 
         supabase
           .from('module_results')
-          .select('*')
+          .select('id, module_id, module_name, score, total, scaled_score')
           .eq('test_result_id', testResult.id)
       );
       
@@ -140,8 +145,10 @@ const Results = () => {
       console.log('Set savedResults:', combinedResults);
       
       // Select the most recent result by default
-      if (combinedResults.length > 0 && !selectedResult) {
-        setSelectedResult(combinedResults[0].testResult.id);
+      if (combinedResults.length > 0) {
+        if (!selectedResult) {
+          setSelectedResult(combinedResults[0].testResult.id);
+        }
       }
     } catch (error) {
       console.error('Error fetching results:', error);
@@ -151,7 +158,7 @@ const Results = () => {
   };
   
   
-  // Load current test title when viewing immediate results (non-history)
+  // Load current test title and category when viewing immediate results (non-history)
   useEffect(() => {
     const loadCurrentTestTitle = async () => {
       if (!state || !state.questions || state.questions.length === 0) return;
@@ -160,11 +167,12 @@ const Results = () => {
       if (!testId) return;
       const { data, error } = await supabase
         .from('tests')
-        .select('title')
+        .select('title, test_category, category')
         .eq('id', testId)
         .single();
       if (!error && data) {
         setCurrentTestTitle(data.title || null);
+        setCurrentTestCategory((data.test_category || data.category || 'SAT') as 'SAT' | 'ACT');
       }
     };
     loadCurrentTestTitle();
@@ -178,10 +186,31 @@ const Results = () => {
   // Persist and load historical review data
   useEffect(() => {
     const loadHistoryReview = async () => {
-      // Load if we're viewing history OR if we have a selected result (for history view)
-      if (!viewingHistory && !selectedResult) return;
+      // Only load history review if we're in history mode (no state) and have a selected result
+      if (state || !selectedResult) {
+        // Clear history data if we're not in history mode
+        if (state) {
+          setHistoryQuestions(null);
+          setHistoryAnswers(null);
+        }
+        return;
+      }
+      
+      // Wait for savedResults to be populated
+      if (!savedResults || savedResults.length === 0) {
+        console.log('Waiting for savedResults to be populated...');
+        return;
+      }
+      
       const current = savedResults.find(r => r.testResult.id === selectedResult);
-      if (!current) return;
+      if (!current) {
+        console.log('Current result not found for selectedResult:', selectedResult);
+        setHistoryQuestions(null);
+        setHistoryAnswers(null);
+        return;
+      }
+      
+      console.log('Loading history review for:', current.testResult.id);
       
       // Use cache if available
       const cached = historyReviewCache[current.testResult.id];
@@ -189,33 +218,53 @@ const Results = () => {
         setHistoryQuestions(cached.questions);
         setHistoryAnswers(cached.answers);
         setHistoryTestTitle(cached.testTitle);
+        if (cached.testCategory) {
+          setHistoryTestCategory(cached.testCategory);
+        }
         return;
       }
+      
+      // Clear previous data while loading new data
+      setHistoryQuestions(null);
+      setHistoryAnswers(null);
       
       try {
         setIsLoadingHistoryReview(true);
         const answers = current.testResult.answers || null;
+        console.log('Loading history review for result:', current.testResult.id, 'answers:', answers);
         setHistoryAnswers(answers);
 
         const testIdentifier = current.testResult.test_id;
+        console.log('Looking up test with identifier:', testIdentifier);
+        
+        // Select category (the actual database column name)
+        // The database uses 'category', frontend uses 'test_category' - we'll map it
         let testRow = await supabase
           .from('tests')
-          .select('id, title')
+          .select('id, title, category')
           .eq('id', testIdentifier)
           .single();
         if (testRow.error || !testRow.data) {
+          console.log('Test not found by id, trying permalink:', testIdentifier);
           testRow = await supabase
             .from('tests')
-            .select('id, title')
+            .select('id, title, category')
             .eq('permalink', testIdentifier)
             .single();
         }
+        
         if (testRow.error || !testRow.data) {
           console.error('Could not resolve test id for history review:', testRow.error);
           setHistoryQuestions(null);
+          setIsLoadingHistoryReview(false);
           return;
         }
+        
+        console.log('Found test:', testRow.data);
         setHistoryTestTitle(testRow.data.title || null);
+        // Map category to test_category (database uses 'category', frontend uses 'test_category')
+        const testCategory = (testRow.data.category || 'SAT') as 'SAT' | 'ACT';
+        setHistoryTestCategory(testCategory);
 
         const { data: questionsData, error: questionsError } = await supabase
           .from('test_questions')
@@ -225,21 +274,36 @@ const Results = () => {
           `)
           .eq('test_id', testRow.data.id)
           .order('question_order', { ascending: true });
+          
         if (questionsError) {
           console.error('Error loading questions for history:', questionsError);
           setHistoryQuestions(null);
+          setIsLoadingHistoryReview(false);
           return;
         }
+
+        console.log('Loaded questions:', questionsData?.length || 0, 'questions');
 
         // Transform the data to match QuestionData format
         const questions = (questionsData || []).map((q: any) => ({
           ...q,
+          imageUrl: q.image_url,
           options: q.test_question_options?.map((opt: any) => ({
             id: opt.id,
             text: opt.text,
             is_correct: opt.is_correct
           })) || []
         })) as unknown as QuestionData[];
+        
+        console.log('Transformed questions:', questions.length);
+        
+        if (questions.length === 0) {
+          console.warn('No questions found for test:', testRow.data.id);
+          setHistoryQuestions(null);
+          setIsLoadingHistoryReview(false);
+          return;
+        }
+        
         setHistoryQuestions(questions);
         setHistoryReviewCache(prev => ({
           ...prev,
@@ -247,39 +311,64 @@ const Results = () => {
             questions,
             answers,
             testTitle: testRow.data.title || null,
+            testCategory: testCategory,
           }
         }));
+      } catch (error) {
+        console.error('Unexpected error loading history review:', error);
+        setHistoryQuestions(null);
       } finally {
         setIsLoadingHistoryReview(false);
       }
     };
     loadHistoryReview();
-  }, [viewingHistory, selectedResult, savedResults]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, selectedResult, savedResults]);
 
-  // Calculate total scaled score from module scores
+  // Calculate total scaled score from module scores (or Composite Score for ACT)
   const calculateTotalScaledScore = (moduleScores: ModuleScore[]) => {
-    if (!state.scaledScoring || state.scaledScoring.length === 0) {
-      return null;
-    }
-
-    // Find scaled scoring entries without module_id (for overall score)
-    const overallScoring = state.scaledScoring.filter(s => !s.module_id);
-    if (overallScoring.length === 0) return null;
-
-    // Calculate total correct answers from all modules
-    const totalCorrect = moduleScores.reduce((sum, module) => sum + module.correctAnswers, 0);
-
-    // Find exact match or closest lower score
-    const exactMatch = overallScoring.find(s => s.correct_answers === totalCorrect);
-    if (exactMatch) {
-      return exactMatch.scaled_score;
-    }
-
-    // Sort by correct_answers in descending order and find the first that's less than the score
-    const sortedScoring = [...overallScoring].sort((a, b) => b.correct_answers - a.correct_answers);
-    const closestLower = sortedScoring.find(s => s.correct_answers < totalCorrect);
+    const testCategory = state?.testCategory || 'SAT';
     
-    return closestLower ? closestLower.scaled_score : sortedScoring[sortedScoring.length - 1].scaled_score;
+    if (testCategory === 'ACT') {
+      // For ACT: Composite Score = average of English, Math, and Reading
+      const compositeModules = moduleScores.filter(module => 
+        ['english', 'math', 'reading'].includes(module.moduleId)
+      );
+      
+      if (compositeModules.length === 0) return null;
+      
+      // Calculate average of scaled scores
+      const sum = compositeModules.reduce((sum, module) => sum + (module.scaledScore || 0), 0);
+      return Math.round(sum / compositeModules.length);
+    } else {
+      // For SAT: Use scaled scoring table or sum module scores
+      if (!state.scaledScoring || state.scaledScoring.length === 0) {
+        // Fallback: sum module scores if no scaled scoring table
+        return moduleScores.reduce((sum, module) => sum + (module.scaledScore || 0), 0);
+      }
+
+      // Find scaled scoring entries without module_id (for overall score)
+      const overallScoring = state.scaledScoring.filter(s => !s.module_id);
+      if (overallScoring.length === 0) {
+        // Fallback: sum module scores
+        return moduleScores.reduce((sum, module) => sum + (module.scaledScore || 0), 0);
+      }
+
+      // Calculate total correct answers from all modules
+      const totalCorrect = moduleScores.reduce((sum, module) => sum + module.correctAnswers, 0);
+
+      // Find exact match or closest lower score
+      const exactMatch = overallScoring.find(s => s.correct_answers === totalCorrect);
+      if (exactMatch) {
+        return exactMatch.scaled_score;
+      }
+
+      // Sort by correct_answers in descending order and find the first that's less than the score
+      const sortedScoring = [...overallScoring].sort((a, b) => b.correct_answers - a.correct_answers);
+      const closestLower = sortedScoring.find(s => s.correct_answers < totalCorrect);
+      
+      return closestLower ? closestLower.scaled_score : sortedScoring[sortedScoring.length - 1].scaled_score;
+    }
   };
   
   let content;
@@ -296,15 +385,15 @@ const Results = () => {
 
     content = (
       <>
-        <div className="flex justify-between items-center mb-6">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
           <div>
-            <h2 className="text-xl font-semibold">Test Results History</h2>
+            <h2 className="text-lg sm:text-xl font-semibold">Test Results History</h2>
             {historyTestTitle && (
-              <div className="text-sm text-gray-500 mt-1">{historyTestTitle}</div>
+              <div className="text-xs sm:text-sm text-gray-500 mt-1">{historyTestTitle}</div>
             )}
           </div>
           {state && (
-            <Button variant="outline" onClick={toggleHistory}>
+            <Button variant="outline" onClick={toggleHistory} className="self-start sm:self-auto">
               Return to Current Result
             </Button>
           )}
@@ -322,10 +411,16 @@ const Results = () => {
                 <CardTitle>Select Test Result</CardTitle>
               </CardHeader>
               <CardContent>
-                <Tabs value={selectedResult || undefined} onValueChange={setSelectedResult}>
+                <Tabs 
+                  value={selectedResult || undefined} 
+                  onValueChange={(value) => {
+                    console.log('Tab changed to:', value);
+                    setSelectedResult(value);
+                  }}
+                >
                   <TabsList className="mb-4 flex-wrap overflow-x-auto max-h-[200px]">
                     {savedResults.map(result => (
-                      <TabsTrigger key={result.testResult.id} value={result.testResult.id}>
+                      <TabsTrigger key={result.testResult.id} value={result.testResult.id} className="text-xs sm:text-sm">
                         {new Date(result.testResult.created_at).toLocaleDateString()}
                       </TabsTrigger>
                     ))}
@@ -335,8 +430,8 @@ const Results = () => {
             </Card>
             
             {currentResult && (
-              <div className="space-y-6">
-                <div className="grid md:grid-cols-2 gap-6">
+              <div className="space-y-4 sm:space-y-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                   <ScoreCard 
                     score={currentResult.testResult.total_score} 
                     total={currentResult.testResult.total_questions}
@@ -352,13 +447,13 @@ const Results = () => {
                 {currentResult.moduleResults.length > 0 && (
                   <Card>
                     <CardHeader>
-                      <CardTitle>Module Scores</CardTitle>
+                      <CardTitle className="text-lg sm:text-xl">Module Scores</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <Tabs defaultValue={currentResult.moduleResults[0].id}>
-                        <TabsList className="mb-4">
+                        <TabsList className="mb-4 flex-wrap">
                           {currentResult.moduleResults.map(module => (
-                            <TabsTrigger key={module.id} value={module.id}>
+                            <TabsTrigger key={module.id} value={module.id} className="text-xs sm:text-sm">
                               {module.module_name}
                             </TabsTrigger>
                           ))}
@@ -366,18 +461,18 @@ const Results = () => {
                         
                         {currentResult.moduleResults.map(module => (
                           <TabsContent key={module.id} value={module.id}>
-                            <div className="grid md:grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                               <div className="bg-white rounded-lg p-4 border">
-                                <h3 className="text-lg font-medium mb-2">{module.module_name} Score</h3>
-                                <div className="text-3xl font-bold">
+                                <h3 className="text-base sm:text-lg font-medium mb-2">{module.module_name} Score</h3>
+                                <div className="text-2xl sm:text-3xl font-bold">
                                   {module.score} / {module.total}
                                 </div>
                               </div>
                               
                               {module.scaled_score !== null && (
                                 <div className="bg-white rounded-lg p-4 border">
-                                  <h3 className="text-lg font-medium mb-2">Scaled Score</h3>
-                                  <div className="text-3xl font-bold">
+                                  <h3 className="text-base sm:text-lg font-medium mb-2">Scaled Score</h3>
+                                  <div className="text-2xl sm:text-3xl font-bold">
                                     {module.scaled_score}
                                   </div>
                                 </div>
@@ -388,10 +483,24 @@ const Results = () => {
                       </Tabs>
                       
                       <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-                        <h3 className="text-lg font-medium mb-2">Total Scaled Score</h3>
-                        <div className="text-3xl font-bold">
-                          {currentResult.moduleResults.reduce((sum, module) => 
-                            sum + (module.scaled_score || 0), 0
+                        <h3 className="text-base sm:text-lg font-medium mb-2">
+                          {historyTestCategory === 'ACT' ? 'Composite Score' : 'Total Scaled Score'}
+                        </h3>
+                        <div className="text-2xl sm:text-3xl font-bold">
+                          {historyTestCategory === 'ACT' ? (() => {
+                            // For ACT: Calculate Composite Score (average of English, Math, Reading)
+                            const compositeModules = currentResult.moduleResults.filter(module => 
+                              module.module_id && ['english', 'math', 'reading'].includes(module.module_id)
+                            );
+                            if (compositeModules.length > 0) {
+                              const sum = compositeModules.reduce((sum, module) => sum + (module.scaled_score || 0), 0);
+                              return Math.round(sum / compositeModules.length);
+                            }
+                            return 'N/A';
+                          })() : (
+                            currentResult.moduleResults.reduce((sum, module) => 
+                              sum + (module.scaled_score || 0), 0
+                            )
                           )}
                         </div>
                       </div>
@@ -414,9 +523,20 @@ const Results = () => {
                       <p className="text-gray-500">Loading answer review...</p>
                     </div>
                   ) : historyQuestions ? (
-                    <QuestionReview questions={historyQuestions} userAnswers={historyAnswers as Record<string, string> || {}} />
+                    <QuestionReview 
+                      questions={historyQuestions} 
+                      userAnswers={(historyAnswers || {}) as Record<string, string>} 
+                      testCategory={historyTestCategory || 'SAT'}
+                    />
                   ) : (
-                    <p className="text-gray-500">Answer details are not available for this attempt.</p>
+                    <div className="text-center py-6">
+                      <p className="text-gray-500 mb-2">Answer details are not available for this attempt.</p>
+                      {isLoadingHistoryReview === false && (
+                        <p className="text-sm text-gray-400">
+                          This may be because the test questions could not be loaded or this is an older test result.
+                        </p>
+                      )}
+                    </div>
                   )}
                 </CardContent>
               </Card>
@@ -456,7 +576,8 @@ const Results = () => {
                 score={state.score} 
                 total={state.total} 
                 scaledScoring={state.scaledScoring}
-                scaledScore={memoizedScaledScore} 
+                scaledScore={memoizedScaledScore}
+                testCategory={state?.testCategory || currentTestCategory || 'SAT'}
               />
               <SummaryCard 
                 score={state.score} 
@@ -502,7 +623,9 @@ const Results = () => {
                   </Tabs>
                   
                   <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-                    <h3 className="text-lg font-medium mb-2">Total Scaled Score</h3>
+                    <h3 className="text-lg font-medium mb-2">
+                      {(state?.testCategory || currentTestCategory) === 'ACT' ? 'Composite Score' : 'Total Scaled Score'}
+                    </h3>
                     <div className="text-3xl font-bold">
                       {memoizedScaledScore || 'N/A'}
                     </div>
@@ -511,7 +634,11 @@ const Results = () => {
               </Card>
             )}
             
-            <QuestionReview questions={state.questions} userAnswers={state.answers} />
+            <QuestionReview 
+              questions={state.questions} 
+              userAnswers={state.answers} 
+              testCategory={state?.testCategory || currentTestCategory || 'SAT'}
+            />
           </>
         )}
       </>

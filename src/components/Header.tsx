@@ -14,7 +14,7 @@ const Header = ({ showLogout = true, onSaveAndExit, isSaving = false }: HeaderPr
   const navigate = useNavigate();
   const location = useLocation();
   const isTestPage = location.pathname.includes('/test');
-  const { user, signOut, isAdmin, profile } = useAuth();
+  const { user, signOut, isAdmin, isTeacher, profile } = useAuth();
   const [mounted, setMounted] = useState(false);
   
   useEffect(() => {
@@ -58,7 +58,7 @@ const Header = ({ showLogout = true, onSaveAndExit, isSaving = false }: HeaderPr
               {profile?.first_name && (
                 <span>
                   {profile.first_name} {profile.last_name} 
-                  {isAdmin ? " (Admin)" : ""}
+                  {isAdmin ? " (Admin)" : isTeacher ? " (Teacher)" : ""}
                 </span>
               )}
             </div>
@@ -73,8 +73,8 @@ const Header = ({ showLogout = true, onSaveAndExit, isSaving = false }: HeaderPr
                 Dashboard
               </Button>
               
-              {/* Show Results tab for students only */}
-              {!isAdmin && (
+              {/* Show Results tab for students only (not admins or teachers) */}
+              {!isAdmin && !isTeacher && (
                 <Button 
                   variant="ghost" 
                   onClick={() => navigate("/results")}
@@ -84,7 +84,7 @@ const Header = ({ showLogout = true, onSaveAndExit, isSaving = false }: HeaderPr
                 </Button>
               )}
               
-              {isAdmin && (
+              {(isAdmin || isTeacher) && (
                 <Button 
                   variant="ghost" 
                   onClick={() => navigate("/admin")}

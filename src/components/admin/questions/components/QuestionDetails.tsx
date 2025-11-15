@@ -5,10 +5,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { QuestionType } from '../types';
-import { DEFAULT_MODULES } from '../../tests/types';
+import { DEFAULT_MODULES, TestModule } from '../../tests/types';
 import { QuestionFormValues } from '../schema';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import TextHighlighter from '@/components/TextHighlighter';
 import { 
   Bold, 
   Italic, 
@@ -31,14 +32,17 @@ import {
   AlignRight,
   Heading1,
   Heading2,
-  Heading3
+  Heading3,
+  Highlighter,
+  Table
 } from 'lucide-react';
 
 interface QuestionDetailsProps {
-  // No additional props needed as we'll use useFormContext
+  // Optional: pass the modules allowed for this question (e.g., ACT vs SAT)
+  availableModules?: TestModule[];
 }
 
-const QuestionDetails = ({}: QuestionDetailsProps) => {
+const QuestionDetails = ({ availableModules }: QuestionDetailsProps) => {
   const { control, watch, setValue } = useFormContext<QuestionFormValues>();
   const moduleType = watch('module_type');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -57,6 +61,52 @@ const QuestionDetails = ({}: QuestionDetailsProps) => {
     setTimeout(() => {
       textarea.focus();
       textarea.setSelectionRange(start + symbol.length, start + symbol.length);
+    }, 0);
+  };
+
+  const insertTable = () => {
+    const currentText = watch('text');
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    
+    // Prompt for table dimensions
+    const rows = prompt('Enter number of rows:', '3');
+    const cols = prompt('Enter number of columns:', '3');
+    
+    if (!rows || !cols || isNaN(parseInt(rows)) || isNaN(parseInt(cols))) {
+      return;
+    }
+    
+    const numRows = parseInt(rows);
+    const numCols = parseInt(cols);
+    
+    // Generate table HTML with consistent styling
+    let tableHTML = '<table style="border-collapse: collapse; width: 100%; margin: 10px 0;">\n';
+    tableHTML += '<thead>\n<tr>\n';
+    for (let i = 0; i < numCols; i++) {
+      tableHTML += '<th style="border: 1px solid #000; padding: 8px; background-color: #f0f0f0; font-weight: bold;">Header ' + (i + 1) + '</th>\n';
+    }
+    tableHTML += '</tr>\n</thead>\n<tbody>\n';
+    
+    for (let i = 0; i < numRows; i++) {
+      tableHTML += '<tr>\n';
+      for (let j = 0; j < numCols; j++) {
+        tableHTML += '<td style="border: 1px solid #000; padding: 8px;">Cell ' + (i + 1) + ',' + (j + 1) + '</td>\n';
+      }
+      tableHTML += '</tr>\n';
+    }
+    tableHTML += '</tbody>\n</table>';
+    
+    const newText = currentText.substring(0, start) + tableHTML + currentText.substring(end);
+    setValue('text', newText);
+
+    // Set cursor position after the inserted table
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + tableHTML.length, start + tableHTML.length);
     }, 0);
   };
 
@@ -93,6 +143,11 @@ const QuestionDetails = ({}: QuestionDetailsProps) => {
         newText = currentText.substring(0, start) + `<s>${selectedText}</s>` + currentText.substring(end);
         newCursorStart = start + 3;
         newCursorEnd = end + 3;
+        break;
+      case 'highlight':
+        newText = currentText.substring(0, start) + `<mark class="bg-yellow-200">${selectedText}</mark>` + currentText.substring(end);
+        newCursorStart = start + 32;
+        newCursorEnd = end + 32;
         break;
       case 'subscript':
         newText = currentText.substring(0, start) + `<sub>${selectedText}</sub>` + currentText.substring(end);
@@ -190,7 +245,7 @@ const QuestionDetails = ({}: QuestionDetailsProps) => {
                 </SelectTrigger>
               </FormControl>
               <SelectContent>
-                {DEFAULT_MODULES.map((module) => (
+                {(availableModules && availableModules.length > 0 ? availableModules : DEFAULT_MODULES).map((module) => (
                   <SelectItem key={module.type} value={module.type}>
                     {module.name}
                   </SelectItem>
@@ -221,11 +276,11 @@ const QuestionDetails = ({}: QuestionDetailsProps) => {
                     Multiple Choice
                   </FormLabel>
                 </div>
-                {moduleType === "math" && (
+                {(moduleType === "math" || moduleType === "writing") && (
                   <div className="flex items-center space-x-2">
                     <RadioGroupItem value={QuestionType.TextInput} id="text-input" />
                     <FormLabel htmlFor="text-input" className="font-normal">
-                      Text Input (Math only)
+                      {moduleType === "writing" ? "Essay/Text Input" : "Text Input (Math only)"}
                     </FormLabel>
                   </div>
                 )}
@@ -258,6 +313,9 @@ const QuestionDetails = ({}: QuestionDetailsProps) => {
                   </Button>
                   <Button type="button" variant="ghost" size="sm" onClick={() => formatText('strikethrough')} title="Strikethrough">
                     <Strikethrough className="h-4 w-4" />
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => formatText('highlight')} title="Highlight">
+                    <Highlighter className="h-4 w-4" />
                   </Button>
                 </div>
 
@@ -294,6 +352,13 @@ const QuestionDetails = ({}: QuestionDetailsProps) => {
                   </Button>
                   <Button type="button" variant="ghost" size="sm" onClick={() => formatText('align-right')} title="Align Right">
                     <AlignRight className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                {/* Table */}
+                <div className="flex gap-1 border-r pr-2 mr-2">
+                  <Button type="button" variant="ghost" size="sm" onClick={insertTable} title="Insert Table">
+                    <Table className="h-4 w-4" />
                   </Button>
                 </div>
 
@@ -334,12 +399,22 @@ const QuestionDetails = ({}: QuestionDetailsProps) => {
                 )}
               </div>
               <FormControl>
-                <Textarea 
-                  {...field}
-                  ref={textareaRef}
-                  placeholder="Enter question text..."
-                  className="min-h-[200px]"
-                />
+                <div className="space-y-2">
+                  <Textarea 
+                    {...field}
+                    ref={textareaRef}
+                    placeholder="Enter question text..."
+                    className="min-h-[200px]"
+                  />
+                  <div className="border rounded-lg p-2 bg-gray-50">
+                    <div className="text-sm font-medium text-gray-700 mb-2">Preview with Highlighting:</div>
+                    <TextHighlighter
+                      text={field.value || ''}
+                      readOnly={true}
+                      className="min-h-[100px] bg-white"
+                    />
+                  </div>
+                </div>
               </FormControl>
             </div>
             <FormMessage />

@@ -19,7 +19,7 @@ export const questionFormSchema = z.object({
       is_correct: z.boolean().default(false)
     })
   ).optional(),
-  module_type: z.enum(["reading_writing", "math"]).default("reading_writing"),
+  module_type: z.enum(["reading_writing", "math", "english", "reading", "science", "writing"]).default("reading_writing"),
   question_type: z.enum([QuestionType.MultipleChoice, QuestionType.TextInput]).default(QuestionType.MultipleChoice),
   image_url: z.string().optional(),
   correct_answer: z.string().optional()
@@ -41,9 +41,12 @@ export const questionFormSchema = z.object({
     }
   }
 
-  // Validate correct_answer for text input questions
+  // Validate correct_answer for text input questions (except essay questions)
   if (data.question_type === QuestionType.TextInput) {
-    if (!data.correct_answer) {
+    // Essay questions (writing module) don't need a correct_answer since they're manually graded
+    if (data.module_type === 'writing') {
+      // Skip validation for essay questions
+    } else if (!data.correct_answer) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "At least one correct answer is required for text input questions",
@@ -123,7 +126,7 @@ export const useQuestionManagement = (testId: string) => {
             test_id: question.test_id,
             text: question.text,
             explanation: question.explanation,
-            module_type: question.module_type as "reading_writing" | "math",
+            module_type: question.module_type as "reading_writing" | "math" | "english" | "reading" | "science" | "writing",
             question_type: question.question_type as QuestionType,
             image_url: question.image_url,
             correct_answer: question.correct_answer,

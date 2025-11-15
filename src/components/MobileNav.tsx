@@ -12,7 +12,7 @@ import { useAuth } from "@/contexts/AuthContext";
 const MobileNav = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isAdmin } = useAuth();
+  const { isAdmin, isTeacher } = useAuth();
   const [open, setOpen] = useState(false);
   
   const handleNavigation = (path: string) => {
@@ -38,8 +38,8 @@ const MobileNav = () => {
             Dashboard
           </Button>
           
-          {/* Show Results tab for students only */}
-          {!isAdmin && (
+          {/* Show Results tab for students only (not admins or teachers) */}
+          {!isAdmin && !isTeacher && (
             <Button 
               variant="ghost" 
               onClick={() => handleNavigation("/results")}
@@ -49,7 +49,7 @@ const MobileNav = () => {
             </Button>
           )}
           
-          {isAdmin && (
+          {(isAdmin || isTeacher) && (
             <Button 
               variant="ghost" 
               onClick={() => handleNavigation("/admin")}

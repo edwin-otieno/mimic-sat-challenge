@@ -20,7 +20,10 @@ export interface Question {
   options?: QuestionOption[];
   explanation?: string;
   imageUrl?: string;
-  module_type?: 'reading_writing' | 'math';
+  module_type?: 'reading_writing' | 'math' | 'english' | 'reading' | 'science' | 'writing' | 'essay';
   question_type: QuestionType;
   correct_answer?: string;
+  // New fields for passage support
+  passage_id?: string;
+  question_number?: number;
 }

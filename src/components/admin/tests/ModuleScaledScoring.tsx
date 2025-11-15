@@ -20,10 +20,10 @@ const ModuleScaledScoring: React.FC<ModuleScaledScoringProps> = ({
   // Ensure each module has its own independent scores
   useEffect(() => {
     modules.forEach(module => {
-      const moduleId = module.id || '';
+      const moduleId = module.id || module.name;
       if (!moduleScores.has(moduleId)) {
         // Initialize with empty array if no scores exist for this module
-        onScoreChange(moduleId, []);
+        onScoreChange(moduleId, moduleScores.get(moduleId) || []);
       }
     });
   }, [modules, moduleScores, onScoreChange]);
@@ -32,17 +32,20 @@ const ModuleScaledScoring: React.FC<ModuleScaledScoringProps> = ({
     <div className="border rounded-lg p-4">
       <h3 className="text-lg font-medium mb-4">Module Scaled Scoring</h3>
       
-      <Tabs defaultValue={modules[0]?.id || 'default'} className="w-full">
+      <Tabs defaultValue={modules[0]?.id || modules[0]?.name || 'default'} className="w-full">
         <TabsList className="mb-4">
-          {modules.map((module, index) => (
-            <TabsTrigger key={module.id || `module-${index}`} value={module.id || `module-${index}`}>
-              {module.name}
-            </TabsTrigger>
-          ))}
+          {modules.map((module, index) => {
+            const moduleId = module.id || module.name;
+            return (
+              <TabsTrigger key={moduleId} value={moduleId}>
+                {module.name}
+              </TabsTrigger>
+            );
+          })}
         </TabsList>
         
         {modules.map((module, index) => {
-          const moduleId = module.id || `module-${index}`;
+          const moduleId = module.id || module.name;
           const moduleScoreData = moduleScores.get(moduleId) || [];
           const questionCount = questionCounts[moduleId] ?? 0;
           

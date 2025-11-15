@@ -1,0 +1,116 @@
+import React, { useRef } from 'react';
+import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
+import { Trash, Image } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+
+interface PassageImageUploadProps {
+  previewImage: string | null;
+  setPreviewImage: (url: string | null) => void;
+  setImageFile: (file: File | null) => void;
+}
+
+const PassageImageUpload: React.FC<PassageImageUploadProps> = ({ 
+  previewImage, 
+  setPreviewImage, 
+  setImageFile 
+}) => {
+  const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    // Check file type
+    if (!file.type.match('image.*')) {
+      toast({
+        title: "Error",
+        description: "Please select an image file",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // Check file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        title: "Error",
+        description: "Image file size must be less than 5MB",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    setImageFile(file);
+    
+    // Create a preview URL
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setPreviewImage(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeImage = () => {
+    setPreviewImage(null);
+    setImageFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleButtonClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  return (
+    <div className="space-y-2">
+      <Label>Passage Image (Optional)</Label>
+      <div className="flex flex-col space-y-2">
+        <input 
+          type="file" 
+          className="hidden" 
+          accept="image/*"
+          onChange={handleImageChange}
+          ref={fileInputRef}
+        />
+        {previewImage ? (
+          <div className="relative">
+            <img 
+              src={previewImage} 
+              alt="Passage" 
+              className="w-full max-h-60 object-contain border rounded-md" 
+            />
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              className="absolute top-2 right-2"
+              onClick={removeImage}
+            >
+              <Trash className="h-4 w-4" />
+            </Button>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-gray-300 rounded-md">
+            <Image className="h-10 w-10 text-gray-400" />
+            <p className="mt-2 text-sm text-gray-500">Upload an image for this passage</p>
+            <Button 
+              type="button" 
+              variant="outline" 
+              size="sm" 
+              onClick={handleButtonClick}
+              className="mt-2"
+            >
+              Select Image
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default PassageImageUpload;
+

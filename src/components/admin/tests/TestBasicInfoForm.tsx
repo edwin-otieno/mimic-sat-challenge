@@ -9,12 +9,14 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface TestBasicInfoFormProps {
   form: any;
+  onTestCategoryChange?: (category: 'SAT' | 'ACT') => void;
 }
 
-const TestBasicInfoForm: React.FC<TestBasicInfoFormProps> = ({ form }) => {
+const TestBasicInfoForm: React.FC<TestBasicInfoFormProps> = ({ form, onTestCategoryChange }) => {
   return (
     <>
       <FormField
@@ -39,6 +41,30 @@ const TestBasicInfoForm: React.FC<TestBasicInfoFormProps> = ({ form }) => {
             <FormControl>
               <Input placeholder="Enter test description..." {...field} />
             </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name="test_category"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Test Category</FormLabel>
+            <Select onValueChange={(value) => {
+              field.onChange(value);
+              onTestCategoryChange?.(value as 'SAT' | 'ACT');
+            }} defaultValue={field.value}>
+              <FormControl>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select test category" />
+                </SelectTrigger>
+              </FormControl>
+              <SelectContent>
+                <SelectItem value="SAT">SAT</SelectItem>
+                <SelectItem value="ACT">ACT</SelectItem>
+              </SelectContent>
+            </Select>
             <FormMessage />
           </FormItem>
         )}
