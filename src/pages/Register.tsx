@@ -35,10 +35,17 @@ const Register = () => {
           .select('id, name')
           .order('name', { ascending: true });
 
-        if (error) throw error;
+        if (error) {
+          console.error('Error fetching schools:', error);
+          // Don't throw, just log the error and set empty array
+          setSchools([]);
+          return;
+        }
+        
         setSchools(data || []);
       } catch (error) {
-        console.error('Error fetching schools:', error);
+        console.error('Unexpected error fetching schools:', error);
+        setSchools([]);
       } finally {
         setLoadingSchools(false);
       }
