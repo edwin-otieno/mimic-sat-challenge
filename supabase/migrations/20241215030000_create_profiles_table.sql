@@ -72,6 +72,8 @@ CREATE POLICY "Users can insert own profile" ON profiles
     FOR INSERT WITH CHECK (auth.uid() = id);
 
 -- Admins can view all profiles
+-- Note: This will be updated by migration 20241219010000 to use is_admin() function
+-- to avoid infinite recursion. Keeping this for backward compatibility.
 CREATE POLICY "Admins can view all profiles" ON profiles
     FOR SELECT USING (
         EXISTS (
@@ -82,6 +84,8 @@ CREATE POLICY "Admins can view all profiles" ON profiles
     );
 
 -- Admins can update all profiles
+-- Note: This will be updated by migration 20241219010000 to use is_admin() function
+-- to avoid infinite recursion. Keeping this for backward compatibility.
 CREATE POLICY "Admins can update all profiles" ON profiles
     FOR UPDATE USING (
         EXISTS (
