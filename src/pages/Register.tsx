@@ -19,7 +19,7 @@ const Register = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [selectedSchool, setSelectedSchool] = useState<string>("");
+  const [selectedSchool, setSelectedSchool] = useState<string>("none");
   const [schools, setSchools] = useState<Array<{ id: string; name: string }>>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingSchools, setLoadingSchools] = useState(true);
@@ -54,7 +54,7 @@ const Register = () => {
       return;
     }
     setIsLoading(true);
-    await signUp(email, password, firstName, lastName, selectedSchool || undefined);
+    await signUp(email, password, firstName, lastName, selectedSchool && selectedSchool !== "none" ? selectedSchool : undefined);
     setIsLoading(false);
   };
 
@@ -172,11 +172,11 @@ const Register = () => {
                     <SelectValue placeholder="Select your school" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="none">None</SelectItem>
                     {loadingSchools ? (
-                      <SelectItem value="" disabled>Loading schools...</SelectItem>
+                      <div className="px-2 py-1.5 text-sm text-gray-500">Loading schools...</div>
                     ) : schools.length === 0 ? (
-                      <SelectItem value="" disabled>No schools available</SelectItem>
+                      <div className="px-2 py-1.5 text-sm text-gray-500">No schools available</div>
                     ) : (
                       schools.map((school) => (
                         <SelectItem key={school.id} value={school.id}>
