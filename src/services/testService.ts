@@ -116,6 +116,7 @@ export const getTestQuestions = async (testId: string): Promise<{
       .from('test_questions')
       .select('*')
       .eq('test_id', testId)
+      .order('module_type', { ascending: true })
       .order('question_order', { ascending: true });
       
     if (questionsError) {
@@ -130,8 +131,30 @@ export const getTestQuestions = async (testId: string): Promise<{
     
     console.log('Found questions:', questionsData);
     
+    // Sort questions by module_type, then by question_number (preserving first question = 1)
+    // This ensures questions are displayed in the correct order within each module
+    const sortedQuestions = [...questionsData].sort((a, b) => {
+      // First sort by module_type
+      if (a.module_type !== b.module_type) {
+        return (a.module_type || '').localeCompare(b.module_type || '');
+      }
+      
+      // Within same module, sort by question_number (first question = 1)
+      const aNum = a.question_number != null ? Number(a.question_number) : null;
+      const bNum = b.question_number != null ? Number(b.question_number) : null;
+      
+      if (aNum !== null && bNum !== null) {
+        return aNum - bNum;
+      }
+      if (aNum !== null) return -1;
+      if (bNum !== null) return 1;
+      
+      // Fallback to question_order if question_number is not available
+      return (a.question_order || 0) - (b.question_order || 0);
+    });
+    
     // Get options for all questions
-    const questionIds = questionsData.map(q => q.id);
+    const questionIds = sortedQuestions.map(q => q.id);
     const { data: optionsData, error: optionsError } = await supabase
       .from('test_question_options')
       .select('*')
@@ -145,7 +168,7 @@ export const getTestQuestions = async (testId: string): Promise<{
     console.log('Found options:', optionsData);
     
     // Convert to QuestionData format
-    const questions: QuestionData[] = questionsData.map(question => 
+    const questions: QuestionData[] = sortedQuestions.map(question => 
       convertDbQuestionToQuestionData(question, optionsData || [])
     );
     
@@ -164,6 +187,82 @@ export const getTestQuestions = async (testId: string): Promise<{
 // Save a question to the database
 export const saveQuestion = async (question: any) => {
   try {
+    const moduleType = question.module_type || 'reading_writing';
+    const isEditing = !!question.id;
+    
+    // For new questions, determine question_number based on module
+    let questionNumber = question.question_number;
+    let questionOrder = question.question_order;
+    
+    if (!isEditing) {
+      // New question - need to determine question_number and question_order
+      // First, get existing question_number for this module to ensure first question is always 1
+      const { data: existingQuestions } = await supabase
+        .from('test_questions')
+        .select('question_number, question_order')
+        .eq('test_id', question.test_id)
+        .eq('module_type', moduleType)
+        .is('passage_id', null); // Only count standalone questions (not passage questions)
+      
+      if (existingQuestions && existingQuestions.length > 0) {
+        // Find the maximum question_number in this module
+        const maxQuestionNumber = existingQuestions
+          .map(q => q.question_number)
+          .filter(num => num !== null && num !== undefined)
+          .reduce((max, num) => Math.max(max, num), 0);
+        
+        // Set question_number to max + 1 (first question will be 1)
+        questionNumber = maxQuestionNumber + 1;
+        
+        // Also set question_order based on max order in this module
+        const maxOrder = existingQuestions
+          .map(q => q.question_order)
+          .filter(order => order !== null && order !== undefined)
+          .reduce((max, order) => Math.max(max, order), 0);
+        
+        questionOrder = maxOrder + 1;
+      } else {
+        // First question in this module - set to 1
+        questionNumber = 1;
+        questionOrder = 1;
+      }
+    } else {
+      // Editing existing question - ALWAYS preserve question_number and question_order
+      // Fetch current values from database to ensure we don't lose them
+      const { data: existingQuestion } = await supabase
+        .from('test_questions')
+        .select('question_number, question_order')
+        .eq('id', question.id)
+        .single();
+      
+      if (existingQuestion) {
+        // Preserve the existing question_number (especially important for first question = 1)
+        // If question_number is null, assign one based on module order
+        if (existingQuestion.question_number === null || existingQuestion.question_number === undefined) {
+          // Backfill: find max question_number in this module and assign next number
+          const { data: moduleQuestions } = await supabase
+            .from('test_questions')
+            .select('question_number')
+            .eq('test_id', question.test_id)
+            .eq('module_type', moduleType)
+            .is('passage_id', null);
+          
+          if (moduleQuestions && moduleQuestions.length > 0) {
+            const maxQuestionNumber = moduleQuestions
+              .map(q => q.question_number)
+              .filter(num => num !== null && num !== undefined)
+              .reduce((max, num) => Math.max(max, num), 0);
+            questionNumber = maxQuestionNumber + 1;
+          } else {
+            questionNumber = 1;
+          }
+        } else {
+          questionNumber = existingQuestion.question_number;
+        }
+        questionOrder = existingQuestion.question_order ?? questionOrder ?? question.question_order;
+      }
+    }
+    
     // First, insert the question
     const { data: savedQuestion, error: questionError } = await supabase
       .from('test_questions')
@@ -172,20 +271,12 @@ export const saveQuestion = async (question: any) => {
         test_id: question.test_id,
         text: question.text,
         explanation: question.explanation || null,
-        module_type: question.module_type || 'reading_writing',
+        module_type: moduleType,
         question_type: question.question_type || 'multiple_choice',
         image_url: question.image_url || null,
         correct_answer: question.correct_answer || null,
-        question_order: question.id 
-          ? question.question_order // Keep existing order for updates
-          : (await supabase
-              .from('test_questions')
-              .select('question_order')
-              .eq('test_id', question.test_id)
-              .order('question_order', { ascending: false })
-              .limit(1)
-              .single()
-            ).data?.question_order + 1 || 0 // Get max order + 1 for new questions
+        question_number: questionNumber, // Set question_number per module
+        question_order: questionOrder || question.question_order // Set question_order
       })
       .select()
       .single();
