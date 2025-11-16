@@ -831,6 +831,78 @@ const TestInterface = () => {
         }
         console.log('✅ Module results saved successfully:', insertedData);
       }
+      
+      // Check if all modules are completed and mark test as completed if so
+      if (testResultId && currentTest?.modules) {
+        const { data: allModuleResults } = await supabase
+          .from('module_results')
+          .select('module_id')
+          .eq('test_result_id', testResultId);
+        
+        const completedModuleIds = new Set(allModuleResults?.map(mr => mr.module_id) || []);
+        const totalModules = currentTest.modules.length;
+        const allModulesCompleted = completedModuleIds.size >= totalModules;
+        
+        console.log('🔍 Checking test completion:', {
+          completedModules: completedModuleIds.size,
+          totalModules,
+          allModulesCompleted,
+          completedModuleIds: Array.from(completedModuleIds),
+          expectedModules: currentTest.modules.map((m: any) => m.type)
+        });
+        
+        if (allModulesCompleted) {
+          console.log('✅ All modules completed, marking test as completed...');
+          // Check current status first
+          const { data: currentStatus } = await supabase
+            .from('test_results')
+            .select('is_completed, total_score, scaled_score')
+            .eq('id', testResultId)
+            .single();
+          
+          if (currentStatus && !currentStatus.is_completed) {
+            // Calculate total score from module results
+            const { data: moduleResultsForScore } = await supabase
+              .from('module_results')
+              .select('module_id, score, total, scaled_score')
+              .eq('test_result_id', testResultId);
+            
+            const totalScore = moduleResultsForScore?.reduce((sum, mr) => sum + (mr.score || 0), 0) || 0;
+            const totalQuestions = moduleResultsForScore?.reduce((sum, mr) => sum + (mr.total || 0), 0) || 0;
+            
+            // Calculate overall scaled score
+            const testCategory = currentTest?.test_category || 'SAT';
+            let overallScaledScore;
+            if (testCategory === 'ACT') {
+              const compositeModules = (moduleResultsForScore || []).filter((mr: any) => 
+                ['english', 'math', 'reading'].includes(mr.module_id || '')
+              );
+              if (compositeModules.length > 0) {
+                const sum = compositeModules.reduce((sum, mr) => sum + (mr.scaled_score || 0), 0);
+                overallScaledScore = Math.round(sum / compositeModules.length);
+              }
+            } else {
+              overallScaledScore = moduleResultsForScore?.reduce((sum, mr) => sum + (mr.scaled_score || 0), 0) || 0;
+            }
+            
+            const { error: updateError } = await supabase
+              .from('test_results')
+              .update({
+                is_completed: true,
+                total_score: totalScore,
+                total_questions: totalQuestions,
+                scaled_score: overallScaledScore || currentStatus.scaled_score
+              })
+              .eq('id', testResultId);
+            
+            if (updateError) {
+              console.error('❌ Error marking test as completed:', updateError);
+            } else {
+              console.log('✅ Test marked as completed successfully');
+            }
+          }
+        }
+      }
     } catch (error) {
       console.error("❌ Error saving module results:", error);
       console.error("❌ Error stack:", error instanceof Error ? error.stack : 'No stack trace');
@@ -882,7 +954,14 @@ const TestInterface = () => {
       // If we have an existing test result, update it; otherwise create new
       if (testResultId) {
         console.log('Updating existing test result:', testResultId);
-        const { error: updateError } = await supabase
+        console.log('Update data:', {
+          total_score: correctAnswers,
+          total_questions: totalQuestions,
+          scaled_score: scaledScore,
+          time_taken: timeTaken,
+          is_completed: true
+        });
+        const { data: updatedData, error: updateError } = await supabase
           .from('test_results')
           .update({
             total_score: correctAnswers,
@@ -892,10 +971,22 @@ const TestInterface = () => {
             time_taken: timeTaken,
             is_completed: true
           })
-          .eq('id', testResultId);
+          .eq('id', testResultId)
+          .select();
         
-        if (updateError) throw updateError;
-        console.log('Test result updated successfully');
+        if (updateError) {
+          console.error('Error updating test result:', updateError);
+          throw updateError;
+        }
+        console.log('Test result updated successfully:', updatedData);
+        
+        // Verify the update
+        const { data: verifyData } = await supabase
+          .from('test_results')
+          .select('is_completed')
+          .eq('id', testResultId)
+          .single();
+        console.log('Verification - is_completed after update:', verifyData?.is_completed);
       } else {
         console.log('No existing test result found, creating new one...');
         // Save test results first
