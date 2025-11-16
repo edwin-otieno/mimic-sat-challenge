@@ -169,7 +169,7 @@ const StudentResults = () => {
             completedAt: new Date(result.created_at).toLocaleString(),
             score: `${result.total_score}/${result.total_questions}`,
             percentage: result.total_questions > 0 ? Math.round((result.total_score / result.total_questions) * 100) : 0,
-            is_completed: result.is_completed ?? true // Default to true for backward compatibility
+            is_completed: result.is_completed !== null && result.is_completed !== undefined ? result.is_completed : true // Default to true for backward compatibility, but preserve false values
           };
         }));
         
@@ -192,6 +192,18 @@ const StudentResults = () => {
   useEffect(() => {
     setCurrentPage(1);
   }, [selectedTest, selectedStudent, selectedSchool]);
+  
+  // Debug: Log selectedResult changes
+  useEffect(() => {
+    if (selectedResult) {
+      console.log('🔍 selectedResult updated:', {
+        id: selectedResult.id,
+        is_completed: selectedResult.is_completed,
+        studentName: selectedResult.studentName,
+        testName: selectedResult.testName
+      });
+    }
+  }, [selectedResult]);
   
   // Calculate total pages
   const totalPages = Math.ceil(totalResults / RESULTS_PER_PAGE);
@@ -398,6 +410,7 @@ const StudentResults = () => {
   };
   
   const handleViewResult = async (result: any) => {
+    console.log('🔍 handleViewResult - result.is_completed:', result.is_completed);
     setSelectedResult(result);
     fetchModuleResults(result.id);
     setShowResultDetails(true);
@@ -640,7 +653,7 @@ const StudentResults = () => {
                         <TableCell>{result.testName}</TableCell>
                         <TableCell>
                           {result.is_completed === false ? (
-                            <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">In Progress</span>
+                            <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">In-progress</span>
                           ) : (
                             result.completedAt
                           )}
@@ -735,7 +748,7 @@ const StudentResults = () => {
                     <CardContent>
                       {selectedResult.is_completed === false ? (
                         <div>
-                          <div className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded inline-block mb-2">In Progress</div>
+                          <div className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded inline-block mb-2">In-progress</div>
                           {selectedResult.scaled_score !== null && (
                             <div className="text-2xl font-bold mt-2">{selectedResult.scaled_score}</div>
                           )}
@@ -767,7 +780,7 @@ const StudentResults = () => {
                   </Card>
                 </div>
                 
-                {moduleResults.length > 0 ? (
+                {selectedResult.is_completed === true && moduleResults.length > 0 ? (
                   <Card>
                     <CardHeader>
                       <CardTitle>Module Scores</CardTitle>
@@ -835,11 +848,15 @@ const StudentResults = () => {
                       </Tabs>
                     </CardContent>
                   </Card>
-                ) :
+                ) : selectedResult.is_completed === false ? (
+                  <div className="text-center py-4">
+                    <p className="text-gray-500">Module scores will be available once the test is completed</p>
+                  </div>
+                ) : (
                   <div className="text-center py-4">
                     <p className="text-gray-500">No module scores available</p>
                   </div>
-                }
+                )}
 
                 {/* Essay grading section for ACT Essay - only show for ACT tests */}
                 {canGrade && selectedTestCategory === 'ACT' && (
