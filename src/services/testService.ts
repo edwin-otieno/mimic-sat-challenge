@@ -334,6 +334,35 @@ export const saveQuestion = async (question: any) => {
   }
 };
 
+// Update question order for multiple questions
+export const updateQuestionOrder = async (updates: Array<{ id: string; question_number: number; question_order: number }>) => {
+  try {
+    // Update all questions in a transaction-like manner
+    const updatePromises = updates.map(update =>
+      supabase
+        .from('test_questions')
+        .update({
+          question_number: update.question_number,
+          question_order: update.question_order
+        })
+        .eq('id', update.id)
+    );
+    
+    const results = await Promise.all(updatePromises);
+    const errors = results.filter(r => r.error);
+    
+    if (errors.length > 0) {
+      console.error('Error updating question order:', errors);
+      throw new Error(`Failed to update question order: ${errors[0].error?.message}`);
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Error in updateQuestionOrder:', error);
+    throw error;
+  }
+};
+
 // Delete a question from the database
 export const deleteQuestion = async (questionId: string) => {
   try {

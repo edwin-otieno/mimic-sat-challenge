@@ -16,7 +16,7 @@ interface QuestionManagerProps {
 }
 
 const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
-  const { questions, loading, handleSubmitQuestion, handleDeleteQuestion } = useQuestionManagement(testId);
+  const { questions, loading, handleSubmitQuestion, handleDeleteQuestion, handleReorderQuestions } = useQuestionManagement(testId);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
@@ -138,6 +138,8 @@ const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
                     questions={moduleGroups[module.type] || []} 
                     onEditQuestion={handleOpenDialog}
                     onDeleteQuestion={handleDeleteQuestion}
+                    onReorderQuestions={handleReorderQuestions}
+                    moduleType={module.type}
                   />
                 </CardContent>
               </Card>

@@ -3,7 +3,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 import { Question, QuestionType } from '../types';
-import { saveQuestion, deleteQuestion } from '@/services/testService';
+import { saveQuestion, deleteQuestion, updateQuestionOrder } from '@/services/testService';
 import { supabase } from "@/integrations/supabase/client";
 
 // Schema for question form validation
@@ -120,7 +120,20 @@ export const useQuestionManagement = (testId: string) => {
         
         // Map questions with their options
         const loadedQuestions = questionsData
-          .sort((a, b) => (a.question_order || 0) - (b.question_order || 0))
+          .sort((a, b) => {
+            // First sort by module_type
+            if (a.module_type !== b.module_type) {
+              return (a.module_type || '').localeCompare(b.module_type || '');
+            }
+            // Then by question_number within module
+            const aNum = a.question_number != null ? Number(a.question_number) : null;
+            const bNum = b.question_number != null ? Number(b.question_number) : null;
+            if (aNum !== null && bNum !== null) {
+              return aNum - bNum;
+            }
+            // Fallback to question_order
+            return (a.question_order || 0) - (b.question_order || 0);
+          })
           .map(question => ({
             id: question.id,
             test_id: question.test_id,
@@ -130,6 +143,8 @@ export const useQuestionManagement = (testId: string) => {
             question_type: question.question_type as QuestionType,
             image_url: question.image_url,
             correct_answer: question.correct_answer,
+            passage_id: question.passage_id,
+            question_number: question.question_number,
             options: (optionsByQuestion[question.id] || []).map(option => ({
               id: option.id,
               text: option.text,
@@ -240,10 +255,91 @@ export const useQuestionManagement = (testId: string) => {
     }
   };
 
+  const handleReorderQuestions = async (reorderedQuestions: Question[], moduleType?: string) => {
+    try {
+      // Only update standalone questions (not passage questions) within the specified module
+      const standaloneQuestions = reorderedQuestions.filter(q => 
+        !q.passage_id && (!moduleType || q.module_type === moduleType)
+      );
+      
+      // Group by module type to handle reordering per module
+      const questionsByModule: Record<string, Question[]> = {};
+      standaloneQuestions.forEach(q => {
+        const module = q.module_type || 'reading_writing';
+        if (!questionsByModule[module]) {
+          questionsByModule[module] = [];
+        }
+        questionsByModule[module].push(q);
+      });
+      
+      // Prepare updates for each module
+      const allUpdates: Array<{ id: string; question_number: number; question_order: number }> = [];
+      
+      Object.entries(questionsByModule).forEach(([module, moduleQuestions]) => {
+        // Sort by the new order in reorderedQuestions
+        const sortedModuleQuestions = moduleQuestions.sort((a, b) => {
+          const aIndex = reorderedQuestions.findIndex(q => q.id === a.id);
+          const bIndex = reorderedQuestions.findIndex(q => q.id === b.id);
+          return aIndex - bIndex;
+        });
+        
+        // Assign new question_number and question_order starting from 1
+        sortedModuleQuestions.forEach((question, index) => {
+          allUpdates.push({
+            id: question.id!,
+            question_number: index + 1,
+            question_order: index + 1
+          });
+        });
+      });
+      
+      if (allUpdates.length > 0) {
+        await updateQuestionOrder(allUpdates);
+        
+        // Update local state - merge with existing questions
+        const updatedQuestions = questions.map(q => {
+          const update = allUpdates.find(u => u.id === q.id);
+          if (update) {
+            return {
+              ...q,
+              question_number: update.question_number,
+              question_order: update.question_order
+            };
+          }
+          return q;
+        });
+        
+        // Re-sort questions to reflect new order
+        const sortedUpdatedQuestions = updatedQuestions.sort((a, b) => {
+          // First sort by module_type
+          if (a.module_type !== b.module_type) {
+            return (a.module_type || '').localeCompare(b.module_type || '');
+          }
+          // Then by question_number within module
+          return (a.question_number || 0) - (b.question_number || 0);
+        });
+        
+        setQuestions(sortedUpdatedQuestions);
+        toast({ title: "Success", description: "Question order updated successfully" });
+        queryClient.invalidateQueries({ queryKey: ['questions', testId] });
+      }
+      
+      return true;
+    } catch (error: any) {
+      toast({ 
+        title: "Error", 
+        description: error.message || "Failed to update question order", 
+        variant: "destructive" 
+      });
+      return false;
+    }
+  };
+
   return {
     questions,
     loading,
     handleSubmitQuestion,
-    handleDeleteQuestion
+    handleDeleteQuestion,
+    handleReorderQuestions
   };
 };
