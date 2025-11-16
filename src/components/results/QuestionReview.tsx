@@ -11,12 +11,32 @@ interface QuestionReviewProps {
 }
 
 const QuestionReview: React.FC<QuestionReviewProps> = React.memo(({ questions, userAnswers, moduleType, testCategory }) => {
-  console.log('QuestionReview received:', { 
+  console.log('🔍 QuestionReview received:', { 
     questionsLength: questions.length, 
-    userAnswersKeys: Object.keys(userAnswers).length,
-    firstQuestion: questions[0],
-    firstAnswer: userAnswers[questions[0]?.id]
+    userAnswersKeys: Object.keys(userAnswers || {}).length,
+    firstQuestionId: questions[0]?.id,
+    firstAnswer: userAnswers?.[questions[0]?.id],
+    sampleAnswerKeys: Object.keys(userAnswers || {}).slice(0, 10),
+    sampleQuestionIds: questions.slice(0, 10).map(q => ({ id: q.id, order: q.question_order, number: q.question_number })),
+    userAnswersType: typeof userAnswers,
+    userAnswersIsNull: userAnswers === null,
+    userAnswersIsUndefined: userAnswers === undefined
   });
+  
+  // Check if any question IDs match any answer keys
+  if (userAnswers && questions.length > 0) {
+    const questionIds = questions.map(q => q.id);
+    const answerKeys = Object.keys(userAnswers);
+    const matches = questionIds.filter(qId => answerKeys.includes(qId));
+    console.log('🔍 Answer matching analysis:', {
+      totalQuestions: questionIds.length,
+      totalAnswerKeys: answerKeys.length,
+      directMatches: matches.length,
+      sampleMatches: matches.slice(0, 5),
+      sampleNonMatchingQuestionIds: questionIds.filter(qId => !answerKeys.includes(qId)).slice(0, 5),
+      sampleNonMatchingAnswerKeys: answerKeys.filter(aKey => !questionIds.includes(aKey)).slice(0, 5)
+    });
+  }
   
   // Group questions by module type - memoize to prevent recalculation
   const { moduleGroups } = useMemo(() => {
@@ -59,7 +79,23 @@ const QuestionReview: React.FC<QuestionReviewProps> = React.memo(({ questions, u
       return (
         <div className="space-y-8">
           {questions.map((question, index) => {
-            const userAnswerId = userAnswers[question.id];
+            // Try multiple key formats to find the answer
+            const userAnswerId = userAnswers?.[question.id] 
+              || userAnswers?.[`question_${question.id}`]
+              || (question.question_order && userAnswers?.[question.question_order.toString()])
+              || (question.question_number && userAnswers?.[question.question_number.toString()]);
+            
+            // Log only for first few questions to avoid spam
+            if (index < 3) {
+              console.log(`Question ${index + 1} (ID: ${question.id}, order: ${question.question_order}, number: ${question.question_number}):`, {
+                hasAnswer: !!userAnswerId,
+                answerValue: userAnswerId,
+                matchedKey: userAnswers?.[question.id] ? question.id : 
+                           userAnswers?.[`question_${question.id}`] ? `question_${question.id}` :
+                           (question.question_order && userAnswers?.[question.question_order.toString()]) ? question.question_order.toString() :
+                           (question.question_number && userAnswers?.[question.question_number.toString()]) ? question.question_number.toString() : 'none'
+              });
+            }
             let resultIndicator;
             
             if (!userAnswerId) {

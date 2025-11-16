@@ -38,6 +38,7 @@ interface ResultsState {
 interface TestResult {
   id: string;
   test_id: string;
+  user_id?: string;
   total_score: number;
   total_questions: number;
   scaled_score: number | null;
@@ -114,7 +115,7 @@ const Results = () => {
       // Fetch user's test results (limit to last 50 to reduce egress)
       const { data: testResults, error: testError } = await supabase
         .from('test_results')
-        .select('id, test_id, total_score, total_questions, scaled_score, created_at, time_taken, answers')
+        .select('id, test_id, user_id, total_score, total_questions, scaled_score, created_at, time_taken, answers, is_completed')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(50);
@@ -125,8 +126,54 @@ const Results = () => {
         return;
       }
       
-      // Fetch module results for each test result (limit fields to reduce egress)
-      const moduleResultPromises = testResults.map(testResult => 
+      // Deduplicate: keep only one entry per user/test combination, preferring completed ones
+      const deduplicatedResults = testResults.reduce((acc: any[], current: any) => {
+        const key = `${current.user_id}-${current.test_id}`;
+        const existing = acc.find(r => `${r.user_id}-${r.test_id}` === key);
+
+        if (!existing) {
+          acc.push(current);
+        } else {
+          const currentIsCompleted = current.is_completed === true;
+          const existingIsCompleted = existing.is_completed === true;
+
+          if (currentIsCompleted && !existingIsCompleted) {
+            const index = acc.indexOf(existing);
+            acc[index] = current;
+          } else if (!currentIsCompleted && existingIsCompleted) {
+            // Keep existing completed, ignore in-progress
+          } else {
+            // Both same status, keep the one with answers or most recent
+            const currentHasAnswers = current.answers && typeof current.answers === 'object' && Object.keys(current.answers).length > 0;
+            const existingHasAnswers = existing.answers && typeof existing.answers === 'object' && Object.keys(existing.answers).length > 0;
+            
+            if (currentHasAnswers && !existingHasAnswers) {
+              const index = acc.indexOf(existing);
+              acc[index] = current;
+            } else if (!currentHasAnswers && existingHasAnswers) {
+              // Keep existing with answers
+            } else {
+              // Both have or don't have answers, keep most recent
+              const currentDate = new Date(current.created_at);
+              const existingDate = new Date(existing.created_at);
+              if (currentDate > existingDate) {
+                const index = acc.indexOf(existing);
+                acc[index] = current;
+              }
+            }
+          }
+        }
+        return acc;
+      }, []);
+      
+      console.log('📊 Deduplicated results:', {
+        original: testResults.length,
+        deduplicated: deduplicatedResults.length,
+        removed: testResults.length - deduplicatedResults.length
+      });
+      
+      // Fetch module results for deduplicated test results (limit fields to reduce egress)
+      const moduleResultPromises = deduplicatedResults.map(testResult => 
         supabase
           .from('module_results')
           .select('id, module_id, module_name, score, total, scaled_score')
@@ -135,8 +182,8 @@ const Results = () => {
       
       const moduleResultsResponses = await Promise.all(moduleResultPromises);
       
-      // Combine test results with their module results
-      const combinedResults: SavedTestResults[] = testResults.map((testResult, index) => ({
+      // Combine deduplicated test results with their module results
+      const combinedResults: SavedTestResults[] = deduplicatedResults.map((testResult, index) => ({
         testResult,
         moduleResults: moduleResultsResponses[index].data || []
       }));
@@ -230,9 +277,92 @@ const Results = () => {
       
       try {
         setIsLoadingHistoryReview(true);
-        const answers = current.testResult.answers || null;
-        console.log('Loading history review for result:', current.testResult.id, 'answers:', answers);
-        setHistoryAnswers(answers);
+        
+        // First, fetch the latest test_result data to ensure we have the most up-to-date answers
+        const { data: latestTestResult, error: fetchError } = await supabase
+          .from('test_results')
+          .select('answers, is_completed')
+          .eq('id', current.testResult.id)
+          .single();
+        
+        if (fetchError) {
+          console.error('⚠️ Error fetching latest test result:', fetchError);
+        }
+        
+        let answers = latestTestResult?.answers || current.testResult.answers || null;
+        console.log('Loading history review for result:', current.testResult.id);
+        console.log('📝 Raw answers from test_result (cached):', current.testResult.answers);
+        console.log('📝 Raw answers from test_result (latest):', latestTestResult?.answers);
+        console.log('📝 Using answers:', answers);
+        console.log('📝 Answers type:', typeof answers);
+        
+        // Parse answers if it's a string (JSON)
+        if (typeof answers === 'string') {
+          try {
+            answers = JSON.parse(answers);
+            console.log('📝 Parsed answers from JSON string');
+          } catch (parseError) {
+            console.error('⚠️ Error parsing answers JSON:', parseError);
+            answers = null;
+          }
+        }
+        
+        console.log('📝 Answers after parsing:', answers);
+        console.log('📝 Answers keys count:', answers && typeof answers === 'object' ? Object.keys(answers).length : 0);
+        
+        // If answers is null or empty, try to recover from test_states
+        if (!answers || (typeof answers === 'object' && Object.keys(answers).length === 0)) {
+          console.log('⚠️ Answers field is empty, attempting recovery from test_states...');
+          try {
+            const { data: testData } = await supabase
+              .from('tests')
+              .select('permalink')
+              .eq('id', current.testResult.test_id)
+              .single();
+            
+            if (testData?.permalink) {
+              const { data: stateData } = await supabase
+                .from('test_states')
+                .select('state')
+                .eq('user_id', current.testResult.user_id || user?.id)
+                .eq('test_permalink', testData.permalink)
+                .order('updated_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              
+              if (stateData?.state?.userAnswers) {
+                console.log('✅ Recovered answers from test_states');
+                console.log('📝 Recovered answer keys:', Object.keys(stateData.state.userAnswers).slice(0, 10));
+                answers = stateData.state.userAnswers;
+              } else {
+                console.log('⚠️ No answers found in test_states either');
+              }
+            }
+          } catch (recoveryError) {
+            console.error('⚠️ Error recovering from test_states:', recoveryError);
+          }
+        }
+        
+        console.log('📝 Final answers to use (before question mapping):', answers);
+        console.log('📝 Final answers keys:', answers ? Object.keys(answers) : []);
+        console.log('📝 Sample answer entries:', answers && typeof answers === 'object' ? Object.entries(answers).slice(0, 5) : []);
+        
+        // Normalize answers object - ensure it's a proper Record<string, string>
+        let normalizedAnswers: Record<string, string> | null = null;
+        if (answers && typeof answers === 'object') {
+          normalizedAnswers = {};
+          for (const [key, value] of Object.entries(answers)) {
+            // Handle various value types
+            if (value !== null && value !== undefined) {
+              normalizedAnswers[key] = String(value);
+            }
+          }
+          console.log('📝 Normalized answers:', normalizedAnswers);
+          console.log('📝 Normalized answer keys:', Object.keys(normalizedAnswers));
+        }
+        
+        // Store normalized answers - we'll map them to question IDs after questions are loaded
+        setHistoryAnswers(normalizedAnswers);
 
         const testIdentifier = current.testResult.test_id;
         console.log('Looking up test with identifier:', testIdentifier);
@@ -304,12 +434,178 @@ const Results = () => {
           return;
         }
         
+        // Map answers to question IDs if needed
+        let mappedAnswers = normalizedAnswers;
+        if (normalizedAnswers && questions.length > 0) {
+          // Check if answer keys match question IDs
+          const questionIds = new Set(questions.map(q => q.id));
+          const answerKeys = Object.keys(normalizedAnswers);
+          const matchingKeys = answerKeys.filter(key => questionIds.has(key));
+          
+          console.log('🔍 Answer mapping check:', {
+            totalQuestions: questions.length,
+            totalAnswerKeys: answerKeys.length,
+            matchingKeys: matchingKeys.length,
+            sampleMatchingKeys: matchingKeys.slice(0, 5),
+            sampleNonMatchingKeys: answerKeys.filter(k => !questionIds.has(k)).slice(0, 5),
+            sampleQuestionIds: Array.from(questionIds).slice(0, 5)
+          });
+          
+          // If no matches and all keys are UUIDs (old question IDs), try to recover from test_states
+          if (matchingKeys.length === 0 && answerKeys.length > 0 && 
+              answerKeys.every(key => key.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i))) {
+            console.log('⚠️ All answer keys are UUIDs but none match current questions - attempting recovery from test_states...');
+            try {
+              const { data: testData } = await supabase
+                .from('tests')
+                .select('permalink')
+                .eq('id', current.testResult.test_id)
+                .single();
+              
+              if (testData?.permalink) {
+                const { data: stateData } = await supabase
+                  .from('test_states')
+                  .select('state')
+                  .eq('user_id', current.testResult.user_id || user?.id)
+                  .eq('test_permalink', testData.permalink)
+                  .order('updated_at', { ascending: false })
+                  .limit(1)
+                  .maybeSingle();
+                
+                if (stateData?.state?.userAnswers) {
+                  console.log('✅ Recovered answers from test_states (after detecting old question IDs)');
+                  console.log('📝 Recovered answer keys:', Object.keys(stateData.state.userAnswers).slice(0, 10));
+                  
+                  // Re-normalize the recovered answers
+                  const recoveredAnswers = stateData.state.userAnswers;
+                  normalizedAnswers = {};
+                  for (const [key, value] of Object.entries(recoveredAnswers)) {
+                    if (value !== null && value !== undefined) {
+                      normalizedAnswers[key] = String(value);
+                    }
+                  }
+                  console.log('📝 Re-normalized recovered answers:', normalizedAnswers);
+                  console.log('📝 Re-normalized answer keys:', Object.keys(normalizedAnswers));
+                  
+                  // Update answerKeys for the mapping logic below
+                  const newAnswerKeys = Object.keys(normalizedAnswers);
+                  const newMatchingKeys = newAnswerKeys.filter(key => questionIds.has(key));
+                  console.log('🔍 After recovery - matching keys:', newMatchingKeys.length);
+                  
+                  // Update variables for the mapping logic below
+                  mappedAnswers = {};
+                  for (const key of newMatchingKeys) {
+                    mappedAnswers[key] = normalizedAnswers[key];
+                  }
+                  
+                  // If we have matches now, skip the order/number mapping
+                  if (newMatchingKeys.length > 0) {
+                    console.log('✅ Successfully recovered and mapped', newMatchingKeys.length, 'answers');
+                    setHistoryQuestions(questions);
+                    setHistoryAnswers(mappedAnswers);
+                    setHistoryReviewCache(prev => ({
+                      ...prev,
+                      [current.testResult.id]: {
+                        questions,
+                        answers: mappedAnswers,
+                        testTitle: testRow.data.title || null,
+                        testCategory: testCategory,
+                      }
+                    }));
+                    setIsLoadingHistoryReview(false);
+                    return;
+                  }
+                }
+              }
+            } catch (recoveryError) {
+              console.error('⚠️ Error recovering from test_states:', recoveryError);
+            }
+          }
+          
+          // Re-check matching keys after potential recovery
+          const finalAnswerKeys = Object.keys(normalizedAnswers);
+          const finalMatchingKeys = finalAnswerKeys.filter(key => questionIds.has(key));
+          
+          // If no direct matches, try to map by question_order or question_number
+          if (finalMatchingKeys.length === 0 && finalAnswerKeys.length > 0) {
+            console.log('⚠️ No direct ID matches found, attempting to map by order/number...');
+            console.log('📝 Sample answer keys that need mapping:', finalAnswerKeys.slice(0, 10));
+            console.log('📝 Sample question IDs to match against:', Array.from(questionIds).slice(0, 10));
+            
+            mappedAnswers = {};
+            
+            // Create a map of question_order -> question ID and question_number -> question ID
+            const orderToId = new Map<number, string>();
+            const numberToId = new Map<number, string>();
+            const idToOrder = new Map<string, number>();
+            const idToNumber = new Map<string, number>();
+            
+            questions.forEach(q => {
+              if (q.question_order !== null && q.question_order !== undefined) {
+                orderToId.set(q.question_order, q.id);
+                idToOrder.set(q.id, q.question_order);
+              }
+              if (q.question_number !== null && q.question_number !== undefined) {
+                numberToId.set(q.question_number, q.id);
+                idToNumber.set(q.id, q.question_number);
+              }
+            });
+            
+            // Try to map answers using finalAnswerKeys
+            for (const [key, value] of Object.entries(normalizedAnswers)) {
+              // Skip if already mapped
+              if (finalMatchingKeys.includes(key)) {
+                mappedAnswers[key] = value;
+                continue;
+              }
+              // First, check if key is already a valid question ID
+              if (questionIds.has(key)) {
+                mappedAnswers[key] = value;
+                console.log(`✅ Direct match found for question ID: ${key}`);
+                continue;
+              }
+              
+              // Try as question_order (number)
+              const orderKey = parseInt(key, 10);
+              if (!isNaN(orderKey)) {
+                if (orderToId.has(orderKey)) {
+                  mappedAnswers[orderToId.get(orderKey)!] = value;
+                  console.log(`✅ Mapped answer by order: ${key} -> ${orderToId.get(orderKey)}`);
+                  continue;
+                }
+                if (numberToId.has(orderKey)) {
+                  mappedAnswers[numberToId.get(orderKey)!] = value;
+                  console.log(`✅ Mapped answer by number: ${key} -> ${numberToId.get(orderKey)}`);
+                  continue;
+                }
+              }
+              
+              // If key is a UUID (question ID from old test version), try to find by matching order/number
+              // This handles cases where questions were recreated with new IDs
+              if (key.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+                // This is a UUID - it's likely an old question ID
+                // We can't directly map it, but we'll log it for debugging
+                console.log(`⚠️ Answer key is a UUID (old question ID?): ${key}, value: ${value}`);
+                // Try to find a question with the same order/number by checking if we can match by position
+                // This is a fallback - we'll need to rely on test_states recovery for these cases
+              } else {
+                console.log(`⚠️ Could not map answer key: ${key} (type: ${typeof key})`);
+              }
+            }
+            
+            console.log('📝 Mapped answers:', mappedAnswers);
+            console.log('📝 Mapped answer keys:', Object.keys(mappedAnswers));
+            console.log('📝 Unmapped answer keys:', answerKeys.filter(k => !Object.keys(mappedAnswers).includes(k) && !questionIds.has(k)).slice(0, 10));
+          }
+        }
+        
         setHistoryQuestions(questions);
+        setHistoryAnswers(mappedAnswers);
         setHistoryReviewCache(prev => ({
           ...prev,
           [current.testResult.id]: {
             questions,
-            answers,
+            answers: mappedAnswers,
             testTitle: testRow.data.title || null,
             testCategory: testCategory,
           }
@@ -523,11 +819,19 @@ const Results = () => {
                       <p className="text-gray-500">Loading answer review...</p>
                     </div>
                   ) : historyQuestions ? (
-                    <QuestionReview 
-                      questions={historyQuestions} 
-                      userAnswers={(historyAnswers || {}) as Record<string, string>} 
-                      testCategory={historyTestCategory || 'SAT'}
-                    />
+                    <>
+                      {console.log('🔍 Passing to QuestionReview:', {
+                        questionsCount: historyQuestions.length,
+                        answersCount: historyAnswers ? Object.keys(historyAnswers).length : 0,
+                        answersKeys: historyAnswers ? Object.keys(historyAnswers).slice(0, 10) : [],
+                        questionIds: historyQuestions.slice(0, 10).map(q => q.id)
+                      })}
+                      <QuestionReview 
+                        questions={historyQuestions} 
+                        userAnswers={(historyAnswers || {}) as Record<string, string>} 
+                        testCategory={historyTestCategory || 'SAT'}
+                      />
+                    </>
                   ) : (
                     <div className="text-center py-6">
                       <p className="text-gray-500 mb-2">Answer details are not available for this attempt.</p>
