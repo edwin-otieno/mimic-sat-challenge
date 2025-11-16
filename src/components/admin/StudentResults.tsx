@@ -234,96 +234,8 @@ const StudentResults = () => {
       
       console.log('📋 Test result details:', testResultData);
       
-      if (testResultData) {
-        // Check for other test_results for the same user and test (in-progress ones)
-        const { data: relatedTestResults } = await supabase
-          .from('test_results')
-          .select('id, is_completed, created_at')
-          .eq('user_id', testResultData.user_id)
-          .eq('test_id', testResultData.test_id)
-          .order('created_at', { ascending: false });
-        
-        console.log('📋 Related test results (same user + test):', relatedTestResults);
-        
-        if (relatedTestResults && relatedTestResults.length > 0) {
-          // Check module results for all related test results
-          const relatedIds = relatedTestResults.map(tr => tr.id);
-          const { data: relatedModuleResults } = await supabase
-            .from('module_results')
-            .select('*')
-            .in('test_result_id', relatedIds);
-          
-          console.log('📊 Module results for all related test results:', relatedModuleResults);
-          
-          // If we found module results in related test results, use those instead
-          if (relatedModuleResults && relatedModuleResults.length > 0) {
-            console.log('✅ Found module results in related test results, using those');
-            
-            // Also fetch essay grade for the current test result and merge it
-            const essayGrade = await fetchEssayGrade(resultId);
-            let mergedResults = [...relatedModuleResults];
-            
-            if (essayGrade && essayGrade.score !== null) {
-              // Find or create writing module entry
-              const writingModule = mergedResults.find(m => 
-                m.module_id === 'writing' || m.module_id === 'essay' || 
-                m.module_name?.toLowerCase().includes('essay') || 
-                m.module_name?.toLowerCase().includes('writing')
-              );
-              
-              if (writingModule) {
-                // Update the scaled_score with essay grade
-                writingModule.scaled_score = essayGrade.score;
-              } else {
-                // Add writing module entry if it doesn't exist
-                mergedResults.push({
-                  id: `essay-${resultId}`,
-                  test_result_id: resultId,
-                  module_id: 'writing',
-                  module_name: 'Writing',
-                  score: 0,
-                  total: 0,
-                  scaled_score: essayGrade.score,
-                  created_at: essayGrade.created_at || new Date().toISOString()
-                });
-              }
-            }
-            
-            // Deduplicate module results by module_id, keeping the most recent entry
-            const deduplicatedResults = mergedResults.reduce((acc: any[], current: any) => {
-              const existingIndex = acc.findIndex(m => m.module_id === current.module_id);
-              if (existingIndex === -1) {
-                // No existing entry for this module_id, add it
-                acc.push(current);
-              } else {
-                // Entry exists, keep the one with the most recent created_at or from the current test_result_id
-                const existing = acc[existingIndex];
-                const currentIsFromCurrentResult = current.test_result_id === resultId;
-                const existingIsFromCurrentResult = existing.test_result_id === resultId;
-                
-                // Prefer entry from current test_result_id
-                if (currentIsFromCurrentResult && !existingIsFromCurrentResult) {
-                  acc[existingIndex] = current;
-                } else if (!currentIsFromCurrentResult && existingIsFromCurrentResult) {
-                  // Keep existing
-                } else {
-                  // Both from same result, keep the most recent
-                  const currentDate = new Date(current.created_at || 0);
-                  const existingDate = new Date(existing.created_at || 0);
-                  if (currentDate > existingDate) {
-                    acc[existingIndex] = current;
-                  }
-                }
-              }
-              return acc;
-            }, []);
-            
-            console.log('✅ Found module results in related test results (deduplicated):', deduplicatedResults);
-            setModuleResults(deduplicatedResults);
-            return; // Exit early since we found results
-          }
-        }
-      }
+      // Only fetch module results for the current test_result_id
+      // Don't merge from other test attempts - only show modules that were actually completed in this attempt
       
       const { data, error } = await supabase
         .from('module_results')
@@ -780,10 +692,15 @@ const StudentResults = () => {
                   </Card>
                 </div>
                 
-                {selectedResult.is_completed === true && moduleResults.length > 0 ? (
+                {moduleResults.length > 0 ? (
                   <Card>
                     <CardHeader>
                       <CardTitle>Module Scores</CardTitle>
+                      {selectedResult.is_completed === false && (
+                        <CardDescription className="text-yellow-600">
+                          Showing scores for completed modules. Test is still in progress.
+                        </CardDescription>
+                      )}
                     </CardHeader>
                     <CardContent>
                       <Tabs defaultValue={moduleResults[0].id}>
@@ -823,38 +740,36 @@ const StudentResults = () => {
                           </TabsContent>
                         ))}
                         
-                        <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-                          <h3 className="text-lg font-medium mb-2">
-                            {selectedTestCategory === 'ACT' ? 'Composite Score' : 'Total Scaled Score'}
-                          </h3>
-                          <div className="text-3xl font-bold">
-                            {selectedTestCategory === 'ACT' ? (() => {
-                              // For ACT: Calculate Composite Score (average of English, Math, Reading)
-                              const compositeModules = moduleResults.filter(module => 
-                                module.module_id && ['english', 'math', 'reading'].includes(module.module_id)
-                              );
-                              if (compositeModules.length > 0) {
-                                const sum = compositeModules.reduce((sum, module) => sum + (module.scaled_score || 0), 0);
-                                return Math.round(sum / compositeModules.length);
-                              }
-                              return 'N/A';
-                            })() : (
-                              moduleResults.reduce((sum, module) => 
-                                sum + (module.scaled_score || 0), 0
-                              )
-                            )}
+                        {selectedResult.is_completed === true && (
+                          <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+                            <h3 className="text-lg font-medium mb-2">
+                              {selectedTestCategory === 'ACT' ? 'Composite Score' : 'Total Scaled Score'}
+                            </h3>
+                            <div className="text-3xl font-bold">
+                              {selectedTestCategory === 'ACT' ? (() => {
+                                // For ACT: Calculate Composite Score (average of English, Math, Reading)
+                                const compositeModules = moduleResults.filter(module => 
+                                  module.module_id && ['english', 'math', 'reading'].includes(module.module_id)
+                                );
+                                if (compositeModules.length > 0) {
+                                  const sum = compositeModules.reduce((sum, module) => sum + (module.scaled_score || 0), 0);
+                                  return Math.round(sum / compositeModules.length);
+                                }
+                                return 'N/A';
+                              })() : (
+                                moduleResults.reduce((sum, module) => 
+                                  sum + (module.scaled_score || 0), 0
+                                )
+                              )}
+                            </div>
                           </div>
-                        </div>
+                        )}
                       </Tabs>
                     </CardContent>
                   </Card>
-                ) : selectedResult.is_completed === false ? (
-                  <div className="text-center py-4">
-                    <p className="text-gray-500">Module scores will be available once the test is completed</p>
-                  </div>
                 ) : (
                   <div className="text-center py-4">
-                    <p className="text-gray-500">No module scores available</p>
+                    <p className="text-gray-500">No module scores available yet. Module scores will appear as modules are completed.</p>
                   </div>
                 )}
 
