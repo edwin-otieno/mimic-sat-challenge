@@ -885,13 +885,21 @@ const TestInterface = () => {
               overallScaledScore = moduleResultsForScore?.reduce((sum, mr) => sum + (mr.scaled_score || 0), 0) || 0;
             }
             
+            // Get current answers to preserve them (including essay text)
+            const { data: currentTestResult } = await supabase
+              .from('test_results')
+              .select('answers')
+              .eq('id', testResultId)
+              .single();
+            
             const { error: updateError } = await supabase
               .from('test_results')
               .update({
                 is_completed: true,
                 total_score: totalScore,
                 total_questions: totalQuestions,
-                scaled_score: overallScaledScore || currentStatus.scaled_score
+                scaled_score: overallScaledScore || currentStatus.scaled_score,
+                answers: currentTestResult?.answers || userAnswers // Preserve existing answers or use current userAnswers
               })
               .eq('id', testResultId);
             

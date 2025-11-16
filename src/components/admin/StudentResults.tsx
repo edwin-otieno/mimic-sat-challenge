@@ -381,14 +381,22 @@ const StudentResults = () => {
               overallScaledScore = deduplicatedResults.reduce((sum: number, mr: any) => sum + (mr.scaled_score || 0), 0);
             }
             
-            // Update the test result
+            // Get current answers to preserve them
+            const { data: currentTestResult } = await supabase
+              .from('test_results')
+              .select('answers')
+              .eq('id', resultId)
+              .single();
+            
+            // Update the test result, preserving the answers field
             const { error: updateError } = await supabase
               .from('test_results')
               .update({
                 is_completed: true,
                 total_score: totalScore,
                 total_questions: totalQuestions,
-                scaled_score: overallScaledScore || testResultData.scaled_score
+                scaled_score: overallScaledScore || testResultData.scaled_score,
+                answers: currentTestResult?.answers // Preserve existing answers
               })
               .eq('id', resultId);
             
@@ -478,12 +486,37 @@ const StudentResults = () => {
         .eq('id', result.id)
         .single();
       if (!error && tr?.answers) {
-        // Heuristic: essay answer stored under a question id for module_type 'writing'; we can pick the longest text answer
+        console.log('📝 Loading essay data, answers field:', tr.answers);
+        // Heuristic: essay answer stored under a question id for module_type 'writing'; we pick the longest text answer
         const entries = Object.entries(tr.answers as Record<string, string>);
-        const longest = entries.sort((a: any, b: any) => (b[1]?.length || 0) - (a[1]?.length || 0))[0];
-        if (longest && typeof longest[1] === 'string') {
-          setEssayText(longest[1]);
+        console.log('📝 Answer entries:', entries);
+        
+        if (entries.length > 0) {
+          // Filter for entries that look like essays (long text, typically > 100 characters)
+          const essayEntries = entries.filter(([_, value]) => 
+            typeof value === 'string' && value.length > 100
+          );
+          
+          if (essayEntries.length > 0) {
+            // Use the longest essay-like entry
+            const longest = essayEntries.sort((a: any, b: any) => (b[1]?.length || 0) - (a[1]?.length || 0))[0];
+            console.log('📝 Found essay text (length:', longest[1]?.length, ')');
+            setEssayText(longest[1]);
+          } else {
+            // Fallback: use the longest entry if no essay-like entries found
+            const longest = entries.sort((a: any, b: any) => (b[1]?.length || 0) - (a[1]?.length || 0))[0];
+            if (longest && typeof longest[1] === 'string' && longest[1].length > 0) {
+              console.log('📝 Using longest entry as essay (length:', longest[1].length, ')');
+              setEssayText(longest[1]);
+            } else {
+              console.log('⚠️ No essay text found in answers');
+            }
+          }
+        } else {
+          console.log('⚠️ Answers field is empty');
         }
+      } else {
+        console.log('⚠️ No answers field found or error:', error);
       }
       const existing = await fetchEssayGrade(result.id);
       if (existing) {
