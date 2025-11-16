@@ -860,8 +860,28 @@ const TestInterface = () => {
       
       let testResultId = currentTestResultId;
       
+      // If we don't have a testResultId, try to find an existing in-progress test result
+      if (!testResultId) {
+        console.log('No currentTestResultId, searching for existing in-progress test result...');
+        const { data: existingResult } = await supabase
+          .from('test_results')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('test_id', currentTest?.id || permalink || '')
+          .eq('is_completed', false)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+        
+        if (existingResult) {
+          testResultId = existingResult.id;
+          console.log('Found existing in-progress test result:', testResultId);
+        }
+      }
+      
       // If we have an existing test result, update it; otherwise create new
       if (testResultId) {
+        console.log('Updating existing test result:', testResultId);
         const { error: updateError } = await supabase
           .from('test_results')
           .update({
@@ -875,7 +895,9 @@ const TestInterface = () => {
           .eq('id', testResultId);
         
         if (updateError) throw updateError;
+        console.log('Test result updated successfully');
       } else {
+        console.log('No existing test result found, creating new one...');
         // Save test results first
         const { data: testResult, error: testError } = await supabase
           .from('test_results')
@@ -895,6 +917,7 @@ const TestInterface = () => {
         
         if (testError) throw testError;
         testResultId = testResult.id;
+        console.log('New test result created:', testResultId);
       }
       
       // Save module results (upsert to handle incremental saves)

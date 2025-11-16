@@ -139,8 +139,41 @@ const StudentResults = () => {
         
         setTotalResults(count || 0);
         
+        // Deduplicate results: For each user/test combination, keep only the most recent completed one,
+        // or the in-progress one if no completed exists
+        const deduplicatedData = data.reduce((acc: any[], current: any) => {
+          const key = `${current.user_id}-${current.test_id}`;
+          const existing = acc.find(r => `${r.user_id}-${r.test_id}` === key);
+          
+          if (!existing) {
+            acc.push(current);
+          } else {
+            // Prefer completed over in-progress
+            const currentIsCompleted = current.is_completed === true;
+            const existingIsCompleted = existing.is_completed === true;
+            
+            if (currentIsCompleted && !existingIsCompleted) {
+              // Replace in-progress with completed
+              const index = acc.indexOf(existing);
+              acc[index] = current;
+            } else if (!currentIsCompleted && existingIsCompleted) {
+              // Keep existing completed, ignore in-progress
+              // Do nothing
+            } else {
+              // Both same status, keep the most recent
+              const currentDate = new Date(current.created_at);
+              const existingDate = new Date(existing.created_at);
+              if (currentDate > existingDate) {
+                const index = acc.indexOf(existing);
+                acc[index] = current;
+              }
+            }
+          }
+          return acc;
+        }, []);
+        
         // Get user profiles for each result
-        const formattedResults = await Promise.all(data.map(async result => {
+        const formattedResults = await Promise.all(deduplicatedData.map(async result => {
           // Fetch the user profile separately
           const { data: profileData, error: profileError } = await supabase
             .from('profiles')
