@@ -343,6 +343,80 @@ const StudentResults = () => {
       console.log('✅ Fetched module results (deduplicated):', deduplicatedResults);
       setModuleResults(deduplicatedResults);
       
+      // Auto-fix: Check if all modules are completed but test is still marked as incomplete
+      if (testResultData && !testResultData.is_completed && deduplicatedResults.length > 0) {
+        // Get the test to know how many modules it should have
+        const test = tests.find(t => t.id === testResultData.test_id);
+        if (test && test.modules) {
+          const expectedModules = test.modules.length;
+          const completedModules = deduplicatedResults.length;
+          
+          console.log('🔍 Auto-fix check:', {
+            expectedModules,
+            completedModules,
+            testResultId: resultId,
+            is_completed: testResultData.is_completed
+          });
+          
+          // If all expected modules are completed, mark the test as completed
+          if (completedModules >= expectedModules) {
+            console.log('✅ All modules completed, auto-marking test as completed...');
+            
+            // Calculate total score and scaled score
+            const totalScore = deduplicatedResults.reduce((sum, mr) => sum + (mr.score || 0), 0);
+            const totalQuestions = deduplicatedResults.reduce((sum, mr) => sum + (mr.total || 0), 0);
+            
+            // Calculate overall scaled score
+            const testCategory = test.test_category || 'SAT';
+            let overallScaledScore;
+            if (testCategory === 'ACT') {
+              const compositeModules = deduplicatedResults.filter((mr: any) => 
+                ['english', 'math', 'reading'].includes(mr.module_id || '')
+              );
+              if (compositeModules.length > 0) {
+                const sum = compositeModules.reduce((sum: number, mr: any) => sum + (mr.scaled_score || 0), 0);
+                overallScaledScore = Math.round(sum / compositeModules.length);
+              }
+            } else {
+              overallScaledScore = deduplicatedResults.reduce((sum: number, mr: any) => sum + (mr.scaled_score || 0), 0);
+            }
+            
+            // Update the test result
+            const { error: updateError } = await supabase
+              .from('test_results')
+              .update({
+                is_completed: true,
+                total_score: totalScore,
+                total_questions: totalQuestions,
+                scaled_score: overallScaledScore || testResultData.scaled_score
+              })
+              .eq('id', resultId);
+            
+            if (updateError) {
+              console.error('❌ Error auto-marking test as completed:', updateError);
+            } else {
+              console.log('✅ Test auto-marked as completed successfully');
+              // Update the selectedResult state to reflect the change
+              if (selectedResult && selectedResult.id === resultId) {
+                setSelectedResult({
+                  ...selectedResult,
+                  is_completed: true,
+                  total_score: totalScore,
+                  total_questions: totalQuestions,
+                  scaled_score: overallScaledScore
+                });
+              }
+              // Refresh the results list
+              toast({
+                title: "Test Updated",
+                description: "Test has been marked as completed.",
+                duration: 3000
+              });
+            }
+          }
+        }
+      }
+      
     } catch (error: any) {
       console.error('❌ Error in fetchModuleResults:', error);
       toast({ 
