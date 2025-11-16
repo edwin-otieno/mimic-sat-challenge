@@ -479,17 +479,24 @@ const StudentResults = () => {
       setEssayText(null);
       setEssayScore('');
       setEssayComments('');
+      
       // Load answers field for essay text if present
       const { data: tr, error } = await supabase
         .from('test_results')
-        .select('answers')
+        .select('answers, user_id, test_id')
         .eq('id', result.id)
         .single();
+      
+      console.log('📝 Loading essay data for test result:', result.id);
+      console.log('📝 Test result data:', tr);
+      
+      let essayTextFound = false;
+      
       if (!error && tr?.answers) {
-        console.log('📝 Loading essay data, answers field:', tr.answers);
+        console.log('📝 Answers field exists:', tr.answers);
         // Heuristic: essay answer stored under a question id for module_type 'writing'; we pick the longest text answer
         const entries = Object.entries(tr.answers as Record<string, string>);
-        console.log('📝 Answer entries:', entries);
+        console.log('📝 Answer entries count:', entries.length);
         
         if (entries.length > 0) {
           // Filter for entries that look like essays (long text, typically > 100 characters)
@@ -497,34 +504,90 @@ const StudentResults = () => {
             typeof value === 'string' && value.length > 100
           );
           
+          console.log('📝 Essay-like entries (length > 100):', essayEntries.length);
+          
           if (essayEntries.length > 0) {
             // Use the longest essay-like entry
             const longest = essayEntries.sort((a: any, b: any) => (b[1]?.length || 0) - (a[1]?.length || 0))[0];
             console.log('📝 Found essay text (length:', longest[1]?.length, ')');
             setEssayText(longest[1]);
+            essayTextFound = true;
           } else {
             // Fallback: use the longest entry if no essay-like entries found
             const longest = entries.sort((a: any, b: any) => (b[1]?.length || 0) - (a[1]?.length || 0))[0];
             if (longest && typeof longest[1] === 'string' && longest[1].length > 0) {
               console.log('📝 Using longest entry as essay (length:', longest[1].length, ')');
               setEssayText(longest[1]);
+              essayTextFound = true;
             } else {
-              console.log('⚠️ No essay text found in answers');
+              console.log('⚠️ No essay text found in answers field');
             }
           }
         } else {
-          console.log('⚠️ Answers field is empty');
+          console.log('⚠️ Answers field is empty or has no entries');
         }
       } else {
         console.log('⚠️ No answers field found or error:', error);
       }
+      
+      // Fallback: Try to recover from test_states if answers field is empty
+      if (!essayTextFound && tr?.user_id && tr?.test_id) {
+        console.log('📝 Attempting to recover essay from test_states...');
+        try {
+          // Get the test permalink from test_id
+          const { data: testData } = await supabase
+            .from('tests')
+            .select('permalink')
+            .eq('id', tr.test_id)
+            .single();
+          
+          if (testData?.permalink) {
+            const { data: stateData } = await supabase
+              .from('test_states')
+              .select('state')
+              .eq('user_id', tr.user_id)
+              .eq('test_permalink', testData.permalink)
+              .order('updated_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            
+            if (stateData?.state?.userAnswers) {
+              console.log('📝 Found userAnswers in test_states');
+              const stateEntries = Object.entries(stateData.state.userAnswers as Record<string, string>);
+              const essayEntries = stateEntries.filter(([_, value]) => 
+                typeof value === 'string' && value.length > 100
+              );
+              
+              if (essayEntries.length > 0) {
+                const longest = essayEntries.sort((a: any, b: any) => (b[1]?.length || 0) - (a[1]?.length || 0))[0];
+                console.log('📝 Recovered essay text from test_states (length:', longest[1]?.length, ')');
+                setEssayText(longest[1]);
+                essayTextFound = true;
+                
+                // Also try to restore it to the test_results answers field
+                const { error: restoreError } = await supabase
+                  .from('test_results')
+                  .update({ answers: stateData.state.userAnswers })
+                  .eq('id', result.id);
+                
+                if (!restoreError) {
+                  console.log('✅ Restored answers field from test_states');
+                }
+              }
+            }
+          }
+        } catch (recoveryError) {
+          console.error('⚠️ Error recovering from test_states:', recoveryError);
+        }
+      }
+      
       const existing = await fetchEssayGrade(result.id);
       if (existing) {
         setEssayScore(existing.score ?? '');
         setEssayComments(existing.comments || '');
       }
     } catch (e) {
-      // ignore
+      console.error('Error loading essay data:', e);
     } finally {
       setEssayLoading(false);
     }
