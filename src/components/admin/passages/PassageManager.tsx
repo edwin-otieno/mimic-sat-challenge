@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Edit, Trash2, Eye, EyeOff, Image } from 'lucide-react';
+import { Plus, Edit, Trash2, Eye, EyeOff, Image, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Passage, PassageFormValues, PassageQuestionFormValues } from './types';
 import { getTestPassages, savePassage, deletePassage } from '@/services/testService';
@@ -70,6 +70,7 @@ const PassageManager: React.FC<PassageManagerProps> = ({ testId, testTitle }) =>
   const [passageImageFile, setPassageImageFile] = useState<File | null>(null);
   const [questionImageFiles, setQuestionImageFiles] = useState<Record<number, File>>({});
   const [questionPreviewImages, setQuestionPreviewImages] = useState<Record<number, string>>({});
+  const [uploadingQuestionImages, setUploadingQuestionImages] = useState<Record<number, boolean>>({});
   const { toast } = useToast();
 
   const form = useForm<PassageFormValues>({
@@ -225,25 +226,13 @@ const PassageManager: React.FC<PassageManagerProps> = ({ testId, testTitle }) =>
         }
       }
       
-      // Handle question image uploads
-      const questionsWithImages = await Promise.all(
-        data.questions.map(async (q, index) => {
-          let imageUrl = q.imageUrl;
-          
-          // Upload new image if there's one
-          if (questionImageFiles[index]) {
-            const uploadedUrl = await uploadImage(questionImageFiles[index], 'question-images');
-            if (uploadedUrl) {
-              imageUrl = uploadedUrl;
-            }
-          }
-          
-          return {
-            ...q,
-            image_url: imageUrl || undefined
-          };
-        })
-      );
+      // Images are now uploaded immediately when selected, so use the form values directly
+      const questionsWithImages = data.questions.map((q) => {
+        return {
+          ...q,
+          image_url: q.imageUrl || undefined
+        };
+      });
 
       const passagePayload = {
         id: data.id,
@@ -546,7 +535,7 @@ const PassageManager: React.FC<PassageManagerProps> = ({ testId, testTitle }) =>
                           className="hidden" 
                           accept="image/*"
                           id={`question-image-${questionIndex}`}
-                          onChange={(e) => {
+                          onChange={async (e) => {
                             const file = e.target.files?.[0];
                             if (!file) return;
                             
@@ -568,13 +557,40 @@ const PassageManager: React.FC<PassageManagerProps> = ({ testId, testTitle }) =>
                               return;
                             }
                             
-                            setQuestionImageFiles(prev => ({ ...prev, [questionIndex]: file }));
-                            
-                            const reader = new FileReader();
-                            reader.onloadend = () => {
-                              setQuestionPreviewImages(prev => ({ ...prev, [questionIndex]: reader.result as string }));
-                            };
-                            reader.readAsDataURL(file);
+                            // Upload immediately (like option images)
+                            setUploadingQuestionImages(prev => ({ ...prev, [questionIndex]: true }));
+                            try {
+                              const uploadedUrl = await uploadImage(file, 'question-images');
+                              if (uploadedUrl) {
+                                // Update form field with the URL immediately
+                                form.setValue(`questions.${questionIndex}.imageUrl`, uploadedUrl);
+                                // Update preview with the uploaded URL
+                                setQuestionPreviewImages(prev => ({ ...prev, [questionIndex]: uploadedUrl }));
+                                // Clear the file reference since we've uploaded it
+                                setQuestionImageFiles(prev => {
+                                  const newObj = { ...prev };
+                                  delete newObj[questionIndex];
+                                  return newObj;
+                                });
+                                toast({
+                                  title: "Success",
+                                  description: "Image uploaded successfully",
+                                });
+                              }
+                            } catch (error) {
+                              console.error('Error uploading question image:', error);
+                              toast({
+                                title: "Error",
+                                description: "Failed to upload image. Please try again.",
+                                variant: "destructive"
+                              });
+                            } finally {
+                              setUploadingQuestionImages(prev => {
+                                const newObj = { ...prev };
+                                delete newObj[questionIndex];
+                                return newObj;
+                              });
+                            }
                           }}
                         />
                         {questionPreviewImages[questionIndex] || question.imageUrl ? (
@@ -610,17 +626,27 @@ const PassageManager: React.FC<PassageManagerProps> = ({ testId, testTitle }) =>
                           </div>
                         ) : (
                           <div className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-gray-300 rounded-md">
-                            <Image className="h-8 w-8 text-gray-400" />
-                            <p className="mt-2 text-xs text-gray-500">Upload an image for this question</p>
-                            <Button 
-                              type="button" 
-                              variant="outline" 
-                              size="sm" 
-                              onClick={() => document.getElementById(`question-image-${questionIndex}`)?.click()}
-                              className="mt-2"
-                            >
-                              Select Image
-                            </Button>
+                            {uploadingQuestionImages[questionIndex] ? (
+                              <>
+                                <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
+                                <p className="mt-2 text-xs text-gray-500">Uploading image...</p>
+                              </>
+                            ) : (
+                              <>
+                                <Image className="h-8 w-8 text-gray-400" />
+                                <p className="mt-2 text-xs text-gray-500">Upload an image for this question</p>
+                                <Button 
+                                  type="button" 
+                                  variant="outline" 
+                                  size="sm" 
+                                  onClick={() => document.getElementById(`question-image-${questionIndex}`)?.click()}
+                                  disabled={uploadingQuestionImages[questionIndex]}
+                                  className="mt-2"
+                                >
+                                  Select Image
+                                </Button>
+                              </>
+                            )}
                           </div>
                         )}
                       </div>

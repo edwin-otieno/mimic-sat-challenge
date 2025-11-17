@@ -163,34 +163,9 @@ const QuestionDialog = ({
 
   const handleSubmit = async (values: QuestionFormValues) => {
     try {
-      // If no previewImage and no imageFile, set image_url to null
-      let imageUrl = values.image_url;
-      if (!previewImage && !imageFile) {
-        imageUrl = null;
-      }
-      // Handle image upload if there's a new image
-      if (imageFile) {
-        console.log('Uploading image file:', imageFile.name);
-        const fileExt = imageFile.name.split('.').pop();
-        const fileName = `${Math.random()}.${fileExt}`;
-        const filePath = `question-images/${fileName}`;
-
-        const { error: uploadError, data } = await supabase.storage
-          .from('questions')
-          .upload(filePath, imageFile);
-
-        if (uploadError) {
-          console.error('Image upload error:', uploadError);
-          throw uploadError;
-        }
-
-        const { data: { publicUrl } } = supabase.storage
-          .from('questions')
-          .getPublicUrl(filePath);
-
-        imageUrl = publicUrl;
-        console.log('Image uploaded successfully:', imageUrl);
-      }
+      // Image is now uploaded immediately when selected, so image_url should already be set
+      // Use the form value directly (it should contain the URL if an image was uploaded)
+      const imageUrl = values.image_url || null;
 
       // Prepare the question data
       const questionData = {
@@ -255,6 +230,10 @@ const QuestionDialog = ({
               previewImage={previewImage}
               setPreviewImage={setPreviewImage}
               setImageFile={setImageFile}
+              onImageUrlChange={(url) => {
+                // Update form field with the uploaded URL immediately
+                form.setValue('image_url', url || '');
+              }}
             />
             
             {questionType === QuestionType.MultipleChoice && <MultipleChoiceOptions />}

@@ -225,10 +225,70 @@ const TestInterface = () => {
   };
 
   // Load timer and test state on component mount
+  // Wait for testData to be available so we can properly check for completed tests
   useEffect(() => {
-    if (!permalink || stateLoaded) return; // Prevent multiple loads
+    if (!permalink || stateLoaded || !user || testDataLoading) return; // Wait for test to load
     (async () => {
       try {
+        // First, get the test UUID from permalink to check test_results properly
+        // Use testData if available, otherwise look it up
+        let testUuid = testData?.test?.id || currentTest?.id;
+        if (!testUuid && permalink) {
+          const { data: testDataFromDb } = await supabase
+            .from('tests')
+            .select('id')
+            .eq('permalink', permalink)
+            .maybeSingle();
+          testUuid = testDataFromDb?.id;
+        }
+        
+        // Check for completed test_result - test_id could be UUID or permalink
+        let completedResult = null;
+        
+        // Check by UUID if we have it
+        if (testUuid) {
+          const { data } = await supabase
+            .from('test_results')
+            .select('id, is_completed')
+            .eq('user_id', user.id)
+            .eq('test_id', testUuid)
+            .eq('is_completed', true)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          completedResult = data;
+          console.log('🔍 Checked for completed test by UUID:', testUuid, 'Found:', !!completedResult);
+        }
+        
+        // Also check by permalink (in case test_id was stored as permalink)
+        if (!completedResult && permalink) {
+          const { data } = await supabase
+            .from('test_results')
+            .select('id, is_completed')
+            .eq('user_id', user.id)
+            .eq('test_id', permalink)
+            .eq('is_completed', true)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (data) completedResult = data;
+          console.log('🔍 Checked for completed test by permalink:', permalink, 'Found:', !!data);
+        }
+
+        // If test is completed, clear any stale test_states to allow fresh start
+        if (completedResult) {
+          console.log('✅ Found completed test result, clearing stale test_states and sessionStorage...');
+          await clearTestState();
+          // Also clear sessionStorage to prevent loading old state
+          sessionStorage.removeItem(`test_state_${permalink}`);
+          sessionStorage.removeItem(`completeTestState_${permalink}`);
+          sessionStorage.removeItem(`timerState_${permalink}`);
+          console.log('✅ Cleared all stale test states for completed test');
+          // Don't load state if test is completed - start fresh
+          setStateLoaded(true);
+          return;
+        }
+
         // Try to load from DB first with timeout
         const loadPromise = loadTestState();
         const timeoutPromise = new Promise((_, reject) => 
@@ -242,7 +302,9 @@ const TestInterface = () => {
           saved = null;
         }
         
-        if (saved && typeof saved === 'object') {
+        // Only load saved state if test is not completed
+        // If test was completed, we cleared test_states above, so saved will be null
+        if (saved && typeof saved === 'object' && !completedResult) {
           console.log('🔍 Loading saved state from database, setting currentQuestionIndex to:', saved.currentQuestionIndex);
           setCurrentQuestionIndex(saved.currentQuestionIndex);
           setUserAnswers(saved.userAnswers);
@@ -269,8 +331,9 @@ const TestInterface = () => {
         }
         
         // Check for sessionStorage backup (created during beforeunload)
+        // Only load if test is not completed (we already checked above)
         const sessionBackup = sessionStorage.getItem(`test_state_${permalink}`);
-        if (sessionBackup) {
+        if (sessionBackup && !completedResult) {
           try {
             const saved = JSON.parse(sessionBackup);
             console.log('🔍 Loading saved state from sessionStorage backup, setting currentQuestionIndex to:', saved.currentQuestionIndex);
@@ -324,7 +387,7 @@ const TestInterface = () => {
         }
       }
     })();
-  }, [permalink, stateLoaded, loadTestState]);
+  }, [permalink, stateLoaded, loadTestState, clearTestState, user, currentTest, testDataLoading, testData]);
 
   useEffect(() => {
     sessionStorage.setItem('crossOutMode', crossOutMode ? 'true' : 'false');
@@ -1826,6 +1889,7 @@ const TestInterface = () => {
           crossedOutOptions,
           testStartTime,
           currentModuleStartTime,
+          currentModuleTimeLeft,
           currentPartTimeLeft,
           timerRunning,
           timerVisible,

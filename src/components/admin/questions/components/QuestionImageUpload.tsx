@@ -1,20 +1,23 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { FormLabel } from '@/components/ui/form';
 import { Button } from '@/components/ui/button';
-import { Trash, Image } from 'lucide-react';
+import { Trash, Image, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 interface QuestionImageUploadProps {
   previewImage: string | null;
   setPreviewImage: (url: string | null) => void;
   setImageFile: (file: File | null) => void;
+  onImageUrlChange?: (url: string | null) => void; // Callback to update form field with URL
 }
 
-const QuestionImageUpload = ({ previewImage, setPreviewImage, setImageFile }: QuestionImageUploadProps) => {
+const QuestionImageUpload = ({ previewImage, setPreviewImage, setImageFile, onImageUrlChange }: QuestionImageUploadProps) => {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     
@@ -38,19 +41,66 @@ const QuestionImageUpload = ({ previewImage, setPreviewImage, setImageFile }: Qu
       return;
     }
     
-    setImageFile(file);
+    setIsUploading(true);
     
-    // Create a preview URL
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setPreviewImage(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+    try {
+      // Upload to Supabase storage immediately (like option images)
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Math.random()}.${fileExt}`;
+      const filePath = `question-images/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('questions')
+        .upload(filePath, file);
+
+      if (uploadError) {
+        console.error('Image upload error:', uploadError);
+        throw uploadError;
+      }
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('questions')
+        .getPublicUrl(filePath);
+
+      // Update preview with the uploaded URL
+      setPreviewImage(publicUrl);
+      
+      // Update form field with the URL (so it persists in the database)
+      if (onImageUrlChange) {
+        onImageUrlChange(publicUrl);
+      }
+      
+      // Clear the file reference since we've uploaded it
+      setImageFile(null);
+      
+      toast({
+        title: "Success",
+        description: "Image uploaded successfully",
+      });
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      toast({
+        title: "Error",
+        description: "Failed to upload image. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsUploading(false);
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
   };
 
   const removeImage = () => {
     setPreviewImage(null);
     setImageFile(null);
+    // Clear the URL in the form field
+    if (onImageUrlChange) {
+      onImageUrlChange(null);
+    }
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -90,17 +140,27 @@ const QuestionImageUpload = ({ previewImage, setPreviewImage, setImageFile }: Qu
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-gray-300 rounded-md">
-            <Image className="h-10 w-10 text-gray-400" />
-            <p className="mt-2 text-sm text-gray-500">Upload an image for this question</p>
-            <Button 
-              type="button" 
-              variant="outline" 
-              size="sm" 
-              onClick={handleButtonClick}
-              className="mt-2"
-            >
-              Select Image
-            </Button>
+            {isUploading ? (
+              <>
+                <Loader2 className="h-10 w-10 text-gray-400 animate-spin" />
+                <p className="mt-2 text-sm text-gray-500">Uploading image...</p>
+              </>
+            ) : (
+              <>
+                <Image className="h-10 w-10 text-gray-400" />
+                <p className="mt-2 text-sm text-gray-500">Upload an image for this question</p>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleButtonClick}
+                  className="mt-2"
+                  disabled={isUploading}
+                >
+                  Select Image
+                </Button>
+              </>
+            )}
           </div>
         )}
       </div>
