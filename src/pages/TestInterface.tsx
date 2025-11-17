@@ -302,29 +302,104 @@ const TestInterface = () => {
             sessionStorage.removeItem(`test_state_${permalink}`);
           }
         }
-        // Fallback to complete sessionStorage state
-        const completeStateLoaded = loadCompleteTestState();
-        if (!completeStateLoaded) {
-          // Fallback to timer-only state if complete state not available
-          const timerStateLoaded = loadTimerState();
-          setStateLoaded(timerStateLoaded);
+        // No test_states found - check if we should start fresh or resume an in-progress test
+        // First, check if there's an existing in-progress test_result
+        let shouldStartFresh = true;
+        if (user) {
+          try {
+            // Get the test_id first
+            let testId: string | null = null;
+            if (testData?.test?.id) {
+              testId = testData.test.id;
+            } else if (permalink) {
+              const { data: testLookup } = await supabase
+                .from('tests')
+                .select('id')
+                .eq('permalink', permalink)
+                .single();
+              testId = testLookup?.id || null;
+            }
+            
+            if (testId) {
+              const { data: existingResult } = await supabase
+                .from('test_results')
+                .select('id, is_completed')
+                .eq('user_id', user.id)
+                .eq('test_id', testId)
+                .eq('is_completed', false)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              
+              if (existingResult) {
+                // There's an in-progress test_result - check its module_results to see which modules are completed
+                const { data: moduleResults } = await supabase
+                  .from('module_results')
+                  .select('module_id')
+                  .eq('test_result_id', existingResult.id);
+                
+                if (moduleResults && moduleResults.length > 0) {
+                  const completedModuleIds = new Set(moduleResults.map(mr => mr.module_id));
+                  console.log('🔄 Found in-progress test with completed modules:', Array.from(completedModuleIds));
+                  setCompletedModules(completedModuleIds);
+                  setCurrentTestResultId(existingResult.id);
+                  shouldStartFresh = false; // Don't clear sessionStorage - we're resuming
+                } else {
+                  // In-progress but no modules completed yet - start fresh
+                  console.log('🔄 Found in-progress test but no modules completed - starting fresh');
+                  setCompletedModules(new Set());
+                  shouldStartFresh = true;
+                }
+              } else {
+                // No in-progress test - start completely fresh
+                console.log('🔄 No in-progress test found - starting fresh');
+                setCompletedModules(new Set());
+                shouldStartFresh = true;
+              }
+            } else {
+              // Can't determine test_id - start fresh
+              setCompletedModules(new Set());
+              shouldStartFresh = true;
+            }
+          } catch (checkError) {
+            console.error('Error checking for existing test result:', checkError);
+            // On error, start fresh
+            setCompletedModules(new Set());
+            shouldStartFresh = true;
+          }
         } else {
+          // No user - start fresh
+          setCompletedModules(new Set());
+          shouldStartFresh = true;
+        }
+        
+        // If starting fresh, clear sessionStorage to prevent restoring old completedModules
+        if (shouldStartFresh) {
+          console.log('🔄 Starting fresh - clearing sessionStorage');
+          sessionStorage.removeItem(`completeTestState_${permalink}`);
+          sessionStorage.removeItem(`timerState_${permalink}`);
           setStateLoaded(true);
+        } else {
+          // Resume in-progress test - can load from sessionStorage as fallback
+          const completeStateLoaded = loadCompleteTestState();
+          if (!completeStateLoaded) {
+            // Fallback to timer-only state if complete state not available
+            const timerStateLoaded = loadTimerState();
+            setStateLoaded(timerStateLoaded);
+          } else {
+            setStateLoaded(true);
+          }
         }
       } catch (error) {
-        console.error('Error loading test state (falling back to sessionStorage):', error);
-        // Fallback to complete sessionStorage state on error
-        const completeStateLoaded = loadCompleteTestState();
-        if (!completeStateLoaded) {
-          // Fallback to timer-only state if complete state not available
-          const timerStateLoaded = loadTimerState();
-          setStateLoaded(timerStateLoaded);
-        } else {
-          setStateLoaded(true);
-        }
+        console.error('Error loading test state:', error);
+        // On error, start fresh - clear sessionStorage
+        setCompletedModules(new Set());
+        sessionStorage.removeItem(`completeTestState_${permalink}`);
+        sessionStorage.removeItem(`timerState_${permalink}`);
+        setStateLoaded(true);
       }
     })();
-  }, [permalink, stateLoaded, loadTestState]);
+  }, [permalink, stateLoaded, loadTestState, user, testData]);
 
   useEffect(() => {
     sessionStorage.setItem('crossOutMode', crossOutMode ? 'true' : 'false');
