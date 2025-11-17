@@ -1086,11 +1086,28 @@ const TestInterface = () => {
             }))
           });
           
+          // Log exactly what we're sending
+          console.log('📤 Sending update with mergedAnswers:', {
+            testResultId,
+            mergedAnswersType: typeof mergedAnswers,
+            mergedAnswersKeys: Object.keys(mergedAnswers),
+            mergedAnswersStringified: JSON.stringify(mergedAnswers).substring(0, 200) + '...',
+            essayQuestionId: Object.keys(mergedAnswers).find(key => {
+              const val = mergedAnswers[key];
+              return typeof val === 'string' && val.length > 100;
+            }),
+            essayLength: Object.values(mergedAnswers).find(val => typeof val === 'string' && val.length > 100)?.length
+          });
+          
           const { error: answersUpdateError, data: updateData } = await supabase
             .from('test_results')
             .update({ answers: mergedAnswers })
             .eq('id', testResultId)
             .select('answers');
+          
+          console.log('📥 Update response error:', answersUpdateError);
+          console.log('📥 Update response error code:', answersUpdateError?.code);
+          console.log('📥 Update response error message:', answersUpdateError?.message);
           
           if (answersUpdateError) {
             console.error('⚠️ Error updating answers field:', answersUpdateError);
