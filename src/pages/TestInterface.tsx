@@ -1235,17 +1235,6 @@ const TestInterface = () => {
 
   // Add new function to handle module selection
   const handleModuleSelection = (moduleType: string, partNumber: number = 1) => {
-    // Prevent selecting a module that's already completed
-    if (completedModules.has(moduleType)) {
-      console.log(`⚠️ Module ${moduleType} is already completed, cannot restart`);
-      toast({
-        title: "Module Already Completed",
-        description: `You have already completed the ${moduleType} module. Please proceed to the next module.`,
-        variant: "default"
-      });
-      return;
-    }
-    
     setSelectedModule(moduleType);
     setShowModuleSelection(false);
     setShowModuleScores(false); // Ensure we go to test questions, not module results
@@ -1837,7 +1826,6 @@ const TestInterface = () => {
           crossedOutOptions,
           testStartTime,
           currentModuleStartTime,
-          currentModuleTimeLeft,
           currentPartTimeLeft,
           timerRunning,
           timerVisible,
@@ -2133,11 +2121,9 @@ const TestInterface = () => {
                               key={`${module.type}-part-${part.partNumber}`}
                               onClick={() => handleModuleSelection(module.type, part.partNumber)}
                               className={`w-full py-4 text-left justify-start whitespace-normal break-words ${
-                                isModuleCompleted
-                                  ? 'bg-gray-400 hover:bg-gray-400 cursor-not-allowed opacity-60'
-                                  : isSavedPart 
-                                    ? 'bg-green-600 hover:bg-green-700 focus:bg-green-800' 
-                                    : 'bg-blue-600 hover:bg-blue-700 focus:bg-blue-800'
+                                isSavedPart 
+                                  ? 'bg-green-600 hover:bg-green-700 focus:bg-green-800' 
+                                  : 'bg-blue-600 hover:bg-blue-700 focus:bg-blue-800'
                               }`}
                               disabled={isModuleCompleted}
                               variant={isModuleCompleted ? "outline" : "default"}
