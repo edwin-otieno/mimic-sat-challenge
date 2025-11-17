@@ -1071,7 +1071,12 @@ const TestInterface = () => {
           console.log('💾 Essay entry found, question ID:', essayEntries[0][0], 'length:', essayEntries[0][1]?.length);
         }
         
+        console.log('🔍 Checking if mergedAnswers has keys before update...');
+        console.log('🔍 mergedAnswers keys count:', Object.keys(mergedAnswers).length);
+        console.log('🔍 mergedAnswers keys:', Object.keys(mergedAnswers));
+        
         if (Object.keys(mergedAnswers).length > 0) {
+          console.log('✅ mergedAnswers has keys, proceeding with update...');
           console.log('💾 About to update answers field with:', {
             testResultId,
             mergedAnswersKeys: Object.keys(mergedAnswers),
