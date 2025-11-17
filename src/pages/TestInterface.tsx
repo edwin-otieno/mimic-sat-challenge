@@ -937,9 +937,16 @@ const TestInterface = () => {
         console.log('✅ Module results saved successfully:', insertedData);
       }
       
+      console.log('🔄 Proceeding to update answers field...');
+      console.log('🔄 testResultId exists?', !!testResultId);
+      console.log('🔄 userAnswers exists?', !!userAnswers);
+      console.log('🔄 userAnswers keys count:', userAnswers ? Object.keys(userAnswers).length : 0);
+      
       // Update the answers field in test_results to preserve essay and other answers
       // This is especially important for essay/writing modules
       if (testResultId) {
+        console.log('✅ Entering answers update block, testResultId:', testResultId);
+        try {
         // First, get current answers from database to merge with new answers
         const { data: currentAnswersData } = await supabase
           .from('test_results')
@@ -1118,6 +1125,11 @@ const TestInterface = () => {
           }
         } else {
           console.log('⚠️ No answers to save (merged answers is empty)');
+        }
+        } catch (answersError) {
+          console.error('❌ Error updating answers field:', answersError);
+          console.error('❌ Answers error details:', JSON.stringify(answersError, null, 2));
+          // Don't throw - we don't want to fail the entire save if answers update fails
         }
       } else {
         console.log('⚠️ Not updating answers field: no testResultId');
