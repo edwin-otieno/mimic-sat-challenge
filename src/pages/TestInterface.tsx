@@ -1099,11 +1099,36 @@ const TestInterface = () => {
             essayLength: Object.values(mergedAnswers).find(val => typeof val === 'string' && val.length > 100)?.length
           });
           
-          const { error: answersUpdateError, data: updateData } = await supabase
+          // Try update without SELECT first to avoid RLS blocking the response
+          let answersUpdateError: any = null;
+          let updateData: any = null;
+          
+          // First attempt: update without SELECT (to avoid RLS blocking response)
+          const { error: updateError1 } = await supabase
             .from('test_results')
             .update({ answers: mergedAnswers })
-            .eq('id', testResultId)
-            .select('answers');
+            .eq('id', testResultId);
+          
+          if (updateError1) {
+            console.error('❌ Update failed (without SELECT):', updateError1);
+            answersUpdateError = updateError1;
+          } else {
+            console.log('✅ Update succeeded (without SELECT)');
+            // Now try to get the updated data with a separate SELECT
+            const { data: selectData, error: selectError } = await supabase
+              .from('test_results')
+              .select('answers')
+              .eq('id', testResultId)
+              .single();
+            
+            if (selectError) {
+              console.error('⚠️ Could not SELECT updated data (RLS might be blocking):', selectError);
+              updateData = []; // Empty array to indicate we can't verify
+            } else {
+              updateData = [selectData]; // Wrap in array to match expected format
+              console.log('✅ Successfully retrieved updated data via separate SELECT');
+            }
+          }
           
           console.log('📥 Update response error:', answersUpdateError);
           console.log('📥 Update response error code:', answersUpdateError?.code);
