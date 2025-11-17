@@ -947,15 +947,25 @@ const TestInterface = () => {
       if (testResultId) {
         console.log('✅ Entering answers update block, testResultId:', testResultId);
         try {
+        console.log('📥 Fetching current answers from database...');
         // First, get current answers from database to merge with new answers
-        const { data: currentAnswersData } = await supabase
+        const { data: currentAnswersData, error: fetchError } = await supabase
           .from('test_results')
           .select('answers')
           .eq('id', testResultId)
           .single();
         
+        if (fetchError) {
+          console.error('❌ Error fetching current answers:', fetchError);
+        } else {
+          console.log('✅ Fetched current answers, data:', currentAnswersData);
+        }
+        
         const existingAnswers = (currentAnswersData?.answers as Record<string, string>) || {};
+        console.log('📊 Existing answers keys:', Object.keys(existingAnswers).length);
         let answersToSave = { ...existingAnswers, ...userAnswers };
+        console.log('📊 Merged answersToSave keys:', Object.keys(answersToSave).length);
+        console.log('📊 moduleType:', moduleType);
         
         // Special handling for essay/writing module: ensure essay answer is included
         if (moduleType === 'writing' || moduleType === 'essay') {
