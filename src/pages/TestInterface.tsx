@@ -862,6 +862,22 @@ const TestInterface = () => {
         console.log('✅ Module results saved successfully:', insertedData);
       }
       
+      // Update the answers field in test_results to preserve essay and other answers
+      // This is especially important for essay/writing modules
+      if (testResultId && userAnswers && Object.keys(userAnswers).length > 0) {
+        console.log('💾 Updating answers field in test_results with current userAnswers');
+        const { error: answersUpdateError } = await supabase
+          .from('test_results')
+          .update({ answers: userAnswers })
+          .eq('id', testResultId);
+        
+        if (answersUpdateError) {
+          console.error('⚠️ Error updating answers field:', answersUpdateError);
+        } else {
+          console.log('✅ Answers field updated successfully');
+        }
+      }
+      
       // Check if all modules are completed and mark test as completed if so
       if (testResultId && currentTest?.modules) {
         const { data: allModuleResults } = await supabase

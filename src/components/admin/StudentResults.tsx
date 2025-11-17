@@ -592,48 +592,73 @@ const StudentResults = () => {
       // Fallback: Try to recover from test_states if answers field is empty
       if (!essayTextFound && tr?.user_id && tr?.test_id) {
         console.log('📝 Attempting to recover essay from test_states...');
+        console.log('📝 Recovery params:', { user_id: tr.user_id, test_id: tr.test_id });
         try {
           // Get the test permalink from test_id
-          const { data: testData } = await supabase
+          const { data: testData, error: testError } = await supabase
             .from('tests')
             .select('permalink')
             .eq('id', tr.test_id)
             .single();
           
+          if (testError) {
+            console.error('⚠️ Error fetching test permalink:', testError);
+          }
+          
+          console.log('📝 Test data:', testData);
+          
           if (testData?.permalink) {
+            console.log('📝 Test permalink found:', testData.permalink);
+            
             // Also get the essay question ID for this test
             let essayQuestionId: string | null = null;
             try {
-              const { data: essayQuestions } = await supabase
+              const { data: essayQuestions, error: questionError } = await supabase
                 .from('test_questions')
                 .select('id')
                 .eq('test_id', tr.test_id)
                 .in('module_type', ['writing', 'essay'])
                 .limit(1);
               
-              if (essayQuestions && essayQuestions.length > 0) {
-                essayQuestionId = essayQuestions[0].id;
+              if (questionError) {
+                console.error('⚠️ Error finding essay question for recovery:', questionError);
+              } else {
+                console.log('📝 Essay questions found:', essayQuestions);
+                if (essayQuestions && essayQuestions.length > 0) {
+                  essayQuestionId = essayQuestions[0].id;
+                  console.log('📝 Essay question ID:', essayQuestionId);
+                }
               }
             } catch (questionError) {
               console.error('⚠️ Error finding essay question for recovery:', questionError);
             }
             
-            const { data: stateData } = await supabase
+            const { data: stateData, error: stateError } = await supabase
               .from('test_states')
-              .select('state')
+              .select('state, updated_at')
               .eq('user_id', tr.user_id)
               .eq('test_permalink', testData.permalink)
               .order('updated_at', { ascending: false })
               .limit(1)
               .maybeSingle();
             
+            if (stateError) {
+              console.error('⚠️ Error fetching test_states:', stateError);
+            }
+            
+            console.log('📝 Test state data:', stateData ? 'Found' : 'Not found');
+            
             if (stateData?.state?.userAnswers) {
               console.log('📝 Found userAnswers in test_states');
+              console.log('📝 userAnswers keys:', Object.keys(stateData.state.userAnswers).length);
               const stateEntries = Object.entries(stateData.state.userAnswers as Record<string, string>);
+              console.log('📝 State entries count:', stateEntries.length);
               
               // First, try to find answer by essay question ID if we have it
               if (essayQuestionId) {
+                console.log('📝 Looking for essay answer with question ID:', essayQuestionId);
                 const essayAnswer = stateEntries.find(([key]) => key === essayQuestionId);
+                console.log('📝 Essay answer found:', !!essayAnswer);
                 if (essayAnswer && typeof essayAnswer[1] === 'string' && essayAnswer[1].length > 0) {
                   console.log('📝 Recovered essay text from test_states using essay question ID (length:', essayAnswer[1].length, ')');
                   setEssayText(essayAnswer[1]);
@@ -647,15 +672,22 @@ const StudentResults = () => {
                   
                   if (!restoreError) {
                     console.log('✅ Restored answers field from test_states');
+                  } else {
+                    console.error('⚠️ Error restoring answers field:', restoreError);
                   }
+                } else {
+                  console.log('⚠️ Essay answer not found or empty for question ID:', essayQuestionId);
                 }
               }
               
               // Fallback: use longest essay-like entry
               if (!essayTextFound) {
+                console.log('📝 Falling back to longest essay-like entry');
                 const essayEntries = stateEntries.filter(([_, value]) => 
                   typeof value === 'string' && value.length > 100
                 );
+                
+                console.log('📝 Essay-like entries found:', essayEntries.length);
                 
                 if (essayEntries.length > 0) {
                   const longest = essayEntries.sort((a: any, b: any) => (b[1]?.length || 0) - (a[1]?.length || 0))[0];
@@ -671,10 +703,18 @@ const StudentResults = () => {
                   
                   if (!restoreError) {
                     console.log('✅ Restored answers field from test_states');
+                  } else {
+                    console.error('⚠️ Error restoring answers field:', restoreError);
                   }
+                } else {
+                  console.log('⚠️ No essay-like entries found in test_states');
                 }
               }
+            } else {
+              console.log('⚠️ No userAnswers found in test_states or stateData is null');
             }
+          } else {
+            console.log('⚠️ No test permalink found for test_id:', tr.test_id);
           }
         } catch (recoveryError) {
           console.error('⚠️ Error recovering from test_states:', recoveryError);
