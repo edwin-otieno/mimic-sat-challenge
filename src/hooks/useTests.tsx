@@ -140,67 +140,20 @@ export const useTests = () => {
     if (!user) return false;
     
     try {
-      // First, check if there's an in-progress test_result (is_completed = false)
-      // This is the most reliable indicator of a test in progress
-      const { data: testResult, error: testResultError } = await supabase
-        .from('test_results')
-        .select('id, is_completed')
-        .eq('user_id', user.id)
-        .eq('test_id', testPermalink)
-        .eq('is_completed', false)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      // If there's an in-progress test_result, the test is definitely in progress
-      if (testResult && !testResult.is_completed) {
-        return true;
-      }
-
-      // If there's no in-progress test_result, check test_states
-      // But only consider it in progress if there's no completed test_result
-      const { data: testState, error: testStateError } = await supabase
+      const { data, error } = await supabase
         .from('test_states')
         .select('id')
         .eq('user_id', user.id)
         .eq('test_permalink', testPermalink)
         .limit(1)
-        .maybeSingle();
+        .single();
 
-      if (testStateError && testStateError.code !== 'PGRST116') {
-        console.error('Error checking test state:', testStateError);
+      if (error && error.code !== 'PGRST116') { // PGRST116 is "no rows returned"
+        console.error('Error checking test state:', error);
         return false;
       }
 
-      // If test_states exists, check if there's a completed test_result
-      // If the test is completed, don't consider it in progress (stale test_states)
-      if (testState) {
-        const { data: completedResult } = await supabase
-          .from('test_results')
-          .select('id')
-          .eq('user_id', user.id)
-          .eq('test_id', testPermalink)
-          .eq('is_completed', true)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        // If test is completed, it's not in progress (test_states is stale)
-        if (completedResult) {
-          // Optionally clean up the stale test_states entry
-          await supabase
-            .from('test_states')
-            .delete()
-            .eq('user_id', user.id)
-            .eq('test_permalink', testPermalink);
-          return false;
-        }
-
-        // test_states exists and test is not completed, so it's in progress
-        return true;
-      }
-
-      return false;
+      return !!data;
     } catch (error) {
       console.error('Error checking test in progress:', error);
       return false;
