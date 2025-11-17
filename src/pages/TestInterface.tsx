@@ -1072,15 +1072,31 @@ const TestInterface = () => {
         }
         
         if (Object.keys(mergedAnswers).length > 0) {
-          const { error: answersUpdateError } = await supabase
+          console.log('💾 About to update answers field with:', {
+            testResultId,
+            mergedAnswersKeys: Object.keys(mergedAnswers),
+            mergedAnswersSample: Object.keys(mergedAnswers).slice(0, 3).map(key => ({
+              key,
+              valueLength: typeof mergedAnswers[key] === 'string' ? mergedAnswers[key].length : 'not string'
+            }))
+          });
+          
+          const { error: answersUpdateError, data: updateData } = await supabase
             .from('test_results')
             .update({ answers: mergedAnswers })
-            .eq('id', testResultId);
+            .eq('id', testResultId)
+            .select('answers');
           
           if (answersUpdateError) {
             console.error('⚠️ Error updating answers field:', answersUpdateError);
+            console.error('⚠️ Error details:', JSON.stringify(answersUpdateError, null, 2));
           } else {
             console.log('✅ Answers field updated successfully');
+            console.log('✅ Update response data:', updateData);
+            if (updateData && updateData.length > 0) {
+              console.log('✅ Updated answers in response:', updateData[0].answers);
+              console.log('✅ Updated answers keys:', updateData[0].answers ? Object.keys(updateData[0].answers) : []);
+            }
             
             // Verify the update
             const { data: verifyData, error: verifyError } = await supabase
