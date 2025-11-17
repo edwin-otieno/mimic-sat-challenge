@@ -408,10 +408,11 @@ const TestInterface = () => {
 
   // Initialize test result when test starts
   useEffect(() => {
-    if (currentTest && user && !currentTestResultId && stateLoaded) {
+    if ((testData?.test || currentTest) && user && !currentTestResultId && stateLoaded) {
       getOrCreateTestResult();
     }
-  }, [currentTest, user, stateLoaded]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [testData, currentTest, user, stateLoaded]);
 
   // Update module time left
   useEffect(() => {
@@ -683,16 +684,45 @@ const TestInterface = () => {
     if (!user) return null;
     
     try {
+      // Get the correct test_id - prefer testData.test.id, then currentTest.id, then look up by permalink
+      let testId: string | null = null;
+      
+      if (testData?.test?.id) {
+        testId = testData.test.id;
+      } else if (currentTest?.id) {
+        testId = currentTest.id;
+      } else if (permalink) {
+        // Look up test_id from permalink
+        const { data: testLookup, error: lookupError } = await supabase
+          .from('tests')
+          .select('id')
+          .eq('permalink', permalink)
+          .single();
+        
+        if (!lookupError && testLookup) {
+          testId = testLookup.id;
+        } else {
+          console.error('Error looking up test by permalink:', lookupError);
+          // Fall back to using permalink as test_id if lookup fails (for backward compatibility)
+          testId = permalink;
+        }
+      }
+      
+      if (!testId) {
+        console.error('Cannot create test result: no test_id available');
+        return null;
+      }
+      
       // Check if there's an existing in-progress test result
       const { data: existingResult } = await supabase
         .from('test_results')
         .select('id')
         .eq('user_id', user.id)
-        .eq('test_id', currentTest?.id || permalink || '')
+        .eq('test_id', testId)
         .eq('is_completed', false)
         .order('created_at', { ascending: false })
         .limit(1)
-        .single();
+        .maybeSingle();
       
       if (existingResult) {
         setCurrentTestResultId(existingResult.id);
@@ -704,7 +734,7 @@ const TestInterface = () => {
         .from('test_results')
         .insert({
           user_id: user.id,
-          test_id: currentTest?.id || permalink || '',
+          test_id: testId,
           total_score: 0,
           total_questions: 0,
           scaled_score: null,
@@ -940,6 +970,35 @@ const TestInterface = () => {
       
       let testResultId = currentTestResultId;
       
+      // Get the correct test_id - prefer testData.test.id, then currentTest.id, then look up by permalink
+      let testId: string | null = null;
+      
+      if (testData?.test?.id) {
+        testId = testData.test.id;
+      } else if (currentTest?.id) {
+        testId = currentTest.id;
+      } else if (permalink) {
+        // Look up test_id from permalink
+        const { data: testLookup, error: lookupError } = await supabase
+          .from('tests')
+          .select('id')
+          .eq('permalink', permalink)
+          .single();
+        
+        if (!lookupError && testLookup) {
+          testId = testLookup.id;
+        } else {
+          console.error('Error looking up test by permalink:', lookupError);
+          // Fall back to using permalink as test_id if lookup fails (for backward compatibility)
+          testId = permalink;
+        }
+      }
+      
+      if (!testId) {
+        console.error('Cannot save test result: no test_id available');
+        return;
+      }
+      
       // If we don't have a testResultId, try to find an existing in-progress test result
       if (!testResultId) {
         console.log('No currentTestResultId, searching for existing in-progress test result...');
@@ -947,11 +1006,11 @@ const TestInterface = () => {
           .from('test_results')
           .select('id')
           .eq('user_id', user.id)
-          .eq('test_id', currentTest?.id || permalink || '')
+          .eq('test_id', testId)
           .eq('is_completed', false)
           .order('created_at', { ascending: false })
           .limit(1)
-          .single();
+          .maybeSingle();
         
         if (existingResult) {
           testResultId = existingResult.id;
@@ -1002,7 +1061,7 @@ const TestInterface = () => {
           .from('test_results')
           .insert({
             user_id: user.id,
-            test_id: currentTest?.id || permalink || '',
+            test_id: testId,
             total_score: correctAnswers,
             total_questions: totalQuestions,
             scaled_score: scaledScore,
