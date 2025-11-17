@@ -1119,21 +1119,32 @@ const TestInterface = () => {
               }
             } else {
               console.error('❌ CRITICAL: Update response is empty or null!');
-              console.error('❌ This suggests the update might have failed or RLS is blocking it');
+              console.error('❌ This suggests the update might have failed or RLS is blocking the SELECT in the response');
+              console.error('❌ The UPDATE might have succeeded, but RLS is preventing us from seeing the updated row');
+              console.error('❌ We will verify with a separate SELECT query...');
             }
             
-            // Verify the update
+            // Verify the update with a separate query (in case RLS blocked the SELECT in the update response)
+            console.log('🔍 Verifying update with separate SELECT query...');
             const { data: verifyData, error: verifyError } = await supabase
               .from('test_results')
-              .select('answers')
+              .select('answers, id')
               .eq('id', testResultId)
               .single();
             
+            console.log('🔍 Verification query result:', verifyData ? 'Found' : 'Not found');
+            console.log('🔍 Verification query error:', verifyError);
+            
             if (verifyError) {
               console.error('⚠️ Error verifying answers update:', verifyError);
+              console.error('⚠️ Verification error details:', JSON.stringify(verifyError, null, 2));
             } else {
+              console.log('✅ Verification query succeeded');
+              console.log('✅ Verified answers data:', verifyData?.answers);
+              console.log('✅ Verified answers type:', typeof verifyData?.answers);
               const verifyKeys = verifyData?.answers ? Object.keys(verifyData.answers) : [];
               console.log('✅ Verified: answers field has', verifyKeys.length, 'entries');
+              console.log('✅ Verified: answers keys:', verifyKeys);
               if (verifyKeys.length > 0) {
                 const verifyEssayEntries = Object.entries(verifyData.answers as Record<string, string>).filter(([_, value]) => 
                   typeof value === 'string' && value.length > 100
