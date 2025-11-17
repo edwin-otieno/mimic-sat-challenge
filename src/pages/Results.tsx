@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import Footer from "@/components/Footer";
+import { fetchEssayGrade } from "@/services/testService";
 
 interface ModuleScore {
   moduleId: string;
@@ -173,19 +174,60 @@ const Results = () => {
       });
       
       // Fetch module results for deduplicated test results (limit fields to reduce egress)
-      const moduleResultPromises = deduplicatedResults.map(testResult => 
-        supabase
+      const moduleResultPromises = deduplicatedResults.map(async (testResult) => {
+        const { data: moduleData, error: moduleError } = await supabase
           .from('module_results')
           .select('id, module_id, module_name, score, total, scaled_score')
-          .eq('test_result_id', testResult.id)
-      );
+          .eq('test_result_id', testResult.id);
+        
+        if (moduleError) {
+          console.error('Error fetching module results for test_result:', testResult.id, moduleError);
+          return [];
+        }
+        
+        let moduleResults = moduleData || [];
+        try {
+          const essayGrade = await fetchEssayGrade(testResult.id);
+          if (essayGrade && essayGrade.score !== null) {
+            const writingIndex = moduleResults.findIndex(module => 
+              module.module_id === 'writing' ||
+              module.module_id === 'essay' ||
+              module.module_name?.toLowerCase().includes('essay') ||
+              module.module_name?.toLowerCase().includes('writing')
+            );
+            
+            if (writingIndex >= 0) {
+              moduleResults[writingIndex] = {
+                ...moduleResults[writingIndex],
+                scaled_score: essayGrade.score
+              };
+            } else {
+              moduleResults = [
+                ...moduleResults,
+                {
+                  id: `essay-${testResult.id}`,
+                  module_id: 'writing',
+                  module_name: 'Writing',
+                  score: 0,
+                  total: 0,
+                  scaled_score: essayGrade.score
+                } as ModuleResult
+              ];
+            }
+          }
+        } catch (essayError) {
+          console.error('Error loading essay grade for history view:', essayError);
+        }
+        
+        return moduleResults;
+      });
       
       const moduleResultsResponses = await Promise.all(moduleResultPromises);
       
       // Combine deduplicated test results with their module results
       const combinedResults: SavedTestResults[] = deduplicatedResults.map((testResult, index) => ({
         testResult,
-        moduleResults: moduleResultsResponses[index].data || []
+        moduleResults: moduleResultsResponses[index] || []
       }));
       
       setSavedResults(combinedResults);

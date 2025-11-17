@@ -139,38 +139,25 @@ const StudentResults = () => {
         
         setTotalResults(count || 0);
         
-        // Deduplicate results: For each user/test combination, keep only the most recent completed one,
-        // or the in-progress one if no completed exists
-        const deduplicatedData = data.reduce((acc: any[], current: any) => {
+        // Deduplicate results per user/test combo but always keep the newest attempt
+        const dedupMap = new Map<string, any>();
+        (data || []).forEach(current => {
           const key = `${current.user_id}-${current.test_id}`;
-          const existing = acc.find(r => `${r.user_id}-${r.test_id}` === key);
-          
+          const existing = dedupMap.get(key);
           if (!existing) {
-            acc.push(current);
-          } else {
-            // Prefer completed over in-progress
-            const currentIsCompleted = current.is_completed === true;
-            const existingIsCompleted = existing.is_completed === true;
-            
-            if (currentIsCompleted && !existingIsCompleted) {
-              // Replace in-progress with completed
-              const index = acc.indexOf(existing);
-              acc[index] = current;
-            } else if (!currentIsCompleted && existingIsCompleted) {
-              // Keep existing completed, ignore in-progress
-              // Do nothing
-            } else {
-              // Both same status, keep the most recent
-              const currentDate = new Date(current.created_at);
-              const existingDate = new Date(existing.created_at);
-              if (currentDate > existingDate) {
-                const index = acc.indexOf(existing);
-                acc[index] = current;
-              }
-            }
+            dedupMap.set(key, current);
+            return;
           }
-          return acc;
-        }, []);
+          
+          const currentDate = new Date(current.created_at);
+          const existingDate = new Date(existing.created_at);
+          
+          if (currentDate > existingDate) {
+            dedupMap.set(key, current);
+          }
+        });
+        const deduplicatedData = Array.from(dedupMap.values())
+          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
         
         // Get user profiles for each result
         const formattedResults = await Promise.all(deduplicatedData.map(async result => {
@@ -240,6 +227,45 @@ const StudentResults = () => {
   
   // Calculate total pages
   const totalPages = Math.ceil(totalResults / RESULTS_PER_PAGE);
+  
+  const resetStudentTestState = async (userId: string, testId: string) => {
+    try {
+      let testPermalink = tests.find(t => t.id === testId)?.permalink;
+      
+      if (!testPermalink) {
+        const { data: testData, error: testFetchError } = await supabase
+          .from('tests')
+          .select('permalink')
+          .eq('id', testId)
+          .single();
+        
+        if (testFetchError) {
+          console.error('⚠️ Unable to fetch test permalink for reset:', testFetchError);
+        } else {
+          testPermalink = testData?.permalink || null;
+        }
+      }
+      
+      if (!testPermalink) {
+        console.warn('⚠️ Cannot reset test state: missing permalink', { userId, testId });
+        return;
+      }
+      
+      const { error } = await supabase
+        .from('test_states')
+        .delete()
+        .eq('user_id', userId)
+        .eq('test_permalink', testPermalink);
+      
+      if (error) {
+        console.error('❌ Error clearing test state:', error);
+      } else {
+        console.log('♻️ Cleared saved test state so student can retake:', { userId, testId, testPermalink });
+      }
+    } catch (resetError) {
+      console.error('❌ Unexpected error resetting test state:', resetError);
+    }
+  };
   
   // Fetch module results for a specific test result
   const fetchModuleResults = async (resultId: string) => {
@@ -420,6 +446,10 @@ const StudentResults = () => {
                 description: "Test has been marked as completed.",
                 duration: 3000
               });
+              
+              if (testResultData?.user_id && testResultData?.test_id) {
+                await resetStudentTestState(testResultData.user_id, testResultData.test_id);
+              }
             }
           }
         }
