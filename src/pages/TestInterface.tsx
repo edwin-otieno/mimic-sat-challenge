@@ -939,18 +939,188 @@ const TestInterface = () => {
       
       // Update the answers field in test_results to preserve essay and other answers
       // This is especially important for essay/writing modules
-      if (testResultId && userAnswers && Object.keys(userAnswers).length > 0) {
-        console.log('💾 Updating answers field in test_results with current userAnswers');
-        const { error: answersUpdateError } = await supabase
+      if (testResultId) {
+        // First, get current answers from database to merge with new answers
+        const { data: currentAnswersData } = await supabase
           .from('test_results')
-          .update({ answers: userAnswers })
-          .eq('id', testResultId);
+          .select('answers')
+          .eq('id', testResultId)
+          .single();
         
-        if (answersUpdateError) {
-          console.error('⚠️ Error updating answers field:', answersUpdateError);
-        } else {
-          console.log('✅ Answers field updated successfully');
+        const existingAnswers = (currentAnswersData?.answers as Record<string, string>) || {};
+        let answersToSave = { ...existingAnswers, ...userAnswers };
+        
+        // Special handling for essay/writing module: ensure essay answer is included
+        if (moduleType === 'writing' || moduleType === 'essay') {
+          console.log('📝 Saving essay/writing module - ensuring essay answer is included');
+          
+          // Get test_id for this test_result
+          let testIdForEssay: string | null = null;
+          try {
+            const { data: testResultData } = await supabase
+              .from('test_results')
+              .select('test_id')
+              .eq('id', testResultId)
+              .single();
+            testIdForEssay = testResultData?.test_id || null;
+          } catch (testIdError) {
+            console.error('⚠️ Error getting test_id:', testIdError);
+          }
+          
+          // Find the essay question for this test
+          try {
+            const { data: essayQuestions } = await supabase
+              .from('test_questions')
+              .select('id')
+              .eq('test_id', testIdForEssay || testData?.test?.id || currentTest?.id || '')
+              .in('module_type', ['writing', 'essay'])
+              .limit(1);
+            
+            if (essayQuestions && essayQuestions.length > 0) {
+              const essayQuestionId = essayQuestions[0].id;
+              console.log('📝 Essay question ID:', essayQuestionId);
+              console.log('📝 userAnswers keys:', Object.keys(userAnswers || {}));
+              console.log('📝 Essay question ID in userAnswers?', !!userAnswers[essayQuestionId]);
+              if (userAnswers[essayQuestionId]) {
+                console.log('📝 Essay answer in userAnswers, length:', userAnswers[essayQuestionId].length);
+              }
+              
+              // Check if essay answer is in userAnswers
+              if (!answersToSave[essayQuestionId] || answersToSave[essayQuestionId].length < 100) {
+                console.log('⚠️ Essay answer not found in answersToSave or too short');
+                console.log('📝 answersToSave has essay question ID?', !!answersToSave[essayQuestionId]);
+                if (answersToSave[essayQuestionId]) {
+                  console.log('📝 answersToSave essay length:', answersToSave[essayQuestionId].length);
+                }
+                
+                // Try to find it in userAnswers directly
+                if (userAnswers[essayQuestionId] && userAnswers[essayQuestionId].length > 100) {
+                  console.log('📝 Found essay in userAnswers, adding to answersToSave');
+                  answersToSave[essayQuestionId] = userAnswers[essayQuestionId];
+                } else {
+                  // Try to find it in the questions array (if student is currently on essay question)
+                  const essayQuestion = questions.find(q => q.id === essayQuestionId);
+                  if (essayQuestion && userAnswers[essayQuestionId]) {
+                    const essayAnswer = userAnswers[essayQuestionId];
+                    if (essayAnswer && essayAnswer.length > 100) {
+                      console.log('📝 Found essay in userAnswers for question:', essayQuestionId);
+                      answersToSave[essayQuestionId] = essayAnswer;
+                    }
+                  }
+                  
+                  // If still not found, check if current question is the essay question
+                  if (questions[currentQuestionIndex]?.id === essayQuestionId && userAnswers[essayQuestionId]) {
+                    const essayAnswer = userAnswers[essayQuestionId];
+                    if (essayAnswer && essayAnswer.length > 100) {
+                      console.log('📝 Found essay in current question answer');
+                      answersToSave[essayQuestionId] = essayAnswer;
+                    }
+                  }
+                  
+                  // Last resort: search all userAnswers for essay-like text
+                  if (!answersToSave[essayQuestionId]) {
+                    const allEssayEntries = Object.entries(userAnswers || {}).filter(([_, value]) => 
+                      typeof value === 'string' && value.length > 100
+                    );
+                    if (allEssayEntries.length > 0) {
+                      console.log('📝 Found essay-like entry in userAnswers, using it for essay question');
+                      const longest = allEssayEntries.sort((a: any, b: any) => (b[1]?.length || 0) - (a[1]?.length || 0))[0];
+                      answersToSave[essayQuestionId] = longest[1];
+                    }
+                  }
+                }
+              } else {
+                console.log('✅ Essay answer already in answersToSave, length:', answersToSave[essayQuestionId].length);
+              }
+            }
+          } catch (essayCheckError) {
+            console.error('⚠️ Error checking for essay question:', essayCheckError);
+          }
         }
+        
+        const mergedAnswers = answersToSave;
+        
+        console.log('💾 Updating answers field in test_results');
+        console.log('💾 Existing answers keys:', Object.keys(existingAnswers).length);
+        console.log('💾 New userAnswers keys:', userAnswers ? Object.keys(userAnswers).length : 0);
+        console.log('💾 Merged answers keys:', Object.keys(mergedAnswers).length);
+        
+        // Check if there's an essay in merged answers
+        const essayEntries = Object.entries(mergedAnswers).filter(([_, value]) => 
+          typeof value === 'string' && value.length > 100
+        );
+        console.log('💾 Essay-like entries in merged answers:', essayEntries.length);
+        if (essayEntries.length > 0) {
+          console.log('💾 Essay entry found, question ID:', essayEntries[0][0], 'length:', essayEntries[0][1]?.length);
+        }
+        
+        if (Object.keys(mergedAnswers).length > 0) {
+          const { error: answersUpdateError } = await supabase
+            .from('test_results')
+            .update({ answers: mergedAnswers })
+            .eq('id', testResultId);
+          
+          if (answersUpdateError) {
+            console.error('⚠️ Error updating answers field:', answersUpdateError);
+          } else {
+            console.log('✅ Answers field updated successfully');
+            
+            // Verify the update
+            const { data: verifyData, error: verifyError } = await supabase
+              .from('test_results')
+              .select('answers')
+              .eq('id', testResultId)
+              .single();
+            
+            if (verifyError) {
+              console.error('⚠️ Error verifying answers update:', verifyError);
+            } else {
+              const verifyKeys = verifyData?.answers ? Object.keys(verifyData.answers) : [];
+              console.log('✅ Verified: answers field has', verifyKeys.length, 'entries');
+              if (verifyKeys.length > 0) {
+                const verifyEssayEntries = Object.entries(verifyData.answers as Record<string, string>).filter(([_, value]) => 
+                  typeof value === 'string' && value.length > 100
+                );
+                console.log('✅ Verified: essay-like entries in saved answers:', verifyEssayEntries.length);
+                if (verifyEssayEntries.length > 0) {
+                  console.log('✅ Verified: essay question ID:', verifyEssayEntries[0][0]);
+                } else {
+                  // Essay not found in saved answers - this is a problem!
+                  console.error('❌ CRITICAL: Essay was not saved to database even though it should have been!');
+                  console.error('❌ This means the essay will not be visible to admins for grading');
+                  
+                  // Try one more time to save it if we can find it
+                  if (moduleType === 'writing' || moduleType === 'essay') {
+                    console.log('🔄 Attempting emergency save of essay...');
+                    // The essay should be in answersToSave if we found it earlier
+                    const emergencyEssayEntries = Object.entries(answersToSave).filter(([_, value]) => 
+                      typeof value === 'string' && value.length > 100
+                    );
+                    if (emergencyEssayEntries.length > 0) {
+                      console.log('🔄 Found essay in answersToSave, attempting emergency save...');
+                      const { error: emergencyError } = await supabase
+                        .from('test_results')
+                        .update({ answers: answersToSave })
+                        .eq('id', testResultId);
+                      
+                      if (emergencyError) {
+                        console.error('❌ Emergency save also failed:', emergencyError);
+                      } else {
+                        console.log('✅ Emergency save successful!');
+                      }
+                    } else {
+                      console.error('❌ Essay not found in answersToSave either - cannot recover');
+                    }
+                  }
+                }
+              }
+            }
+          }
+        } else {
+          console.log('⚠️ No answers to save (merged answers is empty)');
+        }
+      } else {
+        console.log('⚠️ Not updating answers field: no testResultId');
       }
       
       // Check if all modules are completed and mark test as completed if so

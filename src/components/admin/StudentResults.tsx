@@ -519,13 +519,55 @@ const StudentResults = () => {
       
       console.log('📝 Loading essay data for test result:', result.id);
       console.log('📝 Test result data:', tr);
+      console.log('📝 Test result user_id:', tr?.user_id);
+      console.log('📝 Test result test_id:', tr?.test_id);
       
       let essayTextFound = false;
       
+      // First, check ALL test_results for this user/test to see if essay exists anywhere
+      if (tr?.user_id && tr?.test_id) {
+        console.log('🔍 Checking ALL test_results for user/test to find essay...');
+        try {
+          const { data: allResults } = await supabase
+            .from('test_results')
+            .select('id, answers, created_at, is_completed')
+            .eq('user_id', tr.user_id)
+            .eq('test_id', tr.test_id)
+            .order('created_at', { ascending: false })
+            .limit(10);
+          
+          console.log('🔍 Found', allResults?.length || 0, 'test_results for this user/test');
+          
+          if (allResults && allResults.length > 0) {
+            for (const testResult of allResults) {
+              if (testResult.answers && typeof testResult.answers === 'object') {
+                const entries = Object.entries(testResult.answers as Record<string, string>);
+                const essayEntries = entries.filter(([_, value]) => 
+                  typeof value === 'string' && value.length > 100
+                );
+                if (essayEntries.length > 0) {
+                  console.log('✅ Found essay in test_result:', testResult.id, 'created_at:', testResult.created_at, 'is_completed:', testResult.is_completed);
+                  console.log('📝 Essay question IDs in this result:', essayEntries.map(e => e[0]));
+                }
+              }
+            }
+          }
+        } catch (allResultsError) {
+          console.error('⚠️ Error checking all test_results:', allResultsError);
+        }
+      }
+      
       if (!error && tr?.answers) {
         console.log('📝 Answers field exists:', tr.answers);
+        console.log('📝 Answers field type:', typeof tr.answers);
+        console.log('📝 Answers field keys:', tr.answers ? Object.keys(tr.answers) : []);
         const entries = Object.entries(tr.answers as Record<string, string>);
         console.log('📝 Answer entries count:', entries.length);
+        
+        // Also check if answers is an empty object
+        if (entries.length === 0 && tr.answers && typeof tr.answers === 'object') {
+          console.log('⚠️ Answers field is an empty object - essay may not have been saved');
+        }
         
         if (entries.length > 0) {
           // First, try to find the actual essay question ID for this test
@@ -589,6 +631,52 @@ const StudentResults = () => {
         console.log('⚠️ No answers field found or error:', error);
       }
       
+      // Fallback: Check other test_results for the same user/test that might have the essay
+      if (!essayTextFound && tr?.user_id && tr?.test_id) {
+        console.log('📝 Checking other test_results for same user/test...');
+        try {
+          const { data: otherResults } = await supabase
+            .from('test_results')
+            .select('id, answers, created_at')
+            .eq('user_id', tr.user_id)
+            .eq('test_id', tr.test_id)
+            .order('created_at', { ascending: false })
+            .limit(5);
+          
+          if (otherResults && otherResults.length > 0) {
+            console.log('📝 Found', otherResults.length, 'other test_results for this user/test');
+            for (const otherResult of otherResults) {
+              if (otherResult.answers && typeof otherResult.answers === 'object') {
+                const otherEntries = Object.entries(otherResult.answers as Record<string, string>);
+                const essayEntries = otherEntries.filter(([_, value]) => 
+                  typeof value === 'string' && value.length > 100
+                );
+                if (essayEntries.length > 0) {
+                  console.log('📝 Found essay in another test_result:', otherResult.id);
+                  const longest = essayEntries.sort((a: any, b: any) => (b[1]?.length || 0) - (a[1]?.length || 0))[0];
+                  console.log('📝 Recovered essay from other test_result (length:', longest[1]?.length, ')');
+                  setEssayText(longest[1]);
+                  essayTextFound = true;
+                  
+                  // Also restore it to the current test_result
+                  const { error: restoreError } = await supabase
+                    .from('test_results')
+                    .update({ answers: otherResult.answers })
+                    .eq('id', result.id);
+                  
+                  if (!restoreError) {
+                    console.log('✅ Restored answers field from other test_result');
+                  }
+                  break;
+                }
+              }
+            }
+          }
+        } catch (otherResultsError) {
+          console.error('⚠️ Error checking other test_results:', otherResultsError);
+        }
+      }
+      
       // Fallback: Try to recover from test_states if answers field is empty
       if (!essayTextFound && tr?.user_id && tr?.test_id) {
         console.log('📝 Attempting to recover essay from test_states...');
@@ -647,6 +735,15 @@ const StudentResults = () => {
             }
             
             console.log('📝 Test state data:', stateData ? 'Found' : 'Not found');
+            
+            // If test_states is not found, it might have been cleared when test was marked complete
+            // In that case, the essay should have been saved to test_results.answers, but if it wasn't,
+            // we need to check if there's any way to recover it
+            if (!stateData) {
+              console.log('⚠️ test_states not found - it may have been cleared when test was marked complete');
+              console.log('⚠️ Essay should have been saved to test_results.answers when module completed');
+              console.log('⚠️ If essay is missing, it means saveModuleResults did not save it properly');
+            }
             
             if (stateData?.state?.userAnswers) {
               console.log('📝 Found userAnswers in test_states');
