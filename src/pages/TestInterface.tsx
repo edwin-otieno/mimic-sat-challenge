@@ -226,8 +226,16 @@ const TestInterface = () => {
 
   // Load timer and test state on component mount
   // Wait for testData to be available so we can properly check for completed tests
+  // IMPORTANT: This should only run ONCE per test, not after module completions
+  const hasCheckedCompletedTestRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!permalink || stateLoaded || !user || testDataLoading) return; // Wait for test to load
+    // Reset ref if permalink changed (different test)
+    if (hasCheckedCompletedTestRef.current !== permalink) {
+      hasCheckedCompletedTestRef.current = null;
+    }
+    
+    if (!permalink || stateLoaded || !user || testDataLoading || hasCheckedCompletedTestRef.current === permalink) return; // Wait for test to load
+    hasCheckedCompletedTestRef.current = permalink; // Mark that we've checked this test
     (async () => {
       try {
         // First, get the test UUID from permalink to check test_results properly
@@ -387,7 +395,9 @@ const TestInterface = () => {
         }
       }
     })();
-  }, [permalink, stateLoaded, loadTestState, clearTestState, user, currentTest, testDataLoading, testData]);
+    // Only run once on mount - don't re-run when testData or currentTest changes during test
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [permalink, stateLoaded, loadTestState, clearTestState, user, testDataLoading]);
 
   useEffect(() => {
     sessionStorage.setItem('crossOutMode', crossOutMode ? 'true' : 'false');
@@ -1298,6 +1308,17 @@ const TestInterface = () => {
 
   // Add new function to handle module selection
   const handleModuleSelection = (moduleType: string, partNumber: number = 1) => {
+    // Prevent selecting a module that's already completed
+    if (completedModules.has(moduleType)) {
+      console.log(`⚠️ Module ${moduleType} is already completed, cannot restart`);
+      toast({
+        title: "Module Already Completed",
+        description: `You have already completed the ${moduleType} module. Please proceed to the next module.`,
+        variant: "default"
+      });
+      return;
+    }
+    
     setSelectedModule(moduleType);
     setShowModuleSelection(false);
     setShowModuleScores(false); // Ensure we go to test questions, not module results
@@ -2185,9 +2206,11 @@ const TestInterface = () => {
                               key={`${module.type}-part-${part.partNumber}`}
                               onClick={() => handleModuleSelection(module.type, part.partNumber)}
                               className={`w-full py-4 text-left justify-start whitespace-normal break-words ${
-                                isSavedPart 
-                                  ? 'bg-green-600 hover:bg-green-700 focus:bg-green-800' 
-                                  : 'bg-blue-600 hover:bg-blue-700 focus:bg-blue-800'
+                                isModuleCompleted
+                                  ? 'bg-gray-400 hover:bg-gray-400 cursor-not-allowed opacity-60'
+                                  : isSavedPart 
+                                    ? 'bg-green-600 hover:bg-green-700 focus:bg-green-800' 
+                                    : 'bg-blue-600 hover:bg-blue-700 focus:bg-blue-800'
                               }`}
                               disabled={isModuleCompleted}
                               variant={isModuleCompleted ? "outline" : "default"}
