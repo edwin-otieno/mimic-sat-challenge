@@ -1098,9 +1098,28 @@ const TestInterface = () => {
           } else {
             console.log('✅ Answers field updated successfully');
             console.log('✅ Update response data:', updateData);
+            console.log('✅ Update response data type:', typeof updateData);
+            console.log('✅ Update response data length:', updateData?.length);
+            
             if (updateData && updateData.length > 0) {
               console.log('✅ Updated answers in response:', updateData[0].answers);
               console.log('✅ Updated answers keys:', updateData[0].answers ? Object.keys(updateData[0].answers) : []);
+              console.log('✅ Updated answers type:', typeof updateData[0].answers);
+              
+              // Check if the response actually contains the essay
+              if (updateData[0].answers && typeof updateData[0].answers === 'object') {
+                const responseKeys = Object.keys(updateData[0].answers);
+                console.log('✅ Response has', responseKeys.length, 'answer keys');
+                if (responseKeys.length === 0) {
+                  console.error('❌ CRITICAL: Update response shows empty answers object!');
+                  console.error('❌ This suggests RLS might be blocking the update or the update failed silently');
+                }
+              } else {
+                console.error('❌ CRITICAL: Update response answers is not an object:', updateData[0].answers);
+              }
+            } else {
+              console.error('❌ CRITICAL: Update response is empty or null!');
+              console.error('❌ This suggests the update might have failed or RLS is blocking it');
             }
             
             // Verify the update
