@@ -110,45 +110,187 @@ export const renderFormattedText = (text: string): React.ReactNode => {
   return renderTextWithoutTables(text, 'no-tables');
 };
 
+// Helper function to find matching closing tag for a block element
+const findMatchingClosingTag = (text: string, tagName: string, startPos: number): number => {
+  const openTag = `<${tagName}`;
+  const closeTag = `</${tagName}>`;
+  let depth = 1;
+  let pos = startPos;
+  
+  // Find the end of the opening tag
+  const tagEnd = text.indexOf('>', startPos);
+  if (tagEnd === -1) return -1;
+  pos = tagEnd + 1;
+  
+  while (pos < text.length && depth > 0) {
+    // Look for opening tags
+    const nextOpen = text.indexOf(openTag, pos);
+    // Look for closing tags
+    const nextClose = text.indexOf(closeTag, pos);
+    
+    if (nextClose === -1) return -1; // No closing tag found
+    
+    if (nextOpen !== -1 && nextOpen < nextClose) {
+      // Found another opening tag before closing tag - increase depth
+      depth++;
+      pos = text.indexOf('>', nextOpen) + 1;
+    } else {
+      // Found closing tag - decrease depth
+      depth--;
+      if (depth === 0) {
+        return nextClose + closeTag.length;
+      }
+      pos = nextClose + closeTag.length;
+    }
+  }
+  
+  return -1;
+};
+
+// Helper function to extract complete HTML block elements
+const extractBlockElements = (text: string): Array<{ type: 'block' | 'text'; content: string; start: number; end: number }> => {
+  const blocks: Array<{ type: 'block' | 'text'; content: string; start: number; end: number }> = [];
+  
+  // Block-level HTML elements
+  const blockTagNames = ['div', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'blockquote', 'section', 'article', 'header', 'footer', 'nav', 'aside', 'main'];
+  
+  let lastIndex = 0;
+  let pos = 0;
+  
+  while (pos < text.length) {
+    // Find the next opening tag for any block element
+    let nextBlockStart = -1;
+    let nextBlockTag = '';
+    
+    for (const tagName of blockTagNames) {
+      const openTag = `<${tagName}`;
+      const tagPos = text.indexOf(openTag, pos);
+      if (tagPos !== -1 && (nextBlockStart === -1 || tagPos < nextBlockStart)) {
+        nextBlockStart = tagPos;
+        nextBlockTag = tagName;
+      }
+    }
+    
+    if (nextBlockStart === -1) {
+      // No more block elements found, add remaining text
+      if (lastIndex < text.length) {
+        blocks.push({
+          type: 'text',
+          content: text.substring(lastIndex),
+          start: lastIndex,
+          end: text.length
+        });
+      }
+      break;
+    }
+    
+    // Add text before this block
+    if (nextBlockStart > lastIndex) {
+      blocks.push({
+        type: 'text',
+        content: text.substring(lastIndex, nextBlockStart),
+        start: lastIndex,
+        end: nextBlockStart
+      });
+    }
+    
+    // Find the matching closing tag
+    const blockEnd = findMatchingClosingTag(text, nextBlockTag, nextBlockStart);
+    
+    if (blockEnd === -1) {
+      // No matching closing tag found, treat as text and continue
+      pos = nextBlockStart + 1;
+      continue;
+    }
+    
+    // Add the block element
+    const blockContent = text.substring(nextBlockStart, blockEnd);
+    blocks.push({
+      type: 'block',
+      content: blockContent,
+      start: nextBlockStart,
+      end: blockEnd
+    });
+    
+    lastIndex = blockEnd;
+    pos = blockEnd;
+  }
+  
+  // If no blocks found, return entire text as text
+  if (blocks.length === 0) {
+    return [{ type: 'text', content: text, start: 0, end: text.length }];
+  }
+  
+  return blocks;
+};
+
 // Helper function to render text without tables (original logic)
 const renderTextWithoutTables = (text: string, keyPrefix: string): React.ReactNode => {
-  // Split text into paragraphs (double line breaks)
-  const paragraphs = text.split(/\n\s*\n/);
+  // First, extract complete HTML block elements to preserve their structure
+  const blocks = extractBlockElements(text);
   
-  return paragraphs.map((paragraph, pIndex) => {
-    // Split paragraph into lines
-    const lines = paragraph.split('\n');
-    
-    const formattedLines = lines.map((line, index) => {
-      // Check if line is a list item
-      if (line.trim().startsWith('- ')) {
-        return React.createElement('li', { key: `${keyPrefix}-${pIndex}-${index}`, className: 'ml-4' },
-          React.createElement('div', { dangerouslySetInnerHTML: { __html: line.substring(2) } })
+  const parts: React.ReactNode[] = [];
+  
+  blocks.forEach((block, blockIndex) => {
+    if (block.type === 'block') {
+      // Render block element as-is, preserving its HTML structure
+      // Normalize spacing within block elements - reduce excessive whitespace
+      parts.push(
+        React.createElement('div', {
+          key: `${keyPrefix}-block-${blockIndex}`,
+          className: 'mb-2 break-words overflow-wrap-break-word [&_div]:break-words [&_div]:overflow-wrap-break-word [&_p]:break-words [&_p]:overflow-wrap-break-word [&_p]:leading-normal [&_p]:my-0 [&_p]:mb-1 [&_h1]:leading-normal [&_h1]:my-1 [&_h2]:leading-normal [&_h2]:my-1 [&_h3]:leading-normal [&_h3]:my-1 [&_h4]:leading-normal [&_h4]:my-1 [&_h5]:leading-normal [&_h5]:my-1 [&_h6]:leading-normal [&_h6]:my-1 [&_ul]:leading-normal [&_ul]:my-1 [&_ul]:space-y-0 [&_li]:leading-normal [&_li]:my-0 [&_li]:mb-0.5',
+          dangerouslySetInnerHTML: { __html: block.content }
+        })
+      );
+    } else {
+      // Process text content (may contain inline HTML but no block elements)
+      // Split text into paragraphs (double line breaks)
+      const paragraphs = block.content.split(/\n\s*\n/);
+      
+      paragraphs.forEach((paragraph, pIndex) => {
+        if (!paragraph.trim()) return;
+        
+        // Split paragraph into lines
+        const lines = paragraph.split('\n');
+        
+        const formattedLines = lines.map((line, index) => {
+          // Check if line is a list item
+          if (line.trim().startsWith('- ')) {
+            return React.createElement('li', { key: `${keyPrefix}-${blockIndex}-${pIndex}-${index}`, className: 'ml-4' },
+              React.createElement('div', { className: 'break-words overflow-wrap-break-word [&_div]:break-words [&_div]:overflow-wrap-break-word', dangerouslySetInnerHTML: { __html: line.substring(2) } })
+            );
+          }
+          // Check if line is a numbered list item
+          if (/^\d+\.\s/.test(line)) {
+            return React.createElement('li', { key: `${keyPrefix}-${blockIndex}-${pIndex}-${index}`, className: 'ml-4' },
+              React.createElement('div', { className: 'break-words overflow-wrap-break-word [&_div]:break-words [&_div]:overflow-wrap-break-word', dangerouslySetInnerHTML: { __html: line.substring(line.indexOf('.') + 2) } })
+            );
+          }
+          // Regular text with HTML formatting
+          return React.createElement('div', { 
+            key: `${keyPrefix}-${blockIndex}-${pIndex}-${index}`, 
+            className: 'mb-2 break-words overflow-wrap-break-word [&_div]:break-words [&_div]:overflow-wrap-break-word',
+            dangerouslySetInnerHTML: { __html: line }
+          });
+        });
+
+        // Wrap list items in a ul element if needed
+        const hasListItems = lines.some(line => 
+          line.trim().startsWith('- ') || /^\d+\.\s/.test(line)
         );
-      }
-      // Check if line is a numbered list item
-      if (/^\d+\.\s/.test(line)) {
-        return React.createElement('li', { key: `${keyPrefix}-${pIndex}-${index}`, className: 'ml-4' },
-          React.createElement('div', { dangerouslySetInnerHTML: { __html: line.substring(line.indexOf('.') + 2) } })
-        );
-      }
-      // Regular text with HTML formatting
-      return React.createElement('div', { 
-        key: `${keyPrefix}-${pIndex}-${index}`, 
-        className: 'mb-2',
-        dangerouslySetInnerHTML: { __html: line }
+
+        if (hasListItems) {
+          parts.push(
+            React.createElement('ul', { key: `${keyPrefix}-${blockIndex}-${pIndex}`, className: 'mb-4' }, formattedLines)
+          );
+        } else {
+          parts.push(
+            React.createElement('div', { key: `${keyPrefix}-${blockIndex}-${pIndex}`, className: 'mb-4 break-words overflow-wrap-break-word [&_div]:break-words [&_div]:overflow-wrap-break-word' }, formattedLines)
+          );
+        }
       });
-    });
-
-    // Wrap list items in a ul element if needed
-    const hasListItems = lines.some(line => 
-      line.trim().startsWith('- ') || /^\d+\.\s/.test(line)
-    );
-
-    if (hasListItems) {
-      return React.createElement('ul', { key: `${keyPrefix}-${pIndex}`, className: 'mb-4' }, formattedLines);
     }
-
-    return React.createElement('div', { key: `${keyPrefix}-${pIndex}`, className: 'mb-4' }, formattedLines);
   });
+  
+  return React.createElement(React.Fragment, {}, parts);
 };

@@ -336,9 +336,10 @@ const PassageQuestion: React.FC<PassageQuestionProps> = ({
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b bg-gray-50">
         <div className="flex items-center gap-4">
-          <h2 className="text-lg font-semibold">
-            {passage.title || `Passage ${passage.passage_order}`}
-          </h2>
+          <h2 
+            className="text-lg font-semibold"
+            dangerouslySetInnerHTML={{ __html: passage.title || `Passage ${passage.passage_order}` }}
+          />
           <Badge variant="outline">{passage.module_type}</Badge>
           <span className="text-sm text-gray-600">
             Question {currentQuestionIndex + 1} of {totalQuestions}
@@ -638,11 +639,13 @@ const PassageQuestion: React.FC<PassageQuestionProps> = ({
             <CardContent className="flex-1 overflow-y-auto min-h-0 space-y-4">
               {/* Question Text */}
               <div 
-                className="highlightable-text text-xl font-medium whitespace-pre-wrap"
+                className="highlightable-text text-xl font-medium whitespace-pre-wrap break-words [&_div]:break-words [&_div]:overflow-wrap-break-word"
                 onMouseUp={handleTextSelection}
                 onClick={handleTextSelection}
               >
-                {renderFormattedText(typeof currentQuestion.text === 'string' ? currentQuestion.text : String(currentQuestion.text || ''))}
+                <div className="break-words overflow-wrap-break-word">
+                  {renderFormattedText(typeof currentQuestion.text === 'string' ? currentQuestion.text : String(currentQuestion.text || ''))}
+                </div>
               </div>
 
               {/* Question Image - Show below question text */}
