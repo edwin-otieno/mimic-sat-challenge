@@ -347,7 +347,7 @@ export const TestContainer: React.FC<TestContainerProps> = ({
             {/* For ACT Math, show vertical navigator on left side */}
             {testCategory === 'ACT' ? (
               <div className="flex gap-4">
-                <div className="w-40 border-r overflow-y-auto bg-gray-50 p-3">
+                <div className="w-40 border-r overflow-y-auto bg-gray-50 p-3" style={{ maxHeight: '450px' }}>
                   <QuestionNavigator
                     questions={safeQuestions}
                     currentIndex={currentQuestionIndex}
@@ -638,7 +638,7 @@ export const TestContainer: React.FC<TestContainerProps> = ({
         )}
       </Tabs>
       
-      <div className="flex justify-end gap-2 mt-8">
+      <div className={`flex justify-end gap-2 mt-8 ${testCategory === 'ACT' && currentModuleType === 'math' ? 'mb-24' : ''}`}>
         <Button variant="outline" onClick={onPreviousQuestion} disabled={currentQuestionIndex === 0}>
           Previous Question
         </Button>
