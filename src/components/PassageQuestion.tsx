@@ -615,7 +615,13 @@ const PassageQuestion: React.FC<PassageQuestionProps> = ({
         )}>
             <Card className="h-full flex flex-col rounded-none border-0 min-h-0">
               <CardHeader className="pb-3 flex-shrink-0 border-b">
-                <CardTitle className="text-base">Passage</CardTitle>
+                <CardTitle className="text-base">
+                  Passage {passage.title ? (
+                    <span dangerouslySetInnerHTML={{ __html: `(${passage.title})` }} />
+                  ) : passage.passage_order ? (
+                    `(${passage.passage_order})`
+                  ) : ''}
+                </CardTitle>
               </CardHeader>
               <CardContent className="flex-1 overflow-y-auto min-h-0">
                 <div 
