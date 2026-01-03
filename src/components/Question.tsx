@@ -200,7 +200,12 @@ const Question: React.FC<QuestionProps> = ({
           <div className="text-xl font-medium mb-2 whitespace-pre-wrap">
             {console.log('Question component - isAdmin:', isAdmin, 'testCategory:', testCategory, 'question.text:', question.text)}
             {!isAdmin ? (
-              <div className="highlightable-text">
+              <div 
+                className={`highlightable-text ${isHighlighting ? 'highlighting-enabled' : ''}`}
+                onMouseUp={isHighlighting ? handleTextSelection : undefined}
+                onClick={isHighlighting ? handleHighlightClick : undefined}
+                style={{ userSelect: isHighlighting ? 'text' : 'none' }}
+              >
                 {renderFormattedText(typeof question.text === 'string' ? question.text : String(question.text || ''))}
               </div>
             ) : (

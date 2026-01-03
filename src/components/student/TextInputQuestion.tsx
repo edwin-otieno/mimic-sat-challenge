@@ -46,12 +46,30 @@ export const TextInputQuestion: React.FC<TextInputQuestionProps> = ({
         })
     : false;
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Tab' && isEssay) {
+      e.preventDefault();
+      const textarea = e.currentTarget;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const newValue = answer.substring(0, start) + '  ' + answer.substring(end);
+      setAnswer(newValue);
+      onChange?.(newValue);
+      onAnswerChange?.(newValue);
+      // Set cursor position after the inserted tab
+      setTimeout(() => {
+        textarea.selectionStart = textarea.selectionEnd = start + 2;
+      }, 0);
+    }
+  };
+
   return (
     <div className="space-y-4">
       {isEssay ? (
         <Textarea
           value={answer}
           onChange={handleChange}
+          onKeyDown={handleKeyDown}
           placeholder="Write your essay here..."
           disabled={disabled}
           className="w-full min-h-[400px] text-base"

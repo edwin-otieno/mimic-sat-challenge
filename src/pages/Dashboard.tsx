@@ -8,6 +8,8 @@ import { useTests } from "@/hooks/useTests";
 import { Test } from "@/components/admin/tests/types";
 import Footer from "@/components/Footer";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { supabase } from "@/integrations/supabase/client";
+import { fetchEssayGrade } from "@/services/testService";
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -18,6 +20,7 @@ const Dashboard = () => {
   const [loadingProgress, setLoadingProgress] = useState(true);
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedCategory, setSelectedCategory] = useState<'ALL' | 'SAT' | 'ACT'>('ALL');
+  const [testModuleScores, setTestModuleScores] = useState<Record<string, Array<{module_id: string, module_name: string, score: number, total: number, scaled_score: number | null}>>>({});
 
   // Initialize selectedCategory from URL on mount and when URL changes
   useEffect(() => {
@@ -44,12 +47,72 @@ const Dashboard = () => {
       }
 
       const progressStatus: Record<string, boolean> = {};
+      const moduleScoresMap: Record<string, Array<{module_id: string, module_name: string, score: number, total: number, scaled_score: number | null}>> = {};
       
       for (const test of availableTests) {
         const testId = test.permalink || test.id;
         try {
           const inProgress = await checkTestInProgress(testId);
           progressStatus[testId] = inProgress;
+          
+          // If test is in progress, fetch module results to show completed section scores
+          if (inProgress) {
+            try {
+              // Get the most recent test_result for this test
+              const { data: testResult } = await supabase
+                .from('test_results')
+                .select('id')
+                .eq('user_id', user.id)
+                .eq('test_id', test.id)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              
+              if (testResult?.id) {
+                // Fetch module results
+                const { data: moduleResults } = await supabase
+                  .from('module_results')
+                  .select('module_id, module_name, score, total, scaled_score')
+                  .eq('test_result_id', testResult.id);
+                
+                let moduleResultsData = moduleResults || [];
+                
+                // Also check for essay grade
+                try {
+                  const essayGrade = await fetchEssayGrade(testResult.id);
+                  if (essayGrade && essayGrade.score !== null) {
+                    const writingIndex = moduleResultsData.findIndex(m => 
+                      m.module_id === 'writing' || m.module_id === 'essay' ||
+                      m.module_name?.toLowerCase().includes('essay') || m.module_name?.toLowerCase().includes('writing')
+                    );
+                    
+                    if (writingIndex >= 0) {
+                      moduleResultsData[writingIndex] = {
+                        ...moduleResultsData[writingIndex],
+                        scaled_score: essayGrade.score
+                      };
+                    } else {
+                      moduleResultsData.push({
+                        module_id: 'writing',
+                        module_name: 'Writing',
+                        score: 1,
+                        total: 1,
+                        scaled_score: essayGrade.score
+                      });
+                    }
+                  }
+                } catch (essayError) {
+                  console.error('Error fetching essay grade:', essayError);
+                }
+                
+                if (moduleResultsData.length > 0) {
+                  moduleScoresMap[testId] = moduleResultsData;
+                }
+              }
+            } catch (error) {
+              console.error(`Error fetching module scores for test ${testId}:`, error);
+            }
+          }
         } catch (error) {
           console.error(`Error checking progress for test ${testId}:`, error);
           progressStatus[testId] = false;
@@ -57,6 +120,7 @@ const Dashboard = () => {
       }
       
       setTestProgressStatus(progressStatus);
+      setTestModuleScores(moduleScoresMap);
       setLoadingProgress(false);
     };
 
@@ -97,6 +161,9 @@ const Dashboard = () => {
   const renderTestCard = (test: Test) => {
     const testId = test.permalink || test.id;
     const inProgress = testProgressStatus[testId];
+    const completedScores = testModuleScores[testId] || [];
+    const isACT = test.test_category === 'ACT';
+    
     return (
       <Card key={test.id} className="hover:shadow-md transition-shadow">
         <CardHeader>
@@ -122,9 +189,9 @@ const Dashboard = () => {
           )}
         </CardHeader>
         <CardContent>
-          <div className="flex justify-between text-xs sm:text-sm gap-2 sm:gap-4">
+          <div className="flex justify-between text-xs sm:text-sm gap-2 sm:gap-4 mb-3">
             <div className="flex flex-col">
-              <span className="font-semibold text-gray-700">Modules</span>
+              <span className="font-semibold text-gray-700">{isACT ? 'Sections' : 'Modules'}</span>
               <span className="break-words">{test.test_category === 'ACT' ? 5 : ((test.modules?.length || 2) * 2)}</span>
             </div>
             <div className="flex flex-col">
@@ -136,6 +203,23 @@ const Dashboard = () => {
               <span>{test.is_active ? 'Active' : 'Inactive'}</span>
             </div>
           </div>
+          
+          {/* Show completed section/module scores */}
+          {completedScores.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-gray-200">
+              <div className="text-xs font-semibold text-gray-700 mb-2">Completed {isACT ? 'Sections' : 'Modules'}:</div>
+              <div className="space-y-1">
+                {completedScores.map((module) => (
+                  <div key={module.module_id} className="text-xs text-gray-600">
+                    <span className="font-medium">{module.module_name}:</span> {module.score}/{module.total}
+                    {module.scaled_score !== null && module.scaled_score !== undefined && (
+                      <span className="ml-2 text-blue-600">(Scaled: {module.scaled_score})</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </CardContent>
         <CardFooter>
           <Button 
@@ -200,21 +284,21 @@ const Dashboard = () => {
           
           {availableTests.length > 0 ? (
             <>
-              {/* SAT Section */}
-              {selectedCategory !== 'ACT' && satTests.length > 0 && (
+              {/* ACT Section */}
+              {selectedCategory !== 'SAT' && actTests.length > 0 && (
                 <div>
-                  <h4 className="text-lg font-semibold mb-2">SAT Tests</h4>
+                  <h4 className="font-semibold mb-2" style={{ fontSize: '2rem' }}>ACT Tests</h4>
                   <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {satTests.map((test) => renderTestCard(test))}
+                    {actTests.map((test) => renderTestCard(test))}
                   </div>
                 </div>
               )}
-              {/* ACT Section - starts on a new row */}
-              {selectedCategory !== 'SAT' && actTests.length > 0 && (
+              {/* SAT Section - starts on a new row */}
+              {selectedCategory !== 'ACT' && satTests.length > 0 && (
                 <div className="mt-6">
-                  <h4 className="text-lg font-semibold mb-2">ACT Tests</h4>
+                  <h4 className="font-semibold mb-2" style={{ fontSize: '2rem' }}>SAT Tests</h4>
                   <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {actTests.map((test) => renderTestCard(test))}
+                    {satTests.map((test) => renderTestCard(test))}
                   </div>
                 </div>
               )}

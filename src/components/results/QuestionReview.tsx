@@ -136,10 +136,14 @@ const QuestionReview: React.FC<QuestionReviewProps> = React.memo(({ questions, u
                 </div>
               );
             } else if (question.question_type === QuestionType.TextInput) {
-              const isCorrect = question.correct_answer
-                ?.split(';')
-                .map(a => a.trim().toLowerCase())
-                .some(correctAnswer => userAnswerId.trim().toLowerCase() === correctAnswer);
+              // For essay questions (writing module), always mark as correct if there's an answer
+              const isEssay = question.module_type === 'writing' || question.module_type === 'essay';
+              const isCorrect = isEssay 
+                ? true // Essays are always marked as correct if submitted
+                : question.correct_answer
+                    ?.split(';')
+                    .map(a => a.trim().toLowerCase())
+                    .some(correctAnswer => userAnswerId.trim().toLowerCase() === correctAnswer);
               
               resultIndicator = (
                 <div className={`mb-2 ${isCorrect ? 'text-green-600' : 'text-red-500'}`}>

@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useTests, useOptimizedTest } from '@/hooks/useTests';
 import { useTestAutoSave } from '@/hooks/useTestAutoSave';
 import { useToast } from '@/hooks/use-toast';
-import { getTestQuestions, getTestPassagesByModule } from '@/services/testService';
+import { getTestQuestions, getTestPassagesByModule, fetchEssayGrade } from '@/services/testService';
 import { QuestionData } from '@/components/Question';
 import { TestModule } from '@/components/admin/tests/types';
 import { ScaledScore } from '@/components/admin/tests/types';
@@ -62,6 +62,7 @@ const TestInterface = () => {
   const { tests } = useTests();
   const [currentTest, setCurrentTest] = useState<any>(null);
   const [currentTestResultId, setCurrentTestResultId] = useState<string | null>(null);
+  const [moduleResults, setModuleResults] = useState<Record<string, {score: number, total: number, scaled_score: number | null}>>({});
   
   // Use optimized test loading directly by permalink or id from route
   const { testData, isLoading: testDataLoading, error: testDataError } = useOptimizedTest(permalink || null);
@@ -122,8 +123,9 @@ const TestInterface = () => {
   const [stateLoaded, setStateLoaded] = useState(false);
   // Removed isRestoringState and userHasInteracted since auto-save is disabled
 
-  // Timer state persistence
+  // Timer state persistence - user-specific
   const saveTimerState = () => {
+    if (!user) return; // Don't save if no user
     const timerState = {
       currentPartTimeLeft,
       timerRunning,
@@ -136,10 +138,11 @@ const TestInterface = () => {
       showModuleScores,
       showPartTransition
     };
-    sessionStorage.setItem(`timerState_${permalink}`, JSON.stringify(timerState));
+    sessionStorage.setItem(`timerState_${user.id}_${permalink}`, JSON.stringify(timerState));
   };
 
   const saveCompleteTestState = () => {
+    if (!user) return; // Don't save if no user
     const completeState = {
       currentQuestionIndex,
       userAnswers,
@@ -160,16 +163,18 @@ const TestInterface = () => {
       showPartTransition,
       lastSavedQuestions
     };
-    sessionStorage.setItem(`completeTestState_${permalink}`, JSON.stringify(completeState));
+    sessionStorage.setItem(`completeTestState_${user.id}_${permalink}`, JSON.stringify(completeState));
   };
 
   const clearSessionTestState = () => {
-    sessionStorage.removeItem(`completeTestState_${permalink}`);
-    sessionStorage.removeItem(`timerState_${permalink}`);
+    if (!user) return; // Don't clear if no user
+    sessionStorage.removeItem(`completeTestState_${user.id}_${permalink}`);
+    sessionStorage.removeItem(`timerState_${user.id}_${permalink}`);
   };
 
   const loadCompleteTestState = () => {
-    const saved = sessionStorage.getItem(`completeTestState_${permalink}`);
+    if (!user) return false; // Can't load without user
+    const saved = sessionStorage.getItem(`completeTestState_${user.id}_${permalink}`);
     if (saved) {
       try {
         const state = JSON.parse(saved) as any;
@@ -201,7 +206,8 @@ const TestInterface = () => {
   };
 
   const loadTimerState = () => {
-    const saved = sessionStorage.getItem(`timerState_${permalink}`);
+    if (!user) return false; // Can't load without user
+    const saved = sessionStorage.getItem(`timerState_${user.id}_${permalink}`);
     if (saved) {
       try {
         const timerState = JSON.parse(saved);
@@ -268,8 +274,8 @@ const TestInterface = () => {
           return;
         }
         
-        // Check for sessionStorage backup (created during beforeunload)
-        const sessionBackup = sessionStorage.getItem(`test_state_${permalink}`);
+        // Check for sessionStorage backup (created during beforeunload) - user-specific
+        const sessionBackup = user ? sessionStorage.getItem(`test_state_${user.id}_${permalink}`) : null;
         if (sessionBackup) {
           try {
             const saved = JSON.parse(sessionBackup);
@@ -295,11 +301,15 @@ const TestInterface = () => {
             setStateLoaded(true);
             
             // Clear the sessionStorage backup after loading
-            sessionStorage.removeItem(`test_state_${permalink}`);
+            if (user) {
+              sessionStorage.removeItem(`test_state_${user.id}_${permalink}`);
+            }
             return;
           } catch (error) {
             console.error('Error parsing sessionStorage backup:', error);
-            sessionStorage.removeItem(`test_state_${permalink}`);
+            if (user) {
+              sessionStorage.removeItem(`test_state_${user.id}_${permalink}`);
+            }
           }
         }
         // No test_states found - check if we should start fresh or resume an in-progress test
@@ -333,21 +343,48 @@ const TestInterface = () => {
               
               if (existingResult) {
                 // There's an in-progress test_result - check its module_results to see which modules are completed
-                const { data: moduleResults } = await supabase
+                const { data: moduleResultsData } = await supabase
                   .from('module_results')
-                  .select('module_id')
+                  .select('module_id, module_name, score, total, scaled_score')
                   .eq('test_result_id', existingResult.id);
                 
-                if (moduleResults && moduleResults.length > 0) {
-                  const completedModuleIds = new Set(moduleResults.map(mr => mr.module_id));
+                if (moduleResultsData && moduleResultsData.length > 0) {
+                  const completedModuleIds = new Set(moduleResultsData.map(mr => mr.module_id));
                   console.log('🔄 Found in-progress test with completed modules:', Array.from(completedModuleIds));
                   setCompletedModules(completedModuleIds);
                   setCurrentTestResultId(existingResult.id);
+                  
+                  // Store module results for score display
+                  const resultsMap: Record<string, {score: number, total: number, scaled_score: number | null}> = {};
+                  moduleResultsData.forEach(mr => {
+                    resultsMap[mr.module_id] = {
+                      score: mr.score,
+                      total: mr.total,
+                      scaled_score: mr.scaled_score
+                    };
+                  });
+                  
+                  // Also check for essay grade
+                  try {
+                    const essayGrade = await fetchEssayGrade(existingResult.id);
+                    if (essayGrade && essayGrade.score !== null) {
+                      resultsMap['writing'] = {
+                        score: 1,
+                        total: 1,
+                        scaled_score: essayGrade.score
+                      };
+                    }
+                  } catch (essayError) {
+                    console.error('Error fetching essay grade:', essayError);
+                  }
+                  
+                  setModuleResults(resultsMap);
                   shouldStartFresh = false; // Don't clear sessionStorage - we're resuming
                 } else {
                   // In-progress but no modules completed yet - start fresh
                   console.log('🔄 Found in-progress test but no modules completed - starting fresh');
                   setCompletedModules(new Set());
+                  setModuleResults({});
                   shouldStartFresh = true;
                 }
               } else {
@@ -376,8 +413,15 @@ const TestInterface = () => {
         // If starting fresh, clear sessionStorage to prevent restoring old completedModules
         if (shouldStartFresh) {
           console.log('🔄 Starting fresh - clearing sessionStorage');
-          sessionStorage.removeItem(`completeTestState_${permalink}`);
-          sessionStorage.removeItem(`timerState_${permalink}`);
+          if (user) {
+            sessionStorage.removeItem(`completeTestState_${user.id}_${permalink}`);
+            sessionStorage.removeItem(`timerState_${user.id}_${permalink}`);
+          }
+          // Ensure we start from question 1
+          setCurrentQuestionIndex(0);
+          setUserAnswers({});
+          setFlaggedQuestions(new Set());
+          setCrossedOutOptions({});
           setStateLoaded(true);
         } else {
           // Resume in-progress test - can load from sessionStorage as fallback
@@ -394,8 +438,15 @@ const TestInterface = () => {
         console.error('Error loading test state:', error);
         // On error, start fresh - clear sessionStorage
         setCompletedModules(new Set());
-        sessionStorage.removeItem(`completeTestState_${permalink}`);
-        sessionStorage.removeItem(`timerState_${permalink}`);
+        if (user) {
+          sessionStorage.removeItem(`completeTestState_${user.id}_${permalink}`);
+          sessionStorage.removeItem(`timerState_${user.id}_${permalink}`);
+        }
+        // Ensure we start from question 1
+        setCurrentQuestionIndex(0);
+        setUserAnswers({});
+        setFlaggedQuestions(new Set());
+        setCrossedOutOptions({});
         setStateLoaded(true);
       }
     })();
@@ -449,6 +500,13 @@ const TestInterface = () => {
     stateLoaded,
     permalink
   ]);
+
+  // Scroll to top when module scores page opens
+  useEffect(() => {
+    if (showModuleScores) {
+      window.scrollTo(0, 0);
+    }
+  }, [showModuleScores]);
 
   // Calculate total test duration from modules
   const totalTestDuration = currentTest?.modules?.reduce((total: number, module: TestModule) => 
@@ -693,7 +751,10 @@ const TestInterface = () => {
       // Check if answer is correct
       const userAnswer = userAnswers[question.id];
       if (userAnswer) {
-        if (question.question_type === QuestionType.TextInput) {
+        // For writing/essay modules, always count as correct if there's an answer
+        if (moduleType === 'writing' || moduleType === 'essay') {
+          modules[moduleType].correctAnswers = 1;
+        } else if (question.question_type === QuestionType.TextInput) {
           // For text input questions, check if the answer matches any correct answer (split by ';')
           if (
             question.correct_answer?.split(';')
@@ -714,7 +775,8 @@ const TestInterface = () => {
     
     // Convert to array and calculate scaled scores
     return Object.values(modules).map(module => {
-      const totalQuestions = module.questions.length;
+      // For writing/essay modules, always set total to 1
+      const totalQuestions = (module.moduleId === 'writing' || module.moduleId === 'essay') ? 1 : module.questions.length;
       const correctAnswers = module.correctAnswers;
       
       // Find the scaled score for this module's correct answers
@@ -910,6 +972,16 @@ const TestInterface = () => {
           throw error;
         }
         console.log('✅ Module results updated successfully:', updatedData);
+        
+        // Update moduleResults state for display
+        setModuleResults(prev => ({
+          ...prev,
+          [moduleType]: {
+            score: completedModule.correctAnswers,
+            total: completedModule.totalQuestions,
+            scaled_score: completedModule.scaledScore
+          }
+        }));
       } else {
         console.log('➕ Inserting new module result');
         const insertData = {
@@ -935,6 +1007,16 @@ const TestInterface = () => {
           throw error;
         }
         console.log('✅ Module results saved successfully:', insertedData);
+        
+        // Update moduleResults state for display
+        setModuleResults(prev => ({
+          ...prev,
+          [moduleType]: {
+            score: completedModule.correctAnswers,
+            total: completedModule.totalQuestions,
+            scaled_score: completedModule.scaledScore
+          }
+        }));
       }
       
       console.log('🔄 Proceeding to update answers field...');
@@ -2250,8 +2332,10 @@ const TestInterface = () => {
           lastSavedQuestions: updatedLastSavedQuestions,
         };
 
-        // Save to sessionStorage as backup
-        sessionStorage.setItem(`test_state_${permalink}`, JSON.stringify(stateToSave));
+        // Save to sessionStorage as backup - user-specific
+        if (user) {
+          sessionStorage.setItem(`test_state_${user.id}_${permalink}`, JSON.stringify(stateToSave));
+        }
         
         // Try to save to database (may not complete due to page unload)
         saveTestState({
@@ -2261,6 +2345,7 @@ const TestInterface = () => {
           crossedOutOptions,
           testStartTime,
           currentModuleStartTime,
+          currentModuleTimeLeft,
           currentPartTimeLeft,
           timerRunning,
           timerVisible,
@@ -2522,7 +2607,12 @@ const TestInterface = () => {
           
           <Card className="mb-8">
             <CardHeader>
-              <CardTitle>Select Module Part to Start</CardTitle>
+              <CardTitle>{(() => {
+                const isACTTest = currentTest?.test_category === 'ACT' || 
+                  (currentTest?.modules && Array.isArray(currentTest.modules) && 
+                   currentTest.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type)));
+                return isACTTest ? 'Select Section to Start' : 'Select Module Part to Start';
+              })()}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid gap-4">
@@ -2535,11 +2625,30 @@ const TestInterface = () => {
                   const answeredQuestionsInModule = moduleQuestions.filter(q => userAnswers[q.id]);
                   const hasProgressInModule = answeredQuestionsInModule.length > 0;
                   
+                  // Determine if this is an ACT test
+                  const isACTTest = currentTest?.test_category === 'ACT' || 
+                    (currentTest?.modules && Array.isArray(currentTest.modules) && 
+                     currentTest.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type)));
+                  
+                  const sectionOrModule = isACTTest ? 'Section' : 'Module';
+                  
                   return (
                     <div key={module.type} className="space-y-3">
                       <h3 className="text-lg font-semibold text-gray-700 border-b pb-2">
-                        {module.name} Module
-                        {isModuleCompleted && <span className="ml-2 text-green-600">✓ Completed</span>}
+                        {module.name} {sectionOrModule}
+                        {isModuleCompleted && (
+                          <>
+                            <span className="ml-2 text-green-600">✓ Completed</span>
+                            {moduleResults[module.type] && (
+                              <span className="ml-2 text-green-700">
+                                - Score: {moduleResults[module.type].score}/{moduleResults[module.type].total}
+                                {moduleResults[module.type].scaled_score !== null && (
+                                  <span className="ml-1">(Scaled: {moduleResults[module.type].scaled_score})</span>
+                                )}
+                              </span>
+                            )}
+                          </>
+                        )}
                         {hasProgressInModule && !isModuleCompleted && (
                           <span className="ml-2 text-blue-600">💾 Has Saved Progress</span>
                         )}
@@ -2606,6 +2715,8 @@ const TestInterface = () => {
       (currentTest?.modules && Array.isArray(currentTest.modules) && 
        currentTest.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type)));
     
+    const sectionOrModule = isACTTestForScores ? 'Section' : 'Module';
+    
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
         <Header />
@@ -2615,9 +2726,21 @@ const TestInterface = () => {
         >
           <Card className="mb-8">
             <CardHeader>
-              <CardTitle>Module Results</CardTitle>
+              <CardTitle>{sectionOrModule} Results</CardTitle>
             </CardHeader>
             <CardContent>
+              {/* Action buttons at the top */}
+              <div className="mb-6 flex flex-col sm:flex-row gap-3">
+                <Button onClick={handleProceedToNextModule} className="flex-1">
+                  {completedModules.size < (currentTest?.modules?.length || 0) 
+                    ? `Proceed to Next ${sectionOrModule}` 
+                    : "View Final Results"}
+                </Button>
+                <Button onClick={handleSaveAndExit} className="flex-1" variant="outline">
+                  Return to Dashboard
+                </Button>
+              </div>
+              
               {currentModuleScores.map((module) => {
                 // Only show the current module's results
                 if (module.moduleId === selectedModule) {
@@ -2628,7 +2751,11 @@ const TestInterface = () => {
                         <div className="bg-white rounded-lg p-4 border">
                           <h4 className="text-base sm:text-lg font-medium mb-2">Raw Score</h4>
                           <div className="text-2xl sm:text-3xl font-bold">
-                            {module.correctAnswers} / {module.totalQuestions}
+                            {module.moduleId === 'writing' || module.moduleId === 'essay' ? (
+                              <span className="text-green-600">1 / 1. Essay submitted successfully</span>
+                            ) : (
+                              `${module.correctAnswers} / ${module.totalQuestions}`
+                            )}
                           </div>
                         </div>
                         {module.scaledScore !== undefined && (
@@ -2656,13 +2783,14 @@ const TestInterface = () => {
                 />
               </div>
               
-              <div className="mt-6">
-                <Button onClick={handleProceedToNextModule} className="w-full">
+              {/* Action buttons at the bottom as well */}
+              <div className="mt-6 flex flex-col sm:flex-row gap-3">
+                <Button onClick={handleProceedToNextModule} className="flex-1">
                   {completedModules.size < (currentTest?.modules?.length || 0) 
-                    ? "Proceed to Next Module" 
+                    ? `Proceed to Next ${sectionOrModule}` 
                     : "View Final Results"}
                 </Button>
-                <Button onClick={handleSaveAndExit} className="w-full mt-3" variant="outline">
+                <Button onClick={handleSaveAndExit} className="flex-1" variant="outline">
                   Return to Dashboard
                 </Button>
               </div>

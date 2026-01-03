@@ -661,9 +661,9 @@ export const TestContainer: React.FC<TestContainerProps> = ({
       <Dialog open={showEndModuleDialog} onOpenChange={setShowEndModuleDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>End Module?</DialogTitle>
+            <DialogTitle>End {testCategory === 'ACT' ? 'Section' : 'Module'}?</DialogTitle>
             <DialogDescription>
-              Are you sure you want to end this module and submit your answers?
+              Are you sure you want to end this {testCategory === 'ACT' ? 'section' : 'module'} and submit your answers?
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -671,7 +671,7 @@ export const TestContainer: React.FC<TestContainerProps> = ({
               Cancel
             </Button>
             <Button onClick={handleConfirmEndModule}>
-              Yes, Submit Module
+              Yes, Submit {testCategory === 'ACT' ? 'Section' : 'Module'}
             </Button>
           </DialogFooter>
         </DialogContent>

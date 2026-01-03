@@ -256,6 +256,172 @@ const PassageQuestion: React.FC<PassageQuestionProps> = ({
     }
   }, [currentQuestionIndex, currentQuestion, passage.content, testCategory]);
 
+  // Helper function to check if a node is a block element
+  const isBlockElement = (node: Node): boolean => {
+    if (node.nodeType !== Node.ELEMENT_NODE) return false;
+    const element = node as Element;
+    const blockElements = ['DIV', 'P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'UL', 'OL', 'LI', 'BLOCKQUOTE', 'SECTION', 'ARTICLE', 'HEADER', 'FOOTER', 'NAV', 'ASIDE', 'MAIN', 'BR'];
+    return blockElements.includes(element.tagName);
+  };
+
+  // Helper function to create a highlight span with click handler
+  const createHighlightSpan = (text: string, highlightColor: string): HTMLSpanElement => {
+    const highlightSpan = document.createElement('span');
+    highlightSpan.className = 'highlight';
+    highlightSpan.style.backgroundColor = highlightColor;
+    highlightSpan.style.padding = '2px 0';
+    highlightSpan.style.borderRadius = '2px';
+    highlightSpan.style.cursor = 'pointer';
+    highlightSpan.style.display = 'inline';
+    highlightSpan.title = 'Click to remove highlight';
+    highlightSpan.textContent = text;
+
+    highlightSpan.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const parent = highlightSpan.parentNode;
+      if (parent) {
+        const textNode = document.createTextNode(highlightSpan.textContent || '');
+        parent.replaceChild(textNode, highlightSpan);
+        parent.normalize();
+      }
+    };
+
+    return highlightSpan;
+  };
+
+  // Helper function to wrap text nodes in highlight spans while preserving structure
+  const wrapTextNodesInRange = (range: Range, highlightColor: string): void => {
+    const startContainer = range.startContainer;
+    const endContainer = range.endContainer;
+    const startOffset = range.startOffset;
+    const endOffset = range.endOffset;
+
+    // If start and end are in the same text node - simple case
+    if (startContainer === endContainer && startContainer.nodeType === Node.TEXT_NODE) {
+      const textNode = startContainer as Text;
+      const text = textNode.textContent || '';
+      const beforeText = text.substring(0, startOffset);
+      const highlightText = text.substring(startOffset, endOffset);
+      const afterText = text.substring(endOffset);
+
+      if (highlightText.trim().length === 0) return;
+
+      const parent = textNode.parentNode;
+      if (!parent) return;
+
+      // Replace text node with before + highlight + after
+      const fragment = document.createDocumentFragment();
+      if (beforeText) fragment.appendChild(document.createTextNode(beforeText));
+      fragment.appendChild(createHighlightSpan(highlightText, highlightColor));
+      if (afterText) fragment.appendChild(document.createTextNode(afterText));
+      
+      parent.replaceChild(fragment, textNode);
+      return;
+    }
+
+    // For selections spanning multiple nodes, process in-place without extracting
+    try {
+      // Split text nodes at boundaries if needed
+      if (startContainer.nodeType === Node.TEXT_NODE) {
+        const textNode = startContainer as Text;
+        if (startOffset > 0 && startOffset < textNode.textContent!.length) {
+          textNode.splitText(startOffset);
+        }
+      }
+
+      if (endContainer.nodeType === Node.TEXT_NODE) {
+        const textNode = endContainer as Text;
+        if (endOffset > 0 && endOffset < textNode.textContent!.length) {
+          textNode.splitText(endOffset);
+        }
+      }
+
+      // Find all text nodes within the range by walking the DOM tree
+      const textNodesToHighlight: { node: Text; start: number; end: number }[] = [];
+      
+      // Create a range to work with
+      const workRange = range.cloneRange();
+      
+      // Helper to check if a text node intersects with the range
+      const getTextNodeIntersection = (textNode: Text): { start: number; end: number } | null => {
+        const nodeRange = document.createRange();
+        nodeRange.selectNodeContents(textNode);
+        
+        // Check if ranges intersect
+        if (workRange.compareBoundaryPoints(Range.END_TO_START, nodeRange) >= 0 ||
+            workRange.compareBoundaryPoints(Range.START_TO_END, nodeRange) <= 0) {
+          return null; // No intersection
+        }
+        
+        // Calculate intersection
+        const start = textNode === workRange.startContainer ? workRange.startOffset : 0;
+        const end = textNode === workRange.endContainer ? workRange.endOffset : (textNode.textContent?.length || 0);
+        
+        return { start, end };
+      };
+
+      // Walk through all nodes in the range's common ancestor
+      const walker = document.createTreeWalker(
+        workRange.commonAncestorContainer,
+        NodeFilter.SHOW_TEXT,
+        null
+      );
+
+      let textNode: Text | null;
+      while (textNode = walker.nextNode() as Text) {
+        const intersection = getTextNodeIntersection(textNode);
+        if (intersection && intersection.start < intersection.end) {
+          textNodesToHighlight.push({ 
+            node: textNode, 
+            start: intersection.start, 
+            end: intersection.end 
+          });
+        }
+      }
+
+      // Process text nodes in reverse order to maintain correct indices
+      textNodesToHighlight.reverse().forEach(({ node, start, end }) => {
+        const text = node.textContent || '';
+        const beforeText = text.substring(0, start);
+        const highlightText = text.substring(start, end);
+        const afterText = text.substring(end);
+
+        if (highlightText.trim().length === 0) return;
+
+        const parent = node.parentNode;
+        if (!parent) return;
+
+        const fragment = document.createDocumentFragment();
+        if (beforeText) fragment.appendChild(document.createTextNode(beforeText));
+        fragment.appendChild(createHighlightSpan(highlightText, highlightColor));
+        if (afterText) fragment.appendChild(document.createTextNode(afterText));
+
+        parent.replaceChild(fragment, node);
+      });
+    } catch (error) {
+      console.error('Error in complex highlighting:', error);
+      // Fallback: try simple approach for inline selections only
+      try {
+        // Only use surroundContents if range doesn't cross block boundaries
+        const startParent = startContainer.nodeType === Node.TEXT_NODE 
+          ? startContainer.parentElement 
+          : startContainer as Element;
+        const endParent = endContainer.nodeType === Node.TEXT_NODE 
+          ? endContainer.parentElement 
+          : endContainer as Element;
+
+        // Check if we're crossing block boundaries
+        if (startParent && endParent && !isBlockElement(startParent) && !isBlockElement(endParent)) {
+          const highlightSpan = createHighlightSpan(selectedText, highlightColor);
+          range.surroundContents(highlightSpan);
+        }
+      } catch (fallbackError) {
+        console.error('Fallback highlighting also failed:', fallbackError);
+      }
+    }
+  };
+
   // Handle text selection for highlighting
   const handleTextSelection = () => {
     if (!isHighlighting || !currentQuestion) return;
@@ -268,36 +434,23 @@ const PassageQuestion: React.FC<PassageQuestionProps> = ({
     
     if (selectedText.length === 0) return;
 
-    // Create highlight span
-    const highlightSpan = document.createElement('span');
-    highlightSpan.className = 'highlight';
-    highlightSpan.style.backgroundColor = selectedColor === 'yellow' ? '#fef08a' : 
-                                        selectedColor === 'green' ? '#bbf7d0' : 
-                                        selectedColor === 'blue' ? '#bfdbfe' : 
-                                        selectedColor === 'pink' ? '#fce7f3' : 
-                                        selectedColor === 'orange' ? '#fed7aa' : '#e9d5ff';
-    highlightSpan.style.padding = '2px 4px';
-    highlightSpan.style.borderRadius = '3px';
-    highlightSpan.style.cursor = 'pointer';
-    highlightSpan.title = 'Click to remove highlight';
-    
-    // Add click handler to remove highlight
-    highlightSpan.onclick = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const parent = highlightSpan.parentNode;
-      if (parent) {
-        parent.replaceChild(document.createTextNode(highlightSpan.textContent || ''), highlightSpan);
-        parent.normalize();
-      }
-    };
-
-    try {
-      range.surroundContents(highlightSpan);
-      selection.removeAllRanges();
-    } catch (error) {
-      console.error('Error highlighting text:', error);
+    // Check if selection is within the passage content
+    if (!passageRef.current || !passageRef.current.contains(range.commonAncestorContainer)) {
+      return;
     }
+
+    // Get highlight color
+    const highlightColor = selectedColor === 'yellow' ? '#fef08a' : 
+                          selectedColor === 'green' ? '#bbf7d0' : 
+                          selectedColor === 'blue' ? '#bfdbfe' : 
+                          selectedColor === 'pink' ? '#fce7f3' : 
+                          selectedColor === 'orange' ? '#fed7aa' : '#e9d5ff';
+
+    // Use the improved wrapping function that preserves structure
+    wrapTextNodesInRange(range, highlightColor);
+    
+    // Clear selection
+    selection.removeAllRanges();
   };
 
   // Dynamic CSS for highlighting
@@ -308,8 +461,12 @@ const PassageQuestion: React.FC<PassageQuestionProps> = ({
         user-select: ${isHighlighting ? 'text' : 'none'};
         cursor: ${isHighlighting ? 'text' : 'default'};
       }
+      .highlightable-text * {
+        user-select: ${isHighlighting ? 'text' : 'none'};
+      }
       .highlight {
         transition: background-color 0.2s ease;
+        display: inline;
       }
       .highlight:hover {
         opacity: 0.8;
@@ -517,12 +674,13 @@ const PassageQuestion: React.FC<PassageQuestionProps> = ({
                       
                       // Render sentence with highlights
                       if (isFullSentenceHighlighted && sentenceHighlightRanges.length === 0) {
-                        // Full sentence highlight - preserve HTML
+                        // Full sentence highlight - preserve HTML, no extra padding
                         parts.push(
                           <span
                             key={`sentence-${index}`}
                             data-sentence-index={index}
-                            className="bg-yellow-200 px-1 py-0.5 rounded transition-colors"
+                            className="bg-yellow-200 rounded transition-colors"
+                            style={{ padding: '0' }}
                             dangerouslySetInnerHTML={{ __html: sentenceHtml }}
                           />
                         );
@@ -554,13 +712,14 @@ const PassageQuestion: React.FC<PassageQuestionProps> = ({
                             }
                           }
                           
-                          // Add highlighted text
+                          // Add highlighted text - no extra padding to avoid spacing issues
                           const highlightText = sentence.substring(relativeStart, relativeEnd);
                           if (highlightText && highlightText.length > 0) {
                             sentenceParts.push(
                               <mark
                                 key={`highlight-${rangeIdx}`}
-                                className="bg-yellow-300 text-yellow-900 px-1 py-0.5 rounded transition-colors inline"
+                                className="bg-yellow-300 text-yellow-900 rounded transition-colors inline"
+                                style={{ padding: '0' }}
                               >
                                 {highlightText}
                               </mark>
@@ -676,15 +835,9 @@ const PassageQuestion: React.FC<PassageQuestionProps> = ({
                             userAnswers[currentQuestion.id] === option.id && "selected",
                             isCrossedOut && "opacity-60"
                           )}
-                          onClick={(e) => {
-                            // If cross-out mode is active, toggle cross-out instead of selecting
-                            if (crossOutMode && onToggleCrossOut) {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              onToggleCrossOut(currentQuestion.id, option.id);
-                            } else if (!crossOutMode) {
-                              onAnswerChange(currentQuestion.id, option.id);
-                            }
+                          onClick={() => {
+                            // Always select answer when clicking on the label
+                            onAnswerChange(currentQuestion.id, option.id);
                           }}
                         >
                           <div className="flex items-center mt-1">
@@ -694,10 +847,7 @@ const PassageQuestion: React.FC<PassageQuestionProps> = ({
                               value={option.id}
                               checked={userAnswers[currentQuestion.id] === option.id}
                               onChange={() => {
-                                // Only select answer if cross-out mode is not active
-                                if (!crossOutMode) {
-                                  onAnswerChange(currentQuestion.id, option.id);
-                                }
+                                onAnswerChange(currentQuestion.id, option.id);
                               }}
                               className="sr-only"
                               disabled={isCrossedOut}
@@ -720,33 +870,51 @@ const PassageQuestion: React.FC<PassageQuestionProps> = ({
                                   </span>
                                 )}
                               </div>
-                              {isAnswerMasking && onToggleUnmask && (
-                                <button 
-                                  type="button"
-                                  className="ml-2 p-1 rounded hover:bg-gray-200"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onToggleUnmask(currentQuestion.id, option.id);
-                                  }}
-                                  title={isUnmasked ? "Mask answer" : "Unmask answer"}
-                                >
-                                  {isUnmasked ? (
-                                    <EyeOff className="h-4 w-4 text-gray-600" />
-                                  ) : (
-                                    <Eye className="h-4 w-4 text-gray-600" />
-                                  )}
-                                </button>
-                              )}
                             </div>
+                            {/* Cross-out overlay for ACT */}
+                            {isCrossedOut && testCategory === 'ACT' && (
+                              <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                                <X className="h-8 w-8 text-red-500 font-bold" />
+                              </div>
+                            )}
                           </div>
-                          
-                          {/* Cross-out overlay for ACT */}
-                          {isCrossedOut && testCategory === 'ACT' && (
-                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                              <X className="h-8 w-8 text-red-500 font-bold" />
-                            </div>
-                          )}
                         </label>
+                        
+                        {isAnswerMasking && onToggleUnmask && (
+                          <button 
+                            type="button"
+                            className={cn(
+                              "absolute right-3 top-3 w-6 h-6 flex items-center justify-center rounded-full z-20",
+                              isUnmasked ? "bg-green-100 text-green-600" : "bg-gray-100 text-gray-400 hover:bg-gray-200"
+                            )}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              onToggleUnmask(currentQuestion.id, option.id);
+                            }}
+                            title={isUnmasked ? "Mask answer" : "Unmask answer"}
+                          >
+                            {isUnmasked ? <EyeOff className="h-5 w-5 text-green-600" style={{ strokeWidth: 2 }} /> : <Eye className="h-5 w-5 text-gray-600" style={{ strokeWidth: 2 }} />}
+                          </button>
+                        )}
+                        
+                        {crossOutMode && onToggleCrossOut && (
+                          <button 
+                            type="button"
+                            className={cn(
+                              "absolute right-12 top-3 w-6 h-6 flex items-center justify-center rounded-full z-20",
+                              isCrossedOut ? "bg-red-100 text-red-600" : "bg-gray-100 text-gray-400 hover:bg-gray-200"
+                            )}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              onToggleCrossOut(currentQuestion.id, option.id);
+                            }}
+                            title={isCrossedOut ? "Remove cross-out" : "Cross out option"}
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        )}
                       </div>
                     );
                   })}

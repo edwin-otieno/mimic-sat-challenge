@@ -97,6 +97,11 @@ const Results = () => {
     return () => clearTimeout(timer);
   }, []);
   
+  // Scroll to top when Results page loads
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+  
   // Fetch results history on mount if user is present
   useEffect(() => {
     if (user) {
@@ -113,11 +118,12 @@ const Results = () => {
     
     setIsLoadingHistory(true);
     try {
-      // Fetch user's test results (limit to last 50 to reduce egress)
+      // Fetch user's completed test results only (limit to last 50 to reduce egress)
       const { data: testResults, error: testError } = await supabase
         .from('test_results')
         .select('id, test_id, user_id, total_score, total_questions, scaled_score, created_at, time_taken, answers, is_completed')
         .eq('user_id', user.id)
+        .eq('is_completed', true)
         .order('created_at', { ascending: false })
         .limit(50);
       
@@ -785,7 +791,7 @@ const Results = () => {
                 {currentResult.moduleResults.length > 0 && (
                   <Card>
                     <CardHeader>
-                      <CardTitle className="text-lg sm:text-xl">Module Scores</CardTitle>
+                      <CardTitle className="text-lg sm:text-xl">{historyTestCategory === 'ACT' ? 'Section Scores' : 'Module Scores'}</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <Tabs defaultValue={currentResult.moduleResults[0].id}>
@@ -935,7 +941,7 @@ const Results = () => {
             {state.moduleScores && state.moduleScores.length > 0 && (
               <Card className="mb-10">
                 <CardHeader>
-                  <CardTitle>Module Scores</CardTitle>
+                  <CardTitle>{(state?.testCategory || currentTestCategory) === 'ACT' ? 'Section Scores' : 'Module Scores'}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <Tabs defaultValue={state.moduleScores[0].moduleId}>

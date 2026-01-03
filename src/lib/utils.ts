@@ -253,39 +253,58 @@ const renderTextWithoutTables = (text: string, keyPrefix: string): React.ReactNo
         // Split paragraph into lines
         const lines = paragraph.split('\n');
         
-        const formattedLines = lines.map((line, index) => {
-          // Check if line is a list item
+        // Separate list items from regular text
+        const bulletItems: React.ReactNode[] = [];
+        const numberedItems: React.ReactNode[] = [];
+        const regularLines: React.ReactNode[] = [];
+        
+        lines.forEach((line, index) => {
+          // Check if line is a bullet list item
           if (line.trim().startsWith('- ')) {
-            return React.createElement('li', { key: `${keyPrefix}-${blockIndex}-${pIndex}-${index}`, className: 'ml-4' },
+            bulletItems.push(
+              React.createElement('li', { key: `${keyPrefix}-${blockIndex}-${pIndex}-bullet-${index}`, className: 'ml-6' },
               React.createElement('div', { className: 'break-words overflow-wrap-break-word [&_div]:break-words [&_div]:overflow-wrap-break-word', dangerouslySetInnerHTML: { __html: line.substring(2) } })
+              )
             );
           }
           // Check if line is a numbered list item
-          if (/^\d+\.\s/.test(line)) {
-            return React.createElement('li', { key: `${keyPrefix}-${blockIndex}-${pIndex}-${index}`, className: 'ml-4' },
+          else if (/^\d+\.\s/.test(line)) {
+            numberedItems.push(
+              React.createElement('li', { key: `${keyPrefix}-${blockIndex}-${pIndex}-numbered-${index}`, className: 'ml-6' },
               React.createElement('div', { className: 'break-words overflow-wrap-break-word [&_div]:break-words [&_div]:overflow-wrap-break-word', dangerouslySetInnerHTML: { __html: line.substring(line.indexOf('.') + 2) } })
+              )
             );
           }
           // Regular text with HTML formatting
-          return React.createElement('div', { 
+          else {
+            regularLines.push(
+              React.createElement('div', { 
             key: `${keyPrefix}-${blockIndex}-${pIndex}-${index}`, 
             className: 'mb-2 break-words overflow-wrap-break-word [&_div]:break-words [&_div]:overflow-wrap-break-word',
             dangerouslySetInnerHTML: { __html: line }
-          });
+              })
+            );
+          }
         });
 
-        // Wrap list items in a ul element if needed
-        const hasListItems = lines.some(line => 
-          line.trim().startsWith('- ') || /^\d+\.\s/.test(line)
-        );
-
-        if (hasListItems) {
+        // Add bullet list if we have bullet items
+        if (bulletItems.length > 0) {
           parts.push(
-            React.createElement('ul', { key: `${keyPrefix}-${blockIndex}-${pIndex}`, className: 'mb-4' }, formattedLines)
+            React.createElement('ul', { key: `${keyPrefix}-${blockIndex}-${pIndex}-ul`, className: 'mb-4 list-disc ml-6' }, bulletItems)
           );
-        } else {
+        }
+
+        // Add numbered list if we have numbered items
+        if (numberedItems.length > 0) {
           parts.push(
-            React.createElement('div', { key: `${keyPrefix}-${blockIndex}-${pIndex}`, className: 'mb-4 break-words overflow-wrap-break-word [&_div]:break-words [&_div]:overflow-wrap-break-word' }, formattedLines)
+            React.createElement('ol', { key: `${keyPrefix}-${blockIndex}-${pIndex}-ol`, className: 'mb-4 list-decimal ml-6' }, numberedItems)
+          );
+        }
+
+        // Add regular lines
+        if (regularLines.length > 0) {
+          parts.push(
+            React.createElement('div', { key: `${keyPrefix}-${blockIndex}-${pIndex}-regular`, className: 'mb-4 break-words overflow-wrap-break-word [&_div]:break-words [&_div]:overflow-wrap-break-word' }, regularLines)
           );
         }
       });
