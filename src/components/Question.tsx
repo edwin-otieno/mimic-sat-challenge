@@ -246,7 +246,11 @@ const Question: React.FC<QuestionProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Left column - Question text */}
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-gray-700 mb-4">Question</h3>
+            <h3 className="text-lg font-semibold text-gray-700 mb-4">
+              {isMathModule && sequentialQuestionNumber 
+                ? `Question ${sequentialQuestionNumber}` 
+                : 'Question'}
+            </h3>
             <div className="text-xl font-medium whitespace-pre-wrap">
               {console.log('ACT Question component - isAdmin:', isAdmin, 'testCategory:', testCategory, 'question.text:', question.text)}
               {!isAdmin ? (

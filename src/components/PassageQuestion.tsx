@@ -77,13 +77,32 @@ const PassageQuestion: React.FC<PassageQuestionProps> = ({
   const [autoHighlightedRanges, setAutoHighlightedRanges] = useState<Map<number, Array<{ start: number; end: number }>>>(new Map());
   const [showConfirmSubmitDialog, setShowConfirmSubmitDialog] = useState(false);
   const passageRef = useRef<HTMLDivElement>(null);
-  // For navigation with all questions, currentQuestionIndex is global
-  // For getting the question from current passage, we need to find it by matching question IDs
+  // For navigation with all questions, currentQuestionIndex can be either:
+  // 1. Global test index (when passed from parent) - but allQuestions is module-specific
+  // 2. Module-relative index (when calculated from passage indices) - matches allQuestions
+  // We need to find the question correctly in both cases
   let currentQuestion;
   if (allQuestions && allQuestions.length > 0) {
-    // Use global index to find question, then match by ID in current passage
-    const currentGlobalQuestion = allQuestions[currentQuestionIndex];
-    currentQuestion = passage.questions?.find(q => q.id === currentGlobalQuestion?.id) || passage.questions?.[0];
+    // If currentQuestionIndex is within the bounds of allQuestions, use it directly
+    // (This means it's already a module-relative index from getCurrentPassageData)
+    if (currentQuestionIndex >= 0 && currentQuestionIndex < allQuestions.length) {
+      const questionFromAllQuestions = allQuestions[currentQuestionIndex];
+      // Find the matching question in the current passage
+      currentQuestion = passage.questions?.find(q => q.id === questionFromAllQuestions.id) || passage.questions?.[0];
+    } else {
+      // currentQuestionIndex is out of bounds (likely a global index)
+      // Find the question by matching IDs from the passage
+      // Use the first question in the passage that exists in allQuestions
+      const passageQuestionIds = new Set(passage.questions?.map(q => q.id) || []);
+      const firstMatchingQuestion = allQuestions.find(aq => passageQuestionIds.has(aq.id));
+      
+      if (firstMatchingQuestion) {
+        currentQuestion = passage.questions?.find(pq => pq.id === firstMatchingQuestion.id) || passage.questions?.[0];
+      } else {
+        // Fallback to first question in passage
+        currentQuestion = passage.questions?.[0];
+      }
+    }
   } else {
     // Fallback: use currentQuestionIndex as local index when allQuestions not provided
     currentQuestion = passage.questions?.[currentQuestionIndex];
@@ -104,9 +123,27 @@ const PassageQuestion: React.FC<PassageQuestionProps> = ({
   };
   
   // Get the sequential question number from allQuestions (which has sequential numbering)
-  const sequentialQuestionNumber = allQuestions && allQuestions.length > 0 && currentQuestion
-    ? allQuestions.find(q => q.id === currentQuestion.id)?.question_number
-    : currentQuestion?.question_number;
+  // currentQuestionIndex should be module-relative (0-based within the module)
+  // If it's within bounds, use it directly; otherwise find by ID
+  let sequentialQuestionNumber: number | undefined;
+  if (allQuestions && allQuestions.length > 0 && currentQuestion) {
+    // If currentQuestionIndex is within bounds, use it directly (it's already module-relative)
+    if (currentQuestionIndex >= 0 && currentQuestionIndex < allQuestions.length) {
+      sequentialQuestionNumber = allQuestions[currentQuestionIndex]?.question_number;
+    }
+    
+    // If not found by index, find by ID
+    if (sequentialQuestionNumber === undefined) {
+      sequentialQuestionNumber = allQuestions.find(q => q.id === currentQuestion.id)?.question_number;
+    }
+    
+    // Final fallback to question's own question_number
+    if (sequentialQuestionNumber === undefined) {
+      sequentialQuestionNumber = currentQuestion?.question_number;
+    }
+  } else {
+    sequentialQuestionNumber = currentQuestion?.question_number;
+  }
   
   const optionLetters = getOptionLetters(sequentialQuestionNumber);
 
@@ -161,6 +198,95 @@ const PassageQuestion: React.FC<PassageQuestionProps> = ({
     }
     
     return htmlPos;
+  };
+
+  // Apply highlights to HTML content while preserving HTML structure
+  // Uses DOM manipulation to precisely target text nodes
+  const applyHighlightsToHtml = (
+    htmlContent: string, 
+    plainText: string, 
+    ranges: Array<{ start: number; end: number }>
+  ): string => {
+    if (ranges.length === 0) {
+      return htmlContent;
+    }
+
+    // Create a temporary DOM element to parse and manipulate HTML
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = htmlContent;
+    
+    // Build a list of text nodes with their plain text positions
+    const textNodes: Array<{ node: Text; startPlain: number; endPlain: number }> = [];
+    let plainTextPos = 0;
+    
+    const walker = document.createTreeWalker(
+      tempDiv,
+      NodeFilter.SHOW_TEXT,
+      null
+    );
+    
+    let textNode: Text | null;
+    while (textNode = walker.nextNode() as Text) {
+      const text = textNode.textContent || '';
+      const startPlain = plainTextPos;
+      const endPlain = plainTextPos + text.length;
+      textNodes.push({ 
+        node: textNode, 
+        startPlain, 
+        endPlain
+      });
+      plainTextPos = endPlain;
+    }
+    
+    // Sort ranges by start position (descending for processing)
+    const sortedRanges = [...ranges].sort((a, b) => b.start - a.start);
+    
+    // Apply highlights to each range
+    sortedRanges.forEach((range) => {
+      const rangeStart = range.start;
+      const rangeEnd = range.end;
+      
+      // Find text nodes that intersect with this range
+      textNodes.forEach(({ node, startPlain, endPlain }) => {
+        // Check if this text node intersects with the range
+        if (rangeEnd > startPlain && rangeStart < endPlain) {
+          // Calculate relative positions within this text node
+          const nodeStart = Math.max(0, rangeStart - startPlain);
+          const nodeEnd = Math.min(node.textContent?.length || 0, rangeEnd - startPlain);
+          
+          if (nodeStart < nodeEnd && node.parentNode) {
+            // Split the text node and wrap the highlighted portion
+            const text = node.textContent || '';
+            const beforeText = text.substring(0, nodeStart);
+            const highlightText = text.substring(nodeStart, nodeEnd);
+            const afterText = text.substring(nodeEnd);
+            
+            // Create document fragment
+            const fragment = document.createDocumentFragment();
+            
+            if (beforeText) {
+              fragment.appendChild(document.createTextNode(beforeText));
+            }
+            
+            // Create highlight mark element
+            const mark = document.createElement('mark');
+            mark.className = 'bg-yellow-300 text-yellow-900 rounded transition-colors inline';
+            mark.style.padding = '0';
+            mark.textContent = highlightText;
+            fragment.appendChild(mark);
+            
+            if (afterText) {
+              fragment.appendChild(document.createTextNode(afterText));
+            }
+            
+            // Replace the text node with the fragment
+            node.parentNode.replaceChild(fragment, node);
+          }
+        }
+      });
+    });
+    
+    return tempDiv.innerHTML;
   };
 
   const splitPassageIntoSentences = (content: string): { sentences: string[]; sentenceRanges: Array<{ start: number; end: number }> } => {
@@ -691,70 +817,22 @@ const PassageQuestion: React.FC<PassageQuestionProps> = ({
                           />
                         );
                       } else if (sentenceHighlightRanges.length > 0) {
-                        // Partial sentence highlights - use plain text for highlighting precision
-                        const sortedRanges = [...sentenceHighlightRanges].sort((a, b) => a.start - b.start);
-                        let sentenceLastPos = 0;
-                        const sentenceParts: React.ReactNode[] = [];
+                        // Partial sentence highlights - apply highlights to specific ranges while preserving HTML
+                        // Convert absolute ranges to relative ranges within the sentence
+                        const relativeRanges = sentenceHighlightRanges.map(r => ({
+                          start: Math.max(0, r.start - range.start),
+                          end: Math.min(sentence.length, r.end - range.start)
+                        })).filter(r => r.start < r.end);
                         
-                        sortedRanges.forEach((r, rangeIdx) => {
-                          // Convert absolute positions to relative positions within the sentence (plain text)
-                          const relativeStart = Math.max(0, r.start - range.start);
-                          const relativeEnd = Math.min(sentence.length, r.end - range.start);
-                          
-                          // Validate range
-                          if (relativeStart < 0 || relativeEnd > sentence.length || relativeStart >= relativeEnd) {
-                            return;
-                          }
-                          
-                          // Add text before highlight (preserve HTML formatting)
-                          if (relativeStart > sentenceLastPos) {
-                            const beforeText = sentence.substring(sentenceLastPos, relativeStart);
-                            if (beforeText) {
-                              sentenceParts.push(
-                                <span key={`before-range-${rangeIdx}`}>
-                                  {beforeText}
-                                </span>
-                              );
-                            }
-                          }
-                          
-                          // Add highlighted text - no extra padding to avoid spacing issues
-                          const highlightText = sentence.substring(relativeStart, relativeEnd);
-                          if (highlightText && highlightText.length > 0) {
-                            sentenceParts.push(
-                              <mark
-                                key={`highlight-${rangeIdx}`}
-                                className="bg-yellow-300 text-yellow-900 rounded transition-colors inline"
-                                style={{ padding: '0' }}
-                              >
-                                {highlightText}
-                              </mark>
-                            );
-                          }
-                          
-                          sentenceLastPos = Math.max(sentenceLastPos, relativeEnd);
-                        });
+                        // Apply highlights to HTML while preserving structure
+                        const highlightedHtml = applyHighlightsToHtml(sentenceHtml, sentence, relativeRanges);
                         
-                        // Add remaining text after last highlight
-                        if (sentenceLastPos < sentence.length) {
-                          const afterText = sentence.substring(sentenceLastPos);
-                          if (afterText) {
-                            sentenceParts.push(
-                              <span key={`after-ranges`}>
-                                {afterText}
-                              </span>
-                            );
-                          }
-                        }
-                        
-                        // If no parts were created, render the HTML sentence
                         parts.push(
                           <span
                             key={`sentence-${index}`}
                             data-sentence-index={index}
-                          >
-                            {sentenceParts.length > 0 ? sentenceParts : <span dangerouslySetInnerHTML={{ __html: sentenceHtml }} />}
-                          </span>
+                            dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+                          />
                         );
                       } else {
                         // Normal sentence (no highlight) - preserve HTML

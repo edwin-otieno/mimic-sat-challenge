@@ -178,6 +178,18 @@ const TestInterface = () => {
     if (saved) {
       try {
         const state = JSON.parse(saved) as any;
+        // Check if this is actually a new account (no user answers)
+        const hasUserAnswers = state.userAnswers && Object.keys(state.userAnswers).length > 0;
+        
+        if (!hasUserAnswers) {
+          // This is a new account or stale state - clear it
+          console.log('🔄 Complete test state has no user answers - clearing stale state');
+          sessionStorage.removeItem(`completeTestState_${user.id}_${permalink}`);
+          sessionStorage.removeItem(`timerState_${user.id}_${permalink}`);
+          return false;
+        }
+        
+        // User has answers - this is a legitimate saved state
         setCurrentQuestionIndex(state.currentQuestionIndex || 0);
         setUserAnswers(state.userAnswers || {});
         setFlaggedQuestions(new Set(state.flaggedQuestions || []));
@@ -249,6 +261,36 @@ const TestInterface = () => {
         }
         
         if (saved && typeof saved === 'object') {
+          // Check if this is actually a new account (no user answers)
+          const hasUserAnswers = saved.userAnswers && Object.keys(saved.userAnswers).length > 0;
+          
+          if (!hasUserAnswers) {
+            // This is a new account or stale state - clear it and start fresh
+            console.log('🔄 Loaded state has no user answers - clearing stale state and starting fresh');
+            if (user) {
+              // Clear from database
+              try {
+                await clearTestState();
+              } catch (clearError) {
+                console.error('Error clearing stale test state:', clearError);
+              }
+              // Clear sessionStorage
+              sessionStorage.removeItem(`completeTestState_${user.id}_${permalink}`);
+              sessionStorage.removeItem(`timerState_${user.id}_${permalink}`);
+            }
+            // Start fresh
+            setCurrentQuestionIndex(0);
+            setUserAnswers({});
+            setFlaggedQuestions(new Set());
+            setCrossedOutOptions({});
+            setLastSavedQuestions({});
+            setCurrentModuleTimeLeft(0);
+            setCurrentPartTimeLeft(0);
+            setStateLoaded(true);
+            return;
+          }
+          
+          // User has answers - this is a legitimate saved state
           console.log('🔍 Loading saved state from database, setting currentQuestionIndex to:', saved.currentQuestionIndex);
           setCurrentQuestionIndex(saved.currentQuestionIndex);
           setUserAnswers(saved.userAnswers);
@@ -279,32 +321,47 @@ const TestInterface = () => {
         if (sessionBackup) {
           try {
             const saved = JSON.parse(sessionBackup);
-            console.log('🔍 Loading saved state from sessionStorage backup, setting currentQuestionIndex to:', saved.currentQuestionIndex);
-            setCurrentQuestionIndex(saved.currentQuestionIndex);
-            setUserAnswers(saved.userAnswers);
-            setFlaggedQuestions(new Set(saved.flaggedQuestions));
-            setCrossedOutOptions(saved.crossedOutOptions);
-            setTestStartTime(new Date(saved.testStartTime));
-            setCurrentModuleStartTime(new Date(saved.currentModuleStartTime));
-            setCurrentModuleTimeLeft(saved.currentModuleTimeLeft);
-            setCurrentPartTimeLeft(saved.currentPartTimeLeft);
-            setTimerRunning(saved.timerRunning);
-            setTimerVisible(saved.timerVisible !== false);
-            setCurrentPart(saved.currentPart);
-            setSelectedModule(saved.selectedModule);
-            setPartTimes(saved.partTimes);
-            setShowModuleSelection(true);
-            setCompletedModules(new Set(saved.completedModules));
-            setShowModuleScores(saved.showModuleScores);
-            setShowPartTransition(saved.showPartTransition);
-            setLastSavedQuestions(saved.lastSavedQuestions || {});
-            setStateLoaded(true);
+            // Check if this is actually a new account (no user answers)
+            const hasUserAnswers = saved.userAnswers && Object.keys(saved.userAnswers).length > 0;
             
-            // Clear the sessionStorage backup after loading
-            if (user) {
-              sessionStorage.removeItem(`test_state_${user.id}_${permalink}`);
+            if (!hasUserAnswers) {
+              // This is a new account or stale state - clear it
+              console.log('🔄 SessionStorage backup has no user answers - clearing stale state');
+              if (user) {
+                sessionStorage.removeItem(`test_state_${user.id}_${permalink}`);
+                sessionStorage.removeItem(`completeTestState_${user.id}_${permalink}`);
+                sessionStorage.removeItem(`timerState_${user.id}_${permalink}`);
+              }
+              // Continue to start fresh below
+            } else {
+              // User has answers - this is a legitimate saved state
+              console.log('🔍 Loading saved state from sessionStorage backup, setting currentQuestionIndex to:', saved.currentQuestionIndex);
+              setCurrentQuestionIndex(saved.currentQuestionIndex);
+              setUserAnswers(saved.userAnswers);
+              setFlaggedQuestions(new Set(saved.flaggedQuestions));
+              setCrossedOutOptions(saved.crossedOutOptions);
+              setTestStartTime(new Date(saved.testStartTime));
+              setCurrentModuleStartTime(new Date(saved.currentModuleStartTime));
+              setCurrentModuleTimeLeft(saved.currentModuleTimeLeft);
+              setCurrentPartTimeLeft(saved.currentPartTimeLeft);
+              setTimerRunning(saved.timerRunning);
+              setTimerVisible(saved.timerVisible !== false);
+              setCurrentPart(saved.currentPart);
+              setSelectedModule(saved.selectedModule);
+              setPartTimes(saved.partTimes);
+              setShowModuleSelection(true);
+              setCompletedModules(new Set(saved.completedModules));
+              setShowModuleScores(saved.showModuleScores);
+              setShowPartTransition(saved.showPartTransition);
+              setLastSavedQuestions(saved.lastSavedQuestions || {});
+              setStateLoaded(true);
+              
+              // Clear the sessionStorage backup after loading
+              if (user) {
+                sessionStorage.removeItem(`test_state_${user.id}_${permalink}`);
+              }
+              return;
             }
-            return;
           } catch (error) {
             console.error('Error parsing sessionStorage backup:', error);
             if (user) {
@@ -422,6 +479,9 @@ const TestInterface = () => {
           setUserAnswers({});
           setFlaggedQuestions(new Set());
           setCrossedOutOptions({});
+          setLastSavedQuestions({}); // Clear saved question positions
+          setCurrentModuleTimeLeft(0); // Reset timer
+          setCurrentPartTimeLeft(0); // Reset part timer
           setStateLoaded(true);
         } else {
           // Resume in-progress test - can load from sessionStorage as fallback
@@ -447,6 +507,9 @@ const TestInterface = () => {
         setUserAnswers({});
         setFlaggedQuestions(new Set());
         setCrossedOutOptions({});
+        setLastSavedQuestions({}); // Clear saved question positions
+        setCurrentModuleTimeLeft(0); // Reset timer
+        setCurrentPartTimeLeft(0); // Reset part timer
         setStateLoaded(true);
       }
     })();
@@ -1752,46 +1815,200 @@ const TestInterface = () => {
 
   // Add new function to handle module selection
   const handleModuleSelection = (moduleType: string, partNumber: number = 1) => {
+    console.log(`🚀🚀🚀 [handleModuleSelection] START - Module: ${moduleType}, Part: ${partNumber} 🚀🚀🚀`);
+    console.log(`🚀 [handleModuleSelection] Current userAnswers count: ${Object.keys(userAnswers).length}`);
+    console.log(`🚀 [handleModuleSelection] Current lastSavedQuestions:`, lastSavedQuestions);
+    console.log(`🚀 [handleModuleSelection] Current questionIndex BEFORE: ${currentQuestionIndex}`);
+    console.log(`🚀 [handleModuleSelection] Global questions array length: ${questions.length}`);
+    
+    // Reset passage indices FIRST when switching modules (for ACT tests with passages)
+    // This ensures getCurrentPassageData() calculates the correct starting index
+    setCurrentPassageIndex(0);
+    setCurrentQuestionInPassage(0);
+    
     setSelectedModule(moduleType);
     setShowModuleSelection(false);
     setShowModuleScores(false); // Ensure we go to test questions, not module results
     
-    // Reset passage indices when switching modules (for ACT tests with passages)
-    setCurrentPassageIndex(0);
-    setCurrentQuestionInPassage(0);
-    
     // Set the current part
     setCurrentPart(prev => ({ ...prev, [moduleType]: partNumber as 1 | 2 }));
+    
+    // Check if this module uses passages (for ACT tests)
+    const modulePassages = passages[moduleType] || [];
+    const isPassageModule = modulePassages.length > 0;
     
     // Find the last saved question for this module/part
     const key = `${moduleType}-part-${partNumber}`;
     const lastSavedQuestionIndex = lastSavedQuestions[key];
     
-    const partQuestions = moduleParts[moduleType]?.[partNumber - 1] || [];
-    if (partQuestions.length > 0) {
-      const partStartIndex = questions.findIndex(q => q.id === partQuestions[0].id);
-      const partEndIndex = partStartIndex + partQuestions.length - 1;
+    let partStartIndex = -1;
+    let partEndIndex = -1;
+    let partQuestions: QuestionData[] = [];
+    
+    if (isPassageModule) {
+      // For passage-based modules (ACT Reading, English, Science), get questions from passages
+      const allModuleQuestions: QuestionData[] = [];
+      modulePassages.forEach(passage => {
+        if (passage.questions && passage.questions.length > 0) {
+          passage.questions.forEach(question => {
+            allModuleQuestions.push(question);
+          });
+        }
+      });
+      partQuestions = allModuleQuestions;
       
-      if (lastSavedQuestionIndex !== undefined && 
-          lastSavedQuestionIndex >= partStartIndex && 
-          lastSavedQuestionIndex <= partEndIndex) {
-        // Use the last saved question for this module/part
-        setCurrentQuestionIndex(lastSavedQuestionIndex);
-        console.log(`Resuming ${moduleType} Part ${partNumber} from saved question:`, lastSavedQuestionIndex);
-      } else {
-        // Start from the first question of the part
-        setCurrentQuestionIndex(partStartIndex);
-        console.log(`Starting ${moduleType} Part ${partNumber} from first question:`, partStartIndex);
+      console.log(`[handleModuleSelection] ${moduleType}: Found ${partQuestions.length} questions from ${modulePassages.length} passages`);
+      
+      if (partQuestions.length > 0) {
+        // For ACT passage modules, questions might not be in global array
+        // Calculate starting index by finding where this module's questions start in global array
+        // Count questions from previous modules to find the starting index
+        
+        // First, try to find by question ID (for non-passage questions that are in global array)
+        const firstQuestionId = partQuestions[0].id;
+        partStartIndex = questions.findIndex(q => q.id === firstQuestionId);
+        
+        console.log(`[handleModuleSelection] ${moduleType}: First question ID: ${firstQuestionId}, Found at index: ${partStartIndex}`);
+        
+        if (partStartIndex === -1) {
+          // Question not found in global array - calculate starting index by counting previous modules
+          console.warn(`[handleModuleSelection] ${moduleType}: First passage question (ID: ${firstQuestionId}) not found in global array.`);
+          console.warn(`   This is normal for ACT tests - passage questions are stored separately.`);
+          console.warn(`   Calculating starting index by counting questions from previous modules...`);
+          
+          // Find the first question of this module type in the global array
+          partStartIndex = questions.findIndex(q => q.module_type === moduleType);
+          console.log(`[handleModuleSelection] ${moduleType}: Found first question of module type at index: ${partStartIndex}`);
+          
+          if (partStartIndex === -1) {
+            // Still not found - this shouldn't happen, but let's try a different approach
+            // Count all questions from modules that come before this one
+            const moduleOrder = currentTest?.modules?.map((m: any) => m.type) || [];
+            const currentModuleIndex = moduleOrder.indexOf(moduleType);
+            
+            if (currentModuleIndex > 0) {
+              let questionCount = 0;
+              for (let i = 0; i < currentModuleIndex; i++) {
+                const prevModuleType = moduleOrder[i];
+                const prevModuleQuestions = questions.filter(q => q.module_type === prevModuleType);
+                questionCount += prevModuleQuestions.length;
+              }
+              partStartIndex = questionCount;
+              console.log(`[handleModuleSelection] ${moduleType}: Calculated starting index by counting previous modules: ${partStartIndex}`);
+            } else {
+              // This is the first module
+              partStartIndex = 0;
+              console.log(`[handleModuleSelection] ${moduleType}: This is the first module, starting at index 0`);
+            }
+          }
+        }
+        
+        partEndIndex = partStartIndex !== -1 ? partStartIndex + partQuestions.length - 1 : -1;
+        console.log(`[handleModuleSelection] ${moduleType}: Question range: ${partStartIndex} to ${partEndIndex}`);
       }
     } else {
-      // Fallback to first question of the module
-      const firstQuestionIndex = questions.findIndex(q => q.module_type === moduleType);
-      if (firstQuestionIndex !== -1) {
-        setCurrentQuestionIndex(firstQuestionIndex);
+      // For non-passage modules (Math, Writing), use moduleParts
+      partQuestions = moduleParts[moduleType]?.[partNumber - 1] || [];
+      if (partQuestions.length > 0) {
+        partStartIndex = questions.findIndex(q => q.id === partQuestions[0].id);
+        partEndIndex = partStartIndex + partQuestions.length - 1;
       }
     }
     
-    setCurrentPartTimeLeft(partTimes[moduleType] || 0);
+    // Determine which question index to use
+    if (partStartIndex !== -1 && partQuestions.length > 0) {
+      // For brand new accounts, always start from the first question (ignore lastSavedQuestionIndex)
+      // Only use lastSavedQuestionIndex if there are actual user answers for this specific module
+      const hasUserAnswersForModule = partQuestions.some(q => userAnswers[q.id]);
+      const hasAnyUserAnswers = Object.keys(userAnswers).length > 0;
+      
+      // Only resume from saved position if:
+      // 1. User has answers for this specific module, AND
+      // 2. There are user answers somewhere (not a completely new account), AND
+      // 3. lastSavedQuestionIndex is valid and within range
+      if (hasUserAnswersForModule && hasAnyUserAnswers && 
+          lastSavedQuestionIndex !== undefined && 
+          lastSavedQuestionIndex >= partStartIndex && 
+          lastSavedQuestionIndex <= partEndIndex) {
+        // Use the last saved question for this module/part (only if user has answers)
+        setCurrentQuestionIndex(lastSavedQuestionIndex);
+        console.log(`✅ [handleModuleSelection] ${moduleType}: Resuming from saved question index: ${lastSavedQuestionIndex}`);
+        
+        // For passage-based modules, convert global index to passage indices
+        if (isPassageModule && modulePassages.length > 0) {
+          // Convert global index to module-relative index first
+          // partStartIndex is the global index where this module starts
+          const moduleRelativeIndex = lastSavedQuestionIndex - partStartIndex;
+          console.log(`✅ [handleModuleSelection] ${moduleType}: Global index ${lastSavedQuestionIndex} -> Module-relative index ${moduleRelativeIndex} (module starts at global index ${partStartIndex})`);
+          
+          // Now convert module-relative index to passage indices
+          const indices = convertGlobalIndexToPassageIndices(moduleRelativeIndex, modulePassages);
+          console.log(`✅ [handleModuleSelection] ${moduleType}: Converting module-relative index ${moduleRelativeIndex} to passage ${indices.passageIndex}, question ${indices.questionInPassage}`);
+          setCurrentPassageIndex(indices.passageIndex);
+          setCurrentQuestionInPassage(indices.questionInPassage);
+        }
+      } else {
+        // Start from the first question of the part (for new accounts or modules without progress)
+        console.log(`✅✅✅ [handleModuleSelection] ${moduleType}: Setting question index to ${partStartIndex} (first question of module) ✅✅✅`);
+        console.log(`   - hasUserAnswersForModule: ${hasUserAnswersForModule}`);
+        console.log(`   - hasAnyUserAnswers: ${hasAnyUserAnswers}`);
+        console.log(`   - lastSavedQuestionIndex: ${lastSavedQuestionIndex}`);
+        console.log(`   - partStartIndex: ${partStartIndex}`);
+        console.log(`   - Current questionIndex BEFORE set: ${currentQuestionIndex}`);
+        setCurrentQuestionIndex(partStartIndex);
+        console.log(`   - Question index SET to: ${partStartIndex}`);
+      }
+    } else {
+      // Fallback: try to find first question of this module type
+      // For passage modules, this might be the first question across all passages
+      let firstQuestionIndex = -1;
+      
+      if (isPassageModule && partQuestions.length > 0) {
+        // For passage modules, try to find the first question by matching IDs from all module questions
+        // Get all questions from all passages in order
+        const allModuleQuestionIds = new Set(partQuestions.map(q => q.id));
+        firstQuestionIndex = questions.findIndex(q => allModuleQuestionIds.has(q.id));
+        console.log(`[handleModuleSelection] ${moduleType}: Fallback - searching for first passage question in global array, found at: ${firstQuestionIndex}`);
+      }
+      
+      // If still not found, try by module_type
+      if (firstQuestionIndex === -1) {
+        firstQuestionIndex = questions.findIndex(q => q.module_type === moduleType);
+        console.log(`[handleModuleSelection] ${moduleType}: Fallback - searching by module_type, found at: ${firstQuestionIndex}`);
+      }
+      
+      if (firstQuestionIndex !== -1) {
+        setCurrentQuestionIndex(firstQuestionIndex);
+        console.log(`[handleModuleSelection] ${moduleType}: Fallback - Starting from question index:`, firstQuestionIndex);
+      } else {
+        // Last resort: start from index 0
+        console.warn(`[handleModuleSelection] ${moduleType}: Could not find any questions for this module, starting from index 0`);
+        setCurrentQuestionIndex(0);
+      }
+    }
+    
+    // Reset timer for this module if user has no answers for this module
+    const hasUserAnswersForModule = partQuestions.some(q => userAnswers[q.id]);
+    if (!hasUserAnswersForModule) {
+      // New module - reset timer to full module time from test configuration
+      const module = currentTest?.modules?.find((m: any) => m.type === moduleType);
+      const moduleTimeInMinutes = module?.time || 0;
+      const moduleTimeInSeconds = moduleTimeInMinutes * 60;
+      
+      setCurrentPartTimeLeft(moduleTimeInSeconds);
+      setCurrentModuleTimeLeft(moduleTimeInSeconds);
+      setCurrentModuleStartTime(new Date());
+      console.log(`🕐 Resetting timer for ${moduleType} - new module, no answers yet. Time: ${moduleTimeInSeconds}s (${moduleTimeInMinutes} minutes)`);
+    } else {
+      // Resuming module - use saved time or default from partTimes
+      const savedTime = partTimes[moduleType] || 0;
+      setCurrentPartTimeLeft(savedTime);
+      // Also update module time if available
+      if (savedTime > 0) {
+        setCurrentModuleTimeLeft(savedTime);
+      }
+      console.log(`🕐 Resuming timer for ${moduleType} - has answers. Time: ${savedTime}s`);
+    }
     setTimerRunning(true);
   };
 
@@ -1992,14 +2209,22 @@ const TestInterface = () => {
     const isPassageModule = modulePassages.length > 0;
     
     // Only restore if we haven't restored yet for this state
-    if (isPassageModule && !hasRestoredForCurrentStateRef.current) {
+    // BUT: Don't restore if user has no answers (new account) - let handleModuleSelection handle it
+    const hasUserAnswers = Object.keys(userAnswers).length > 0;
+    if (isPassageModule && !hasRestoredForCurrentStateRef.current && hasUserAnswers) {
       const indices = convertGlobalIndexToPassageIndices(currentQuestionIndex, modulePassages);
       console.log(`[useEffect] Restoring passage indices from currentQuestionIndex change: ${currentQuestionIndex} to passage ${indices.passageIndex}, question ${indices.questionInPassage}`);
       setCurrentPassageIndex(indices.passageIndex);
       setCurrentQuestionInPassage(indices.questionInPassage);
       hasRestoredForCurrentStateRef.current = true;
+    } else if (isPassageModule && !hasUserAnswers) {
+      // New account - ensure we start at passage 0, question 0
+      console.log(`[useEffect] New account detected (no answers) - resetting passage indices to 0,0`);
+      setCurrentPassageIndex(0);
+      setCurrentQuestionInPassage(0);
+      hasRestoredForCurrentStateRef.current = false; // Allow handleModuleSelection to set it
     }
-  }, [currentQuestionIndex, selectedModule, passages, stateLoaded]);
+  }, [currentQuestionIndex, selectedModule, passages, stateLoaded, userAnswers]);
 
   // Get all questions from all passages in current module with sequential numbering
   const getAllModulePassageQuestions = () => {
