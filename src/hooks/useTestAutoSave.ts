@@ -24,6 +24,8 @@ interface SavedTestState {
   showPartTransition: boolean;
   // Track last saved question for each module/part
   lastSavedQuestions?: { [key: string]: number };
+  // Track saved timer per module/part (test-specific)
+  savedPartTimes?: { [key: string]: number };
 }
 
 export const useTestAutoSave = (permalink: string) => {

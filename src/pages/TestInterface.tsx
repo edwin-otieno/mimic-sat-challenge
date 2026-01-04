@@ -72,6 +72,7 @@ const TestInterface = () => {
   const [isAutoSaving, setIsAutoSaving] = useState(false);
   const [showModuleSelection, setShowModuleSelection] = useState(true);
   const [selectedModule, setSelectedModule] = useState<string | null>(null);
+  const [savedSelectedModule, setSavedSelectedModule] = useState<string | null>(null); // Track saved module for timer resume
   const [completedModules, setCompletedModules] = useState<Set<string>>(new Set());
   const [showModuleScores, setShowModuleScores] = useState(false);
   const [currentModuleScores, setCurrentModuleScores] = useState<any[]>([]);
@@ -82,6 +83,8 @@ const TestInterface = () => {
   const [timerVisible, setTimerVisible] = useState(true);
   const [currentPartTimeLeft, setCurrentPartTimeLeft] = useState<number>(0);
   const [partTimes, setPartTimes] = useState<{ [moduleType: string]: number }>({});
+  // Save timer per module/part (test-specific keys, like lastSavedQuestions)
+  const [savedPartTimes, setSavedPartTimes] = useState<{ [key: string]: number }>({});
   const [showReference, setShowReference] = useState(false);
   const [showMathReference, setShowMathReference] = useState(false);
   // Track the last saved question for each module/part
@@ -161,7 +164,8 @@ const TestInterface = () => {
       completedModules: Array.from(completedModules),
       showModuleScores,
       showPartTransition,
-      lastSavedQuestions
+      lastSavedQuestions,
+      savedPartTimes
     };
     sessionStorage.setItem(`completeTestState_${user.id}_${permalink}`, JSON.stringify(completeState));
   };
@@ -202,6 +206,7 @@ const TestInterface = () => {
         setTimerVisible(state.timerVisible !== false); // Default to true if not saved
         setCurrentPart(state.currentPart || { reading_writing: 1, math: 1 });
         setSelectedModule(state.selectedModule || null);
+        setSavedSelectedModule(state.selectedModule || null);
         setPartTimes(state.partTimes || {});
         // Always show module selection when resuming a saved test
         setShowModuleSelection(true);
@@ -209,6 +214,7 @@ const TestInterface = () => {
         setShowModuleScores(state.showModuleScores || false);
         setShowPartTransition(state.showPartTransition || false);
         setLastSavedQuestions(state.lastSavedQuestions || {});
+        setSavedPartTimes(state.savedPartTimes || {});
         return true;
       } catch (error) {
         console.error('Error loading complete test state:', error);
@@ -228,6 +234,7 @@ const TestInterface = () => {
         setTimerVisible(timerState.timerVisible !== false); // Default to true if not saved
         setCurrentPart(timerState.currentPart || { reading_writing: 1, math: 1 });
         setSelectedModule(timerState.selectedModule || null);
+        setSavedSelectedModule(timerState.selectedModule || null);
         setPartTimes(timerState.partTimes || {});
         // Always show module selection when resuming a saved test
         setShowModuleSelection(true);
@@ -284,6 +291,7 @@ const TestInterface = () => {
             setFlaggedQuestions(new Set());
             setCrossedOutOptions({});
             setLastSavedQuestions({});
+            setSavedPartTimes({}); // Clear saved part times for new users
             setCurrentModuleTimeLeft(0);
             setCurrentPartTimeLeft(0);
             setStateLoaded(true);
@@ -292,6 +300,8 @@ const TestInterface = () => {
           
           // User has answers - this is a legitimate saved state
           console.log('🔍 Loading saved state from database, setting currentQuestionIndex to:', saved.currentQuestionIndex);
+          console.log('🔍 Loading lastSavedQuestions:', saved.lastSavedQuestions);
+          console.log('🔍 Loading userAnswers count:', Object.keys(saved.userAnswers || {}).length);
           setCurrentQuestionIndex(saved.currentQuestionIndex);
           setUserAnswers(saved.userAnswers);
           setFlaggedQuestions(saved.flaggedQuestions);
@@ -304,6 +314,7 @@ const TestInterface = () => {
           setTimerVisible(saved.timerVisible !== false); // Default to true if not saved
           setCurrentPart(saved.currentPart);
           setSelectedModule(saved.selectedModule);
+          setSavedSelectedModule(saved.selectedModule);
           setPartTimes(saved.partTimes);
           // Always show module selection when resuming a saved test
           setShowModuleSelection(true);
@@ -311,6 +322,9 @@ const TestInterface = () => {
           setShowModuleScores(saved.showModuleScores);
           setShowPartTransition(saved.showPartTransition);
           setLastSavedQuestions(saved.lastSavedQuestions || {});
+          setSavedPartTimes(saved.savedPartTimes || {});
+          console.log('🔍 Set lastSavedQuestions to:', saved.lastSavedQuestions || {});
+          console.log('🔍 Set savedPartTimes to:', saved.savedPartTimes || {});
           setStateLoaded(true);
           
           return;
@@ -335,32 +349,33 @@ const TestInterface = () => {
               // Continue to start fresh below
             } else {
               // User has answers - this is a legitimate saved state
-              console.log('🔍 Loading saved state from sessionStorage backup, setting currentQuestionIndex to:', saved.currentQuestionIndex);
-              setCurrentQuestionIndex(saved.currentQuestionIndex);
-              setUserAnswers(saved.userAnswers);
-              setFlaggedQuestions(new Set(saved.flaggedQuestions));
-              setCrossedOutOptions(saved.crossedOutOptions);
-              setTestStartTime(new Date(saved.testStartTime));
-              setCurrentModuleStartTime(new Date(saved.currentModuleStartTime));
-              setCurrentModuleTimeLeft(saved.currentModuleTimeLeft);
-              setCurrentPartTimeLeft(saved.currentPartTimeLeft);
-              setTimerRunning(saved.timerRunning);
-              setTimerVisible(saved.timerVisible !== false);
-              setCurrentPart(saved.currentPart);
-              setSelectedModule(saved.selectedModule);
-              setPartTimes(saved.partTimes);
-              setShowModuleSelection(true);
-              setCompletedModules(new Set(saved.completedModules));
-              setShowModuleScores(saved.showModuleScores);
-              setShowPartTransition(saved.showPartTransition);
-              setLastSavedQuestions(saved.lastSavedQuestions || {});
-              setStateLoaded(true);
-              
-              // Clear the sessionStorage backup after loading
-              if (user) {
-                sessionStorage.removeItem(`test_state_${user.id}_${permalink}`);
-              }
-              return;
+            console.log('🔍 Loading saved state from sessionStorage backup, setting currentQuestionIndex to:', saved.currentQuestionIndex);
+            setCurrentQuestionIndex(saved.currentQuestionIndex);
+            setUserAnswers(saved.userAnswers);
+            setFlaggedQuestions(new Set(saved.flaggedQuestions));
+            setCrossedOutOptions(saved.crossedOutOptions);
+            setTestStartTime(new Date(saved.testStartTime));
+            setCurrentModuleStartTime(new Date(saved.currentModuleStartTime));
+            setCurrentModuleTimeLeft(saved.currentModuleTimeLeft);
+            setCurrentPartTimeLeft(saved.currentPartTimeLeft);
+            setTimerRunning(saved.timerRunning);
+            setTimerVisible(saved.timerVisible !== false);
+            setCurrentPart(saved.currentPart);
+            setSelectedModule(saved.selectedModule);
+            setPartTimes(saved.partTimes);
+            setShowModuleSelection(true);
+            setCompletedModules(new Set(saved.completedModules));
+            setShowModuleScores(saved.showModuleScores);
+            setShowPartTransition(saved.showPartTransition);
+            setLastSavedQuestions(saved.lastSavedQuestions || {});
+              setSavedPartTimes(saved.savedPartTimes || {});
+            setStateLoaded(true);
+            
+            // Clear the sessionStorage backup after loading
+            if (user) {
+              sessionStorage.removeItem(`test_state_${user.id}_${permalink}`);
+            }
+            return;
             }
           } catch (error) {
             console.error('Error parsing sessionStorage backup:', error);
@@ -480,6 +495,7 @@ const TestInterface = () => {
           setFlaggedQuestions(new Set());
           setCrossedOutOptions({});
           setLastSavedQuestions({}); // Clear saved question positions
+          setSavedPartTimes({}); // Clear saved part times
           setCurrentModuleTimeLeft(0); // Reset timer
           setCurrentPartTimeLeft(0); // Reset part timer
           setStateLoaded(true);
@@ -508,6 +524,7 @@ const TestInterface = () => {
         setFlaggedQuestions(new Set());
         setCrossedOutOptions({});
         setLastSavedQuestions({}); // Clear saved question positions
+        setSavedPartTimes({}); // Clear saved part times
         setCurrentModuleTimeLeft(0); // Reset timer
         setCurrentPartTimeLeft(0); // Reset part timer
         setStateLoaded(true);
@@ -707,14 +724,28 @@ const TestInterface = () => {
     const passageData = getCurrentPassageData();
     if (!passageData) return;
 
-    const newGlobalIndex = passageData.globalQuestionIndex + 1;
+    // Calculate the actual global index (not module-relative)
+    // Get the module start index first
+    const moduleType = selectedModule || getCurrentModuleType();
+    const modulePassages = getCurrentModulePassages();
+    const partQuestions = modulePassages.reduce((acc, p) => {
+      return acc.concat(p.questions || []);
+    }, [] as QuestionData[]);
+    
+    let moduleStartIndex = -1;
+    if (partQuestions.length > 0) {
+      moduleStartIndex = questions.findIndex(q => q.id === partQuestions[0].id);
+    }
+    
+    // passageData.globalQuestionIndex is module-relative, so add moduleStartIndex to get actual global index
+    const currentGlobalIndex = moduleStartIndex >= 0 ? moduleStartIndex + passageData.globalQuestionIndex : currentQuestionIndex;
+    const newGlobalIndex = currentGlobalIndex + 1;
     
     if (currentQuestionInPassage < passageData.totalQuestions - 1) {
       setCurrentQuestionInPassage(prev => prev + 1);
       setCurrentQuestionIndex(newGlobalIndex);
     } else {
       // End of current passage, go to next passage or complete module
-      const modulePassages = getCurrentModulePassages();
       if (currentPassageIndex < modulePassages.length - 1) {
         setCurrentPassageIndex(prev => prev + 1);
         setCurrentQuestionInPassage(0);
@@ -730,14 +761,28 @@ const TestInterface = () => {
     const passageData = getCurrentPassageData();
     if (!passageData) return;
 
-    const newGlobalIndex = passageData.globalQuestionIndex - 1;
+    // Calculate the actual global index (not module-relative)
+    // Get the module start index first
+    const moduleType = selectedModule || getCurrentModuleType();
+    const modulePassages = getCurrentModulePassages();
+    const partQuestions = modulePassages.reduce((acc, p) => {
+      return acc.concat(p.questions || []);
+    }, [] as QuestionData[]);
+    
+    let moduleStartIndex = -1;
+    if (partQuestions.length > 0) {
+      moduleStartIndex = questions.findIndex(q => q.id === partQuestions[0].id);
+    }
+    
+    // passageData.globalQuestionIndex is module-relative, so add moduleStartIndex to get actual global index
+    const currentGlobalIndex = moduleStartIndex >= 0 ? moduleStartIndex + passageData.globalQuestionIndex : currentQuestionIndex;
+    const newGlobalIndex = currentGlobalIndex - 1;
     
     if (currentQuestionInPassage > 0) {
       setCurrentQuestionInPassage(prev => prev - 1);
       setCurrentQuestionIndex(newGlobalIndex);
     } else if (currentPassageIndex > 0) {
       // Go to previous passage
-      const modulePassages = getCurrentModulePassages();
       const prevPassage = modulePassages[currentPassageIndex - 1];
       setCurrentPassageIndex(prev => prev - 1);
       setCurrentQuestionInPassage(prevPassage.questions?.length - 1 || 0);
@@ -1801,23 +1846,9 @@ const TestInterface = () => {
   // Add a loading state check
   const isLoading = !currentTest || questions.length === 0 || !stateLoaded;
   
-  // Initialize module timer when test loads
-  useEffect(() => {
-    if (currentTest && questions.length > 0 && Object.keys(partTimes).length > 0) {
-      const firstModuleType = questions[0]?.module_type || 'reading_writing';
-      const testCategory = currentTest.test_category || 'SAT';
-      const isACTTest = testCategory === 'ACT';
-      
-      // Use part time for SAT (already divided by 2), full time for ACT
-      const initialTime = isACTTest 
-        ? (currentTest.modules?.find((m: any) => m.type === firstModuleType)?.time || 0) * 60
-        : (partTimes[firstModuleType] || 0);
-      
-      setCurrentModuleTimeLeft(initialTime);
-      setCurrentPartTimeLeft(initialTime);
-      setCurrentModuleStartTime(new Date());
-    }
-  }, [currentTest, questions, partTimes]);
+  // Don't initialize timer here - it will be set when user selects a module
+  // Timer initialization happens in handleModuleSelection when a module is selected
+  // This prevents initializing with the wrong module's time
 
   // Add new function to handle module selection
   const handleModuleSelection = (moduleType: string, partNumber: number = 1) => {
@@ -1826,11 +1857,6 @@ const TestInterface = () => {
     console.log(`🚀 [handleModuleSelection] Current lastSavedQuestions:`, lastSavedQuestions);
     console.log(`🚀 [handleModuleSelection] Current questionIndex BEFORE: ${currentQuestionIndex}`);
     console.log(`🚀 [handleModuleSelection] Global questions array length: ${questions.length}`);
-    
-    // Reset passage indices FIRST when switching modules (for ACT tests with passages)
-    // This ensures getCurrentPassageData() calculates the correct starting index
-    setCurrentPassageIndex(0);
-    setCurrentQuestionInPassage(0);
     
     setSelectedModule(moduleType);
     setShowModuleSelection(false);
@@ -1843,9 +1869,14 @@ const TestInterface = () => {
     const modulePassages = passages[moduleType] || [];
     const isPassageModule = modulePassages.length > 0;
     
-    // Find the last saved question for this module/part
-    const key = `${moduleType}-part-${partNumber}`;
+    // Find the last saved question for this module/part (test-specific)
+    // Include permalink in key to make it test-specific
+    const key = permalink ? `${permalink}-${moduleType}-part-${partNumber}` : `${moduleType}-part-${partNumber}`;
     const lastSavedQuestionIndex = lastSavedQuestions[key];
+    
+    console.log(`🔍 [handleModuleSelection] Looking for saved question for key: "${key}"`);
+    console.log(`🔍 [handleModuleSelection] lastSavedQuestions object:`, lastSavedQuestions);
+    console.log(`🔍 [handleModuleSelection] Found lastSavedQuestionIndex:`, lastSavedQuestionIndex);
     
     let partStartIndex = -1;
     let partEndIndex = -1;
@@ -1865,7 +1896,7 @@ const TestInterface = () => {
       
       console.log(`[handleModuleSelection] ${moduleType}: Found ${partQuestions.length} questions from ${modulePassages.length} passages`);
       
-      if (partQuestions.length > 0) {
+    if (partQuestions.length > 0) {
         // For ACT passage modules, questions might not be in global array
         // Calculate starting index by finding where this module's questions start in global array
         // Count questions from previous modules to find the starting index
@@ -1928,30 +1959,65 @@ const TestInterface = () => {
       const hasUserAnswersForModule = partQuestions.some(q => userAnswers[q.id]);
       const hasAnyUserAnswers = Object.keys(userAnswers).length > 0;
       
+      // Debug: Check which questions have answers
+      const questionsWithAnswers = partQuestions.filter(q => userAnswers[q.id]);
+      console.log(`🔍 [handleModuleSelection] ${moduleType}: Checking for answers in ${partQuestions.length} questions`);
+      console.log(`🔍 [handleModuleSelection] ${moduleType}: Questions with answers: ${questionsWithAnswers.length}`);
+      console.log(`🔍 [handleModuleSelection] ${moduleType}: Sample question IDs in partQuestions:`, partQuestions.slice(0, 3).map(q => q.id));
+      console.log(`🔍 [handleModuleSelection] ${moduleType}: Sample userAnswer keys:`, Object.keys(userAnswers).slice(0, 5));
+      
       // Only resume from saved position if:
       // 1. User has answers for this specific module, AND
       // 2. There are user answers somewhere (not a completely new account), AND
       // 3. lastSavedQuestionIndex is valid and within range
-      if (hasUserAnswersForModule && hasAnyUserAnswers && 
-          lastSavedQuestionIndex !== undefined && 
+      // OR if the saved currentQuestionIndex (from loaded state) is within range for this module
+      console.log(`🔍 [handleModuleSelection] Resume check for ${moduleType}:`);
+      console.log(`   - hasUserAnswersForModule: ${hasUserAnswersForModule}`);
+      console.log(`   - hasAnyUserAnswers: ${hasAnyUserAnswers}`);
+      console.log(`   - lastSavedQuestionIndex (from lastSavedQuestions): ${lastSavedQuestionIndex}`);
+      console.log(`   - currentQuestionIndex (from loaded state): ${currentQuestionIndex}`);
+      console.log(`   - partStartIndex: ${partStartIndex}`);
+      console.log(`   - partEndIndex: ${partEndIndex}`);
+      
+      // Check if saved currentQuestionIndex is within range for this module
+      const savedIndexInRange = currentQuestionIndex >= partStartIndex && 
+                                 currentQuestionIndex <= partEndIndex &&
+                                 currentQuestionIndex >= 0;
+      
+      // Use lastSavedQuestionIndex if available, otherwise fall back to currentQuestionIndex if it's in range
+      const resumeIndex = (lastSavedQuestionIndex !== undefined && 
           lastSavedQuestionIndex >= partStartIndex && 
-          lastSavedQuestionIndex <= partEndIndex) {
-        // Use the last saved question for this module/part (only if user has answers)
-        setCurrentQuestionIndex(lastSavedQuestionIndex);
-        console.log(`✅ [handleModuleSelection] ${moduleType}: Resuming from saved question index: ${lastSavedQuestionIndex}`);
-        
-        // For passage-based modules, convert global index to passage indices
+                          lastSavedQuestionIndex <= partEndIndex) 
+                        ? lastSavedQuestionIndex 
+                        : (savedIndexInRange ? currentQuestionIndex : undefined);
+      
+      console.log(`   - savedIndexInRange: ${savedIndexInRange}`);
+      console.log(`   - resumeIndex: ${resumeIndex}`);
+      
+      if (hasUserAnswersForModule && hasAnyUserAnswers && resumeIndex !== undefined) {
+        // Use the resume index (from lastSavedQuestions or currentQuestionIndex)
+        // For passage-based modules, convert global index to passage indices FIRST
+        // Then set both the global index and passage indices together to avoid race conditions
         if (isPassageModule && modulePassages.length > 0) {
           // Convert global index to module-relative index first
           // partStartIndex is the global index where this module starts
-          const moduleRelativeIndex = lastSavedQuestionIndex - partStartIndex;
-          console.log(`✅ [handleModuleSelection] ${moduleType}: Global index ${lastSavedQuestionIndex} -> Module-relative index ${moduleRelativeIndex} (module starts at global index ${partStartIndex})`);
+          const moduleRelativeIndex = resumeIndex - partStartIndex;
+          console.log(`✅ [handleModuleSelection] ${moduleType}: Global index ${resumeIndex} -> Module-relative index ${moduleRelativeIndex} (module starts at global index ${partStartIndex})`);
           
           // Now convert module-relative index to passage indices
           const indices = convertGlobalIndexToPassageIndices(moduleRelativeIndex, modulePassages);
           console.log(`✅ [handleModuleSelection] ${moduleType}: Converting module-relative index ${moduleRelativeIndex} to passage ${indices.passageIndex}, question ${indices.questionInPassage}`);
+          
+          // Set passage indices FIRST, then global index
+          // This ensures getCurrentPassageData() calculates correctly when it's called
           setCurrentPassageIndex(indices.passageIndex);
           setCurrentQuestionInPassage(indices.questionInPassage);
+          setCurrentQuestionIndex(resumeIndex);
+          console.log(`✅ [handleModuleSelection] ${moduleType}: Resuming from saved question index: ${resumeIndex} (passage ${indices.passageIndex}, question ${indices.questionInPassage})`);
+      } else {
+          // Non-passage module - just set the global index
+          setCurrentQuestionIndex(resumeIndex);
+          console.log(`✅ [handleModuleSelection] ${moduleType}: Resuming from saved question index: ${resumeIndex}`);
         }
       } else {
         // Start from the first question of the part (for new accounts or modules without progress)
@@ -1961,6 +2027,13 @@ const TestInterface = () => {
         console.log(`   - lastSavedQuestionIndex: ${lastSavedQuestionIndex}`);
         console.log(`   - partStartIndex: ${partStartIndex}`);
         console.log(`   - Current questionIndex BEFORE set: ${currentQuestionIndex}`);
+        
+        // Reset passage indices for new modules FIRST
+        if (isPassageModule) {
+          setCurrentPassageIndex(0);
+          setCurrentQuestionInPassage(0);
+        }
+        
         setCurrentQuestionIndex(partStartIndex);
         console.log(`   - Question index SET to: ${partStartIndex}`);
       }
@@ -1995,6 +2068,12 @@ const TestInterface = () => {
     
     // Reset timer for this module if user has no answers for this module
     const hasUserAnswersForModule = partQuestions.some(q => userAnswers[q.id]);
+    console.log(`🕐 [handleModuleSelection] Timer check: hasUserAnswersForModule=${hasUserAnswersForModule}, partQuestions.length=${partQuestions.length}, userAnswers count=${Object.keys(userAnswers).length}`);
+    if (partQuestions.length > 0) {
+      const sampleQuestionIds = partQuestions.slice(0, 3).map(q => q.id);
+      const hasAnswersForSample = sampleQuestionIds.some(id => userAnswers[id]);
+      console.log(`🕐 [handleModuleSelection] Sample question IDs:`, sampleQuestionIds, `hasAnswersForSample:`, hasAnswersForSample);
+    }
     
     // Determine test category to set timer correctly
     const testCategory = currentTest?.test_category || 'SAT';
@@ -2011,6 +2090,9 @@ const TestInterface = () => {
         setCurrentPartTimeLeft(moduleTimeInSeconds);
         setCurrentModuleTimeLeft(moduleTimeInSeconds);
         setCurrentModuleStartTime(new Date());
+        // Save to savedPartTimes
+        const timeKey = permalink ? `${permalink}-${moduleType}-part-${partNumber}` : `${moduleType}-part-${partNumber}`;
+        setSavedPartTimes(prev => ({ ...prev, [timeKey]: moduleTimeInSeconds }));
         console.log(`🕐 Resetting timer for ${moduleType} (ACT) - new module, no answers yet. Time: ${moduleTimeInSeconds}s (${moduleTimeInMinutes} minutes)`);
       } else {
         // For SAT tests, use part time (already divided by 2 in partTimes)
@@ -2018,19 +2100,60 @@ const TestInterface = () => {
         setCurrentPartTimeLeft(partTime);
         setCurrentModuleTimeLeft(partTime);
         setCurrentModuleStartTime(new Date());
+        // Save to savedPartTimes
+        const timeKey = permalink ? `${permalink}-${moduleType}-part-${partNumber}` : `${moduleType}-part-${partNumber}`;
+        setSavedPartTimes(prev => ({ ...prev, [timeKey]: partTime }));
         console.log(`🕐 Resetting timer for ${moduleType} (SAT) - new module, no answers yet. Part time: ${partTime}s (${Math.floor(partTime / 60)} minutes)`);
       }
     } else {
-      // Resuming module - use saved time or default from partTimes
-      const savedTime = partTimes[moduleType] || 0;
-      setCurrentPartTimeLeft(savedTime);
-      // Also update module time if available
-      if (savedTime > 0) {
-        setCurrentModuleTimeLeft(savedTime);
+      // Resuming module - use saved time from loaded state if it's valid and for the same module
+      const fullPartTime = partTimes[moduleType] || 0;
+      
+      // Get saved time for this specific module/part (test-specific key)
+      const timeKey = permalink ? `${permalink}-${moduleType}-part-${partNumber}` : `${moduleType}-part-${partNumber}`;
+      const savedTimeForModule = savedPartTimes[timeKey];
+      
+      console.log(`🕐 Timer resume check: timeKey=${timeKey}, savedTimeForModule=${savedTimeForModule}, currentPartTimeLeft=${currentPartTimeLeft}, fullPartTime=${fullPartTime}, hasUserAnswersForModule=${hasUserAnswersForModule}`);
+      
+      // Only use saved time if user has answers for this module (not a new user)
+      // Otherwise, use full time (new user starting this module)
+      let savedTime = fullPartTime;
+      
+      if (hasUserAnswersForModule) {
+        // User has answers - check for saved time
+        if (savedTimeForModule !== undefined && savedTimeForModule > 0 && savedTimeForModule <= fullPartTime && fullPartTime > 0) {
+          // Use saved time for this specific module/part
+          savedTime = savedTimeForModule;
+          console.log(`✅ Using saved time from savedPartTimes[${timeKey}]: ${savedTime}s`);
+        } else if (currentPartTimeLeft > 0 && currentPartTimeLeft <= fullPartTime && fullPartTime > 0) {
+          // Fallback: use currentPartTimeLeft if it's valid for this module
+          savedTime = currentPartTimeLeft;
+          console.log(`✅ Using currentPartTimeLeft: ${savedTime}s`);
+        } else {
+          // Use full time
+          savedTime = fullPartTime;
+          console.log(`ℹ️ Using full time: ${savedTime}s (savedTimeForModule: ${savedTimeForModule}, currentPartTimeLeft: ${currentPartTimeLeft}, fullPartTime: ${fullPartTime})`);
+        }
+      } else {
+        // New user - use full time
+        savedTime = fullPartTime;
+        console.log(`🆕 New user for ${moduleType} - using full time: ${savedTime}s`);
       }
-      console.log(`🕐 Resuming timer for ${moduleType} - has answers. Time: ${savedTime}s`);
+      
+      console.log(`🕐 [handleModuleSelection] About to set timer: savedTime=${savedTime}, fullPartTime=${fullPartTime}, hasUserAnswersForModule=${hasUserAnswersForModule}`);
+      setCurrentPartTimeLeft(savedTime);
+      setCurrentModuleTimeLeft(savedTime);
+      // Update start time to now for accurate elapsed calculation
+      // The saved time already accounts for elapsed time, so we start counting from now
+      setCurrentModuleStartTime(new Date());
+      // Save to savedPartTimes (in case it wasn't saved before)
+      // timeKey is already defined above, so we can reuse it
+      setSavedPartTimes(prev => ({ ...prev, [timeKey]: savedTime }));
+      console.log(`🕐 Resuming timer for ${moduleType} - hasUserAnswersForModule: ${hasUserAnswersForModule}. Using saved time: ${savedTime}s (full time: ${fullPartTime}s)`);
+      console.log(`🕐 [handleModuleSelection] Timer set: currentPartTimeLeft=${savedTime}, timerRunning will be set to true`);
     }
     setTimerRunning(true);
+    console.log(`🕐 [handleModuleSelection] Timer running set to true`);
   };
 
   // Add function to handle module completion
@@ -2124,8 +2247,8 @@ const TestInterface = () => {
     const moduleType = selectedModule || getCurrentModuleType();
     setCurrentPart(prev => ({ ...prev, [moduleType]: 2 }));
     
-    // Find the last saved question for Part 2 of this module
-    const key = `${moduleType}-part-2`;
+    // Find the last saved question for Part 2 of this module (test-specific)
+    const key = permalink ? `${permalink}-${moduleType}-part-2` : `${moduleType}-part-2`;
     const lastSavedQuestionIndex = lastSavedQuestions[key];
     
     const part2Questions = moduleParts[moduleType]?.[1] || [];
@@ -2155,16 +2278,28 @@ const TestInterface = () => {
     if (!timerRunning || currentPartTimeLeft <= 0) return;
     const timer = setInterval(() => {
       setCurrentPartTimeLeft(prev => {
-        if (prev <= 1) {
+        const newTime = prev <= 1 ? 0 : prev - 1;
+        
+        // Save timer per module/part when it changes
+        if (selectedModule && permalink) {
+          const currentModuleType = selectedModule;
+          const currentPartNumber = currentPart[currentModuleType] || 1;
+          const timeKey = `${permalink}-${currentModuleType}-part-${currentPartNumber}`;
+          setSavedPartTimes(prevTimes => ({
+            ...prevTimes,
+            [timeKey]: newTime
+          }));
+        }
+        
+        if (newTime === 0) {
           clearInterval(timer);
           handleTimeUp();
-          return 0;
         }
-        return prev - 1;
+        return newTime;
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [timerRunning, currentPartTimeLeft]);
+  }, [timerRunning, currentPartTimeLeft, selectedModule, currentPart, permalink]);
 
   // Load passages for a test
   const loadPassages = async (testId: string) => {
@@ -2422,18 +2557,8 @@ const TestInterface = () => {
       console.log('Part times set:', calculatedPartTimes);
     }
     
-    // Initialize the module timer for the first question (only if no state was loaded)
-    if (testData.questions.length > 0 && !stateLoaded) {
-      const firstModuleType = testData.questions[0]?.module_type || 'reading_writing';
-      // Use part time for SAT (already divided by 2), full time for ACT
-      const initialTime = testCategory === 'ACT'
-        ? (modules?.find((m: any) => m.type === firstModuleType)?.time || 0) * 60
-        : (partTimes[firstModuleType] || 0);
-      setCurrentModuleTimeLeft(initialTime);
-      setCurrentPartTimeLeft(initialTime);
-      setCurrentModuleStartTime(new Date());
-      console.log('Module timer initialized:', initialTime, `(${testCategory} test)`);
-    }
+    // Don't initialize timer here - it will be set when user selects a module
+    // Timer initialization happens in handleModuleSelection when a module is selected
     
     console.log('Test loading completed successfully');
     
@@ -2457,7 +2582,8 @@ const TestInterface = () => {
         setIsAutoSaving(true);
         const currentModuleType = selectedModule || getCurrentModuleType();
         const currentPartNumber = currentPart[currentModuleType] || 1;
-        const key = `${currentModuleType}-part-${currentPartNumber}`;
+        // Make key test-specific by including permalink
+        const key = permalink ? `${permalink}-${currentModuleType}-part-${currentPartNumber}` : `${currentModuleType}-part-${currentPartNumber}`;
         const updatedLastSavedQuestions = {
           ...lastSavedQuestions,
           [key]: currentQuestionIndex
@@ -2483,6 +2609,7 @@ const TestInterface = () => {
           showModuleScores,
           showPartTransition,
           lastSavedQuestions: updatedLastSavedQuestions,
+          savedPartTimes,
         });
         console.log('Auto-save completed successfully');
       } catch (error) {
@@ -2496,6 +2623,26 @@ const TestInterface = () => {
     return () => clearInterval(autoSaveInterval);
   }, [user, permalink, stateLoaded, currentQuestionIndex, userAnswers, flaggedQuestions, crossedOutOptions, testStartTime, currentModuleStartTime, currentModuleTimeLeft, currentPartTimeLeft, timerRunning, timerVisible, currentPart, selectedModule, partTimes, showModuleSelection, completedModules, showModuleScores, showPartTransition, lastSavedQuestions, saveTestState]);
 
+  // Update lastSavedQuestions whenever currentQuestionIndex changes (for navigation tracking)
+  useEffect(() => {
+    if (!user || !permalink || !stateLoaded || !selectedModule) return;
+    
+    const currentModuleType = selectedModule || getCurrentModuleType();
+    const currentPartNumber = currentPart[currentModuleType] || 1;
+    // Make key test-specific by including permalink
+    const key = permalink ? `${permalink}-${currentModuleType}-part-${currentPartNumber}` : `${currentModuleType}-part-${currentPartNumber}`;
+    
+    // Only update if the index has actually changed for this module/part
+    if (lastSavedQuestions[key] !== currentQuestionIndex) {
+      const updatedLastSavedQuestions = {
+        ...lastSavedQuestions,
+        [key]: currentQuestionIndex
+      };
+      setLastSavedQuestions(updatedLastSavedQuestions);
+      console.log(`📍 [Navigation] Updated lastSavedQuestions[${key}] = ${currentQuestionIndex}`);
+    }
+  }, [currentQuestionIndex, selectedModule, currentPart, stateLoaded, user, permalink]);
+
   // Save state when answers change (debounced)
   useEffect(() => {
     if (!user || !permalink || !stateLoaded) return;
@@ -2506,12 +2653,14 @@ const TestInterface = () => {
         setIsAutoSaving(true);
         const currentModuleType = selectedModule || getCurrentModuleType();
         const currentPartNumber = currentPart[currentModuleType] || 1;
-        const key = `${currentModuleType}-part-${currentPartNumber}`;
+        // Make key test-specific by including permalink
+        const key = permalink ? `${permalink}-${currentModuleType}-part-${currentPartNumber}` : `${currentModuleType}-part-${currentPartNumber}`;
         const updatedLastSavedQuestions = {
           ...lastSavedQuestions,
           [key]: currentQuestionIndex
         };
         setLastSavedQuestions(updatedLastSavedQuestions);
+        console.log(`💾 [Answer change save] Updated lastSavedQuestions[${key}] = ${currentQuestionIndex}`);
 
         await saveTestState({
           currentQuestionIndex,
@@ -2532,6 +2681,7 @@ const TestInterface = () => {
           showModuleScores,
           showPartTransition,
           lastSavedQuestions: updatedLastSavedQuestions,
+          savedPartTimes,
         });
         console.log('Answer change save completed successfully');
       } catch (error) {
@@ -2579,6 +2729,7 @@ const TestInterface = () => {
           showModuleScores,
           showPartTransition,
           lastSavedQuestions: updatedLastSavedQuestions,
+          savedPartTimes,
         };
 
         // Save to sessionStorage as backup - user-specific
@@ -2820,8 +2971,8 @@ const TestInterface = () => {
                       setShowModuleSelection(false);
                       setCurrentPart(prev => ({ ...prev, [savedModuleType]: savedPart as 1 | 2 }));
                       
-                      // Find the last saved question for this module/part
-                      const key = `${savedModuleType}-part-${savedPart}`;
+                      // Find the last saved question for this module/part (test-specific)
+                      const key = permalink ? `${permalink}-${savedModuleType}-part-${savedPart}` : `${savedModuleType}-part-${savedPart}`;
                       const lastSavedQuestionIndex = lastSavedQuestions[key];
                       
                       const partQuestions = moduleParts[savedModuleType]?.[savedPart - 1] || [];
