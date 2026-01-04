@@ -1803,15 +1803,21 @@ const TestInterface = () => {
   
   // Initialize module timer when test loads
   useEffect(() => {
-    if (currentTest && questions.length > 0) {
+    if (currentTest && questions.length > 0 && Object.keys(partTimes).length > 0) {
       const firstModuleType = questions[0]?.module_type || 'reading_writing';
-      const firstModule = currentTest.modules?.find((m: any) => m.type === firstModuleType);
-      const initialTime = (firstModule?.time || 0) * 60; // Convert minutes to seconds
+      const testCategory = currentTest.test_category || 'SAT';
+      const isACTTest = testCategory === 'ACT';
+      
+      // Use part time for SAT (already divided by 2), full time for ACT
+      const initialTime = isACTTest 
+        ? (currentTest.modules?.find((m: any) => m.type === firstModuleType)?.time || 0) * 60
+        : (partTimes[firstModuleType] || 0);
       
       setCurrentModuleTimeLeft(initialTime);
+      setCurrentPartTimeLeft(initialTime);
       setCurrentModuleStartTime(new Date());
     }
-  }, [currentTest, questions]);
+  }, [currentTest, questions, partTimes]);
 
   // Add new function to handle module selection
   const handleModuleSelection = (moduleType: string, partNumber: number = 1) => {
@@ -1989,16 +1995,31 @@ const TestInterface = () => {
     
     // Reset timer for this module if user has no answers for this module
     const hasUserAnswersForModule = partQuestions.some(q => userAnswers[q.id]);
+    
+    // Determine test category to set timer correctly
+    const testCategory = currentTest?.test_category || 'SAT';
+    const isACTTest = testCategory === 'ACT';
+    
     if (!hasUserAnswersForModule) {
-      // New module - reset timer to full module time from test configuration
-      const module = currentTest?.modules?.find((m: any) => m.type === moduleType);
-      const moduleTimeInMinutes = module?.time || 0;
-      const moduleTimeInSeconds = moduleTimeInMinutes * 60;
-      
-      setCurrentPartTimeLeft(moduleTimeInSeconds);
-      setCurrentModuleTimeLeft(moduleTimeInSeconds);
-      setCurrentModuleStartTime(new Date());
-      console.log(`🕐 Resetting timer for ${moduleType} - new module, no answers yet. Time: ${moduleTimeInSeconds}s (${moduleTimeInMinutes} minutes)`);
+      // New module - reset timer based on test category
+      if (isACTTest) {
+        // For ACT tests, use full module time
+        const module = currentTest?.modules?.find((m: any) => m.type === moduleType);
+        const moduleTimeInMinutes = module?.time || 0;
+        const moduleTimeInSeconds = moduleTimeInMinutes * 60;
+        
+        setCurrentPartTimeLeft(moduleTimeInSeconds);
+        setCurrentModuleTimeLeft(moduleTimeInSeconds);
+        setCurrentModuleStartTime(new Date());
+        console.log(`🕐 Resetting timer for ${moduleType} (ACT) - new module, no answers yet. Time: ${moduleTimeInSeconds}s (${moduleTimeInMinutes} minutes)`);
+      } else {
+        // For SAT tests, use part time (already divided by 2 in partTimes)
+        const partTime = partTimes[moduleType] || 0;
+        setCurrentPartTimeLeft(partTime);
+        setCurrentModuleTimeLeft(partTime);
+        setCurrentModuleStartTime(new Date());
+        console.log(`🕐 Resetting timer for ${moduleType} (SAT) - new module, no answers yet. Part time: ${partTime}s (${Math.floor(partTime / 60)} minutes)`);
+      }
     } else {
       // Resuming module - use saved time or default from partTimes
       const savedTime = partTimes[moduleType] || 0;
@@ -2381,34 +2402,37 @@ const TestInterface = () => {
     }
     
     // Set per-part time (half the module time for SAT, full time for ACT)
-    const partTimes: { [moduleType: string]: number } = {};
+    const calculatedPartTimes: { [moduleType: string]: number } = {};
     
     if (modules.length > 0) {
       modules.forEach((m: any) => {
         if (testCategory === 'ACT') {
           // For ACT tests, use full module time
-          partTimes[m.type] = (m.time || 0) * 60; // seconds
+          calculatedPartTimes[m.type] = (m.time || 0) * 60; // seconds
         } else {
           // For SAT tests, split time in half
-          partTimes[m.type] = Math.floor((m.time || 0) * 60 / 2); // seconds
+          calculatedPartTimes[m.type] = Math.floor((m.time || 0) * 60 / 2); // seconds
         }
       });
     }
     
-    // Only set partTimes if no state was loaded from persistence
-    if (!stateLoaded) {
-      setPartTimes(partTimes);
-      console.log('Part times set:', partTimes);
+    // Set partTimes - use calculated values if state wasn't loaded, or if partTimes is empty
+    if (!stateLoaded || Object.keys(partTimes).length === 0) {
+      setPartTimes(calculatedPartTimes);
+      console.log('Part times set:', calculatedPartTimes);
     }
     
     // Initialize the module timer for the first question (only if no state was loaded)
     if (testData.questions.length > 0 && !stateLoaded) {
       const firstModuleType = testData.questions[0]?.module_type || 'reading_writing';
-      const firstModule = modules?.find((m: any) => m.type === firstModuleType);
-      const initialTime = (firstModule?.time || 0) * 60; // Convert minutes to seconds
+      // Use part time for SAT (already divided by 2), full time for ACT
+      const initialTime = testCategory === 'ACT'
+        ? (modules?.find((m: any) => m.type === firstModuleType)?.time || 0) * 60
+        : (partTimes[firstModuleType] || 0);
       setCurrentModuleTimeLeft(initialTime);
+      setCurrentPartTimeLeft(initialTime);
       setCurrentModuleStartTime(new Date());
-      console.log('Module timer initialized:', initialTime);
+      console.log('Module timer initialized:', initialTime, `(${testCategory} test)`);
     }
     
     console.log('Test loading completed successfully');
