@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import Header from "@/components/Header";
@@ -34,6 +34,7 @@ interface ResultsState {
   moduleScores?: ModuleScore[];
   overallScaledScore?: number;
   testCategory?: 'SAT' | 'ACT';
+  completedModules?: string[];
 }
 
 interface TestResult {
@@ -79,13 +80,23 @@ const Results = () => {
   const [historyTestCategory, setHistoryTestCategory] = useState<'SAT' | 'ACT' | null>(null);
   const [currentTestCategory, setCurrentTestCategory] = useState<'SAT' | 'ACT' | null>(null);
   const [historyReviewCache, setHistoryReviewCache] = useState<Record<string, { questions: QuestionData[]; answers: Record<string, string> | null; testTitle: string | null; testCategory?: 'SAT' | 'ACT' }>>({});
+  const scoreSectionRef = useRef<HTMLDivElement>(null);
   
   const state = location.state as ResultsState;
   
   // Move hooks to top level to avoid conditional hook calls
   const memoizedScaledScore = useMemo(() => {
-    return state?.overallScaledScore || (state?.scaledScoring ? calculateTotalScaledScore(state?.moduleScores || []) : null);
-  }, [state?.overallScaledScore, state?.scaledScoring, state?.moduleScores]);
+    if (state?.overallScaledScore) return state.overallScaledScore;
+    if (!state?.scaledScoring || !state?.moduleScores) return null;
+    
+    // Filter to only completed modules before calculating
+    const completedModulesSet = new Set(state.completedModules || []);
+    const completedModuleScores = state.moduleScores.filter(module => 
+      completedModulesSet.has(module.moduleId)
+    );
+    
+    return calculateTotalScaledScore(completedModuleScores);
+  }, [state?.overallScaledScore, state?.scaledScoring, state?.moduleScores, state?.completedModules]);
 
   const answeredCount = useMemo(() => Object.keys(state?.answers || {}).length, [state?.answers]);
   
@@ -101,6 +112,20 @@ const Results = () => {
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
+
+  // Scroll to score section when results are loaded (after initial load completes)
+  useEffect(() => {
+    if (state && !isInitialLoad && scoreSectionRef.current) {
+      // Use setTimeout to ensure DOM is fully rendered
+      setTimeout(() => {
+        scoreSectionRef.current?.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'start',
+          inline: 'nearest'
+        });
+      }, 100);
+    }
+  }, [state, isInitialLoad]);
   
   // Fetch results history on mount if user is present
   useEffect(() => {
@@ -779,7 +804,8 @@ const Results = () => {
                   <ScoreCard 
                     score={currentResult.testResult.total_score} 
                     total={currentResult.testResult.total_questions}
-                    scaledScore={currentResult.testResult.scaled_score} 
+                    scaledScore={currentResult.testResult.scaled_score}
+                    testCategory={historyTestCategory || 'SAT'}
                   />
                   <SummaryCard 
                     score={currentResult.testResult.total_score}
@@ -807,7 +833,7 @@ const Results = () => {
                           <TabsContent key={module.id} value={module.id}>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                               <div className="bg-white rounded-lg p-4 border">
-                                <h3 className="text-base sm:text-lg font-medium mb-2">{module.module_name} Score</h3>
+                                <h3 className="text-base sm:text-lg font-medium mb-2">Questions Right</h3>
                                 <div className="text-2xl sm:text-3xl font-bold">
                                   {module.score} / {module.total}
                                 </div>
@@ -815,7 +841,7 @@ const Results = () => {
                               
                               {module.scaled_score !== null && (
                                 <div className="bg-white rounded-lg p-4 border">
-                                  <h3 className="text-base sm:text-lg font-medium mb-2">Scaled Score</h3>
+                                  <h3 className="text-base sm:text-lg font-medium mb-2">{module.module_name} Score</h3>
                                   <div className="text-2xl sm:text-3xl font-bold">
                                     {module.scaled_score}
                                   </div>
@@ -828,7 +854,7 @@ const Results = () => {
                       
                       <div className="mt-6 p-4 bg-gray-50 rounded-lg">
                         <h3 className="text-base sm:text-lg font-medium mb-2">
-                          {historyTestCategory === 'ACT' ? 'Composite Score' : 'Total Scaled Score'}
+                          {historyTestCategory === 'ACT' ? 'Composite Score' : 'Total Score'}
                         </h3>
                         <div className="text-2xl sm:text-3xl font-bold">
                           {historyTestCategory === 'ACT' ? (() => {
@@ -923,48 +949,92 @@ const Results = () => {
           </div>
         ) : (
           <>
-            <div className="grid md:grid-cols-2 gap-6 mb-10">
+            <div ref={scoreSectionRef} className="grid md:grid-cols-2 gap-6 mb-10">
               <ScoreCard 
-                score={state.score} 
-                total={state.total} 
+                score={(() => {
+                  // Calculate score only from completed modules
+                  const completedModulesSet = new Set(state.completedModules || []);
+                  const completedModuleScores = (state.moduleScores || []).filter(m => 
+                    completedModulesSet.has(m.moduleId)
+                  );
+                  return completedModuleScores.reduce((sum, m) => sum + (m.correctAnswers || 0), 0);
+                })()}
+                total={(() => {
+                  // Calculate total only from completed modules
+                  const completedModulesSet = new Set(state.completedModules || []);
+                  const completedModuleScores = (state.moduleScores || []).filter(m => 
+                    completedModulesSet.has(m.moduleId)
+                  );
+                  return completedModuleScores.reduce((sum, m) => sum + (m.totalQuestions || 0), 0);
+                })()}
                 scaledScoring={state.scaledScoring}
                 scaledScore={memoizedScaledScore}
                 testCategory={state?.testCategory || currentTestCategory || 'SAT'}
               />
               <SummaryCard 
-                score={state.score} 
-                total={state.total} 
-                answeredCount={answeredCount} 
+                score={(() => {
+                  // Calculate score only from completed modules
+                  const completedModulesSet = new Set(state.completedModules || []);
+                  const completedModuleScores = (state.moduleScores || []).filter(m => 
+                    completedModulesSet.has(m.moduleId)
+                  );
+                  return completedModuleScores.reduce((sum, m) => sum + (m.correctAnswers || 0), 0);
+                })()}
+                total={(() => {
+                  // Calculate total only from completed modules
+                  const completedModulesSet = new Set(state.completedModules || []);
+                  const completedModuleScores = (state.moduleScores || []).filter(m => 
+                    completedModulesSet.has(m.moduleId)
+                  );
+                  return completedModuleScores.reduce((sum, m) => sum + (m.totalQuestions || 0), 0);
+                })()}
+                answeredCount={(() => {
+                  // Count answers only from completed modules
+                  const completedModulesSet = new Set(state.completedModules || []);
+                  const completedQuestions = (state.questions || []).filter(q => 
+                    completedModulesSet.has(q.module_type || '')
+                  );
+                  return completedQuestions.filter(q => state.answers?.[q.id]).length;
+                })()} 
               />
             </div>
             
-            {state.moduleScores && state.moduleScores.length > 0 && (
+            {state.moduleScores && state.moduleScores.length > 0 && (() => {
+              // Filter to only show completed modules
+              const completedModulesSet = new Set(state.completedModules || []);
+              const filteredModuleScores = state.moduleScores.filter(module => 
+                completedModulesSet.has(module.moduleId)
+              );
+              
+              if (filteredModuleScores.length === 0) return null;
+              
+              return (
               <Card className="mb-10">
                 <CardHeader>
                   <CardTitle>{(state?.testCategory || currentTestCategory) === 'ACT' ? 'Section Scores' : 'Module Scores'}</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <Tabs defaultValue={state.moduleScores[0].moduleId}>
+                  <Tabs defaultValue={filteredModuleScores[0].moduleId}>
                     <TabsList className="mb-4">
-                      {state.moduleScores.map(module => (
+                      {filteredModuleScores.map(module => (
                         <TabsTrigger key={module.moduleId} value={module.moduleId}>
                           {module.moduleName}
                         </TabsTrigger>
                       ))}
                     </TabsList>
                     
-                    {state.moduleScores.map(module => (
+                    {filteredModuleScores.map(module => (
                       <TabsContent key={module.moduleId} value={module.moduleId}>
                         <div className="grid md:grid-cols-2 gap-4">
                           <div className="bg-white rounded-lg p-4 border">
-                            <h3 className="text-lg font-medium mb-2">{module.moduleName} Score</h3>
+                            <h3 className="text-lg font-medium mb-2">Questions Right</h3>
                             <div className="text-3xl font-bold">
                               {module.correctAnswers} / {module.totalQuestions}
                             </div>
                           </div>
                           
                           <div className="bg-white rounded-lg p-4 border">
-                            <h3 className="text-lg font-medium mb-2">Scaled Score</h3>
+                            <h3 className="text-lg font-medium mb-2">{module.moduleName} Score</h3>
                             <div className="text-3xl font-bold">
                               {module.scaledScore !== undefined && module.scaledScore !== null ? module.scaledScore : 'N/A'}
                             </div>
@@ -976,18 +1046,44 @@ const Results = () => {
                   
                   <div className="mt-6 p-4 bg-gray-50 rounded-lg">
                     <h3 className="text-lg font-medium mb-2">
-                      {(state?.testCategory || currentTestCategory) === 'ACT' ? 'Composite Score' : 'Total Scaled Score'}
+                      {(state?.testCategory || currentTestCategory) === 'ACT' ? 'Composite Score' : 'Total Score'}
                     </h3>
                     <div className="text-3xl font-bold">
-                      {memoizedScaledScore || 'N/A'}
+                      {(() => {
+                        // Calculate score only from completed modules
+                        const completedModulesSet = new Set(state.completedModules || []);
+                        const completedModuleScores = filteredModuleScores.filter(m => 
+                          completedModulesSet.has(m.moduleId)
+                        );
+                        
+                        if ((state?.testCategory || currentTestCategory) === 'ACT') {
+                          const compositeModules = completedModuleScores.filter(module => 
+                            ['english', 'math', 'reading'].includes(module.moduleId)
+                          );
+                          if (compositeModules.length > 0) {
+                            const sum = compositeModules.reduce((sum, module) => sum + (module.scaledScore || 0), 0);
+                            return Math.round(sum / compositeModules.length);
+                          }
+                          return 'N/A';
+                        } else {
+                          return completedModuleScores.reduce((sum, module) => sum + (module.scaledScore || 0), 0) || 'N/A';
+                        }
+                      })()}
                     </div>
                   </div>
                 </CardContent>
               </Card>
-            )}
+              );
+            })()}
             
             <QuestionReview 
-              questions={state.questions} 
+              questions={(() => {
+                // Filter questions to only show completed modules
+                const completedModulesSet = new Set(state.completedModules || []);
+                return state.questions.filter(q => 
+                  completedModulesSet.has(q.module_type || '')
+                );
+              })()} 
               userAnswers={state.answers} 
               testCategory={state?.testCategory || currentTestCategory || 'SAT'}
             />

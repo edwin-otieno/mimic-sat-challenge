@@ -840,7 +840,7 @@ const StudentResults = () => {
       await upsertEssayGrade({
         test_result_id: selectedResult.id,
         score: essayScoreValue,
-        comments: essayComments || null,
+        comments: null, // Comments removed from UI
       });
       
       // Update module_results for writing/essay module if it exists
@@ -1218,16 +1218,16 @@ const StudentResults = () => {
                   <Card className="mt-6">
                     <CardHeader>
                       <CardTitle>ACT Essay Grading</CardTitle>
-                      <CardDescription>Review the student's essay and assign a score (0-12) with comments.</CardDescription>
+                      <CardDescription>Review the student's essay and assign a score (0-12).</CardDescription>
                     </CardHeader>
                     <CardContent>
                       {essayLoading ? (
                         <div className="text-gray-500">Loading essay...</div>
                       ) : essayText ? (
                         <div className="space-y-4">
-                          <div className="p-4 bg-gray-50 rounded-md whitespace-pre-wrap">{essayText}</div>
-                          <div className="grid md:grid-cols-3 gap-4 items-end">
-                            <div>
+                          <div className="p-4 bg-gray-50 rounded-md whitespace-pre-wrap text-xl">{essayText}</div>
+                          <div className="flex gap-4 items-end">
+                            <div className="w-48">
                               <label className="block text-sm font-medium text-gray-700 mb-1">Score (0-12)</label>
                               <input
                                 type="number"
@@ -1236,14 +1236,6 @@ const StudentResults = () => {
                                 className="border rounded px-3 py-2 w-full"
                                 value={essayScore}
                                 onChange={(e) => setEssayScore(e.target.value === '' ? '' : Number(e.target.value))}
-                              />
-                            </div>
-                            <div className="md:col-span-2">
-                              <label className="block text-sm font-medium text-gray-700 mb-1">Comments</label>
-                              <textarea
-                                className="border rounded px-3 py-2 w-full min-h-[100px]"
-                                value={essayComments}
-                                onChange={(e) => setEssayComments(e.target.value)}
                               />
                             </div>
                           </div>

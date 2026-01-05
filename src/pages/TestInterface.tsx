@@ -79,7 +79,7 @@ const TestInterface = () => {
   const [moduleParts, setModuleParts] = useState<{ [moduleType: string]: [QuestionData[], QuestionData[]] }>({});
   const [currentPart, setCurrentPart] = useState<{ [moduleType: string]: 1 | 2 }>({ reading_writing: 1, math: 1 });
   const [showPartTransition, setShowPartTransition] = useState(false);
-  const [timerRunning, setTimerRunning] = useState(true);
+  const [timerRunning, setTimerRunning] = useState(false);
   const [timerVisible, setTimerVisible] = useState(true);
   const [currentPartTimeLeft, setCurrentPartTimeLeft] = useState<number>(0);
   const [partTimes, setPartTimes] = useState<{ [moduleType: string]: number }>({});
@@ -202,7 +202,7 @@ const TestInterface = () => {
         setCurrentModuleStartTime(new Date(state.currentModuleStartTime || new Date()));
         setCurrentModuleTimeLeft(state.currentModuleTimeLeft || 0);
         setCurrentPartTimeLeft(state.currentPartTimeLeft || 0);
-        setTimerRunning(state.timerRunning !== false);
+        setTimerRunning(false); // Always start with timer stopped when resuming
         setTimerVisible(state.timerVisible !== false); // Default to true if not saved
         setCurrentPart(state.currentPart || { reading_writing: 1, math: 1 });
         setSelectedModule(state.selectedModule || null);
@@ -230,7 +230,7 @@ const TestInterface = () => {
       try {
         const timerState = JSON.parse(saved);
         setCurrentPartTimeLeft(timerState.currentPartTimeLeft || 0);
-        setTimerRunning(timerState.timerRunning !== false); // Default to true if not saved
+        setTimerRunning(false); // Always start with timer stopped when resuming
         setTimerVisible(timerState.timerVisible !== false); // Default to true if not saved
         setCurrentPart(timerState.currentPart || { reading_writing: 1, math: 1 });
         setSelectedModule(timerState.selectedModule || null);
@@ -310,7 +310,7 @@ const TestInterface = () => {
           setCurrentModuleStartTime(new Date(saved.currentModuleStartTime));
           setCurrentModuleTimeLeft(saved.currentModuleTimeLeft);
           setCurrentPartTimeLeft(saved.currentPartTimeLeft);
-          setTimerRunning(saved.timerRunning);
+          setTimerRunning(false); // Always start with timer stopped when resuming
           setTimerVisible(saved.timerVisible !== false); // Default to true if not saved
           setCurrentPart(saved.currentPart);
           setSelectedModule(saved.selectedModule);
@@ -358,7 +358,7 @@ const TestInterface = () => {
             setCurrentModuleStartTime(new Date(saved.currentModuleStartTime));
             setCurrentModuleTimeLeft(saved.currentModuleTimeLeft);
             setCurrentPartTimeLeft(saved.currentPartTimeLeft);
-            setTimerRunning(saved.timerRunning);
+            setTimerRunning(false); // Always start with timer stopped when resuming
             setTimerVisible(saved.timerVisible !== false);
             setCurrentPart(saved.currentPart);
             setSelectedModule(saved.selectedModule);
@@ -1813,7 +1813,8 @@ const TestInterface = () => {
             scaledScore: module.scaledScore
           })),
           overallScaledScore: overallScaledScore,
-          testCategory: testCategory
+          testCategory: testCategory,
+          completedModules: Array.from(completedModules)
         }
       });
       console.log('Navigation completed');
@@ -2150,10 +2151,9 @@ const TestInterface = () => {
       // timeKey is already defined above, so we can reuse it
       setSavedPartTimes(prev => ({ ...prev, [timeKey]: savedTime }));
       console.log(`🕐 Resuming timer for ${moduleType} - hasUserAnswersForModule: ${hasUserAnswersForModule}. Using saved time: ${savedTime}s (full time: ${fullPartTime}s)`);
-      console.log(`🕐 [handleModuleSelection] Timer set: currentPartTimeLeft=${savedTime}, timerRunning will be set to true`);
+      console.log(`🕐 [handleModuleSelection] Timer set: currentPartTimeLeft=${savedTime}, timer will not start automatically`);
     }
-    setTimerRunning(true);
-    console.log(`🕐 [handleModuleSelection] Timer running set to true`);
+    // Timer does not start automatically - students can choose to start it
   };
 
   // Add function to handle module completion
@@ -2269,7 +2269,7 @@ const TestInterface = () => {
       }
     }
     setCurrentPartTimeLeft(partTimes[moduleType] || 0);
-    setTimerRunning(true);
+    // Timer does not start automatically - students can choose to start it
     setShowPartTransition(false);
   };
 
@@ -2994,7 +2994,7 @@ const TestInterface = () => {
                       }
                       
                       setCurrentPartTimeLeft(partTimes[savedModuleType] || 0);
-                      setTimerRunning(true);
+                      // Timer does not start automatically - students can choose to start it
                     }}
                     className="bg-green-600 hover:bg-green-700"
                   >
@@ -3149,7 +3149,7 @@ const TestInterface = () => {
                       <h3 className="text-xl font-semibold mb-2">{module.moduleName}</h3>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="bg-white rounded-lg p-4 border">
-                          <h4 className="text-base sm:text-lg font-medium mb-2">Raw Score</h4>
+                          <h4 className="text-base sm:text-lg font-medium mb-2">Questions Right</h4>
                           <div className="text-2xl sm:text-3xl font-bold">
                             {module.moduleId === 'writing' || module.moduleId === 'essay' ? (
                               <span className="text-green-600">1 / 1. Essay submitted successfully</span>
@@ -3160,7 +3160,7 @@ const TestInterface = () => {
                         </div>
                         {module.scaledScore !== undefined && (
                           <div className="bg-white rounded-lg p-4 border">
-                            <h4 className="text-base sm:text-lg font-medium mb-2">Scaled Score</h4>
+                            <h4 className="text-base sm:text-lg font-medium mb-2">{module.moduleName} Score</h4>
                             <div className="text-2xl sm:text-3xl font-bold">
                               {module.scaledScore}
                             </div>

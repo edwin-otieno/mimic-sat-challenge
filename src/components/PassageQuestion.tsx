@@ -77,6 +77,9 @@ const PassageQuestion: React.FC<PassageQuestionProps> = ({
   const [autoHighlightedRanges, setAutoHighlightedRanges] = useState<Map<number, Array<{ start: number; end: number }>>>(new Map());
   const [showConfirmSubmitDialog, setShowConfirmSubmitDialog] = useState(false);
   const passageRef = useRef<HTMLDivElement>(null);
+  const passageContentRef = useRef<HTMLDivElement>(null);
+  const questionHeaderRef = useRef<HTMLDivElement>(null);
+  const questionContentRef = useRef<HTMLDivElement>(null);
   // For navigation with all questions, currentQuestionIndex can be either:
   // 1. Global test index (when passed from parent) - but allQuestions is module-specific
   // 2. Module-relative index (when calculated from passage indices) - matches allQuestions
@@ -370,8 +373,17 @@ const PassageQuestion: React.FC<PassageQuestionProps> = ({
         const firstHighlightedIndex = Math.min(...Array.from(highlightedSentences));
         setTimeout(() => {
           const sentenceElement = passageRef.current?.querySelector(`[data-sentence-index="${firstHighlightedIndex}"]`);
-          if (sentenceElement) {
-            sentenceElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          if (sentenceElement && passageContentRef.current) {
+            // Scroll the passage content container to show the highlighted sentence
+            const containerRect = passageContentRef.current.getBoundingClientRect();
+            const elementRect = sentenceElement.getBoundingClientRect();
+            const scrollTop = passageContentRef.current.scrollTop;
+            const targetScrollTop = scrollTop + elementRect.top - containerRect.top - (containerRect.height / 2);
+            
+            passageContentRef.current.scrollTo({
+              top: Math.max(0, targetScrollTop),
+              behavior: 'smooth'
+            });
           }
         }, 100);
       }
@@ -381,6 +393,31 @@ const PassageQuestion: React.FC<PassageQuestionProps> = ({
       setAutoHighlightedRanges(new Map());
     }
   }, [currentQuestionIndex, currentQuestion, passage.content, testCategory]);
+
+  // Auto-scroll to question header when question changes
+  useEffect(() => {
+    // Scroll the question content area to show the header
+    // This ensures both the passage highlight and question are visible
+    if (questionContentRef.current) {
+      // Use setTimeout to ensure DOM is updated
+      setTimeout(() => {
+        // Scroll the question content container to the top
+        questionContentRef.current?.scrollTo({ 
+          top: 0,
+          behavior: 'smooth'
+        });
+        
+        // Also scroll the question header into view in case it's in a scrollable parent
+        if (questionHeaderRef.current) {
+          questionHeaderRef.current.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'start',
+            inline: 'nearest'
+          });
+        }
+      }, 50);
+    }
+  }, [currentQuestionIndex, currentQuestion?.id]);
 
   // Helper function to check if a node is a block element
   const isBlockElement = (node: Node): boolean => {
@@ -749,7 +786,7 @@ const PassageQuestion: React.FC<PassageQuestionProps> = ({
                   ) : ''}
                 </CardTitle>
               </CardHeader>
-              <CardContent className="flex-1 overflow-y-auto min-h-0">
+              <CardContent ref={passageContentRef} className="flex-1 overflow-y-auto min-h-0">
                 <div 
                   ref={passageRef}
                   className="text-xl max-w-none highlightable-text leading-relaxed"
@@ -874,12 +911,12 @@ const PassageQuestion: React.FC<PassageQuestionProps> = ({
             : "w-1/2"
         )}>
           <Card className="h-full flex flex-col rounded-none border-0 min-h-0">
-            <CardHeader className="pb-3 flex-shrink-0 border-b">
+            <CardHeader ref={questionHeaderRef} className="pb-3 flex-shrink-0 border-b">
               <CardTitle className="text-base">
                 Question {sequentialQuestionNumber || currentQuestion.question_number || (currentQuestionIndex + 1)}
               </CardTitle>
             </CardHeader>
-            <CardContent className="flex-1 overflow-y-auto min-h-0 space-y-4">
+            <CardContent ref={questionContentRef} className="flex-1 overflow-y-auto min-h-0 space-y-4">
               {/* Question Text */}
               <div 
                 className="highlightable-text text-xl font-medium whitespace-pre-wrap break-words [&_div]:break-words [&_div]:overflow-wrap-break-word"
@@ -1021,7 +1058,7 @@ const PassageQuestion: React.FC<PassageQuestionProps> = ({
               {crossOutMode && (
                 <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
                   <p className="text-sm text-yellow-800">
-                    Cross-out mode is active. Click on answer options to cross them out.
+                    Cross-out mode is active. Click the blue button to Deactivate.
                   </p>
                 </div>
               )}
@@ -1030,7 +1067,7 @@ const PassageQuestion: React.FC<PassageQuestionProps> = ({
               {isAnswerMasking && (
                 <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                   <p className="text-sm text-blue-800">
-                    Answer masking is active. Click the eye icon to unmask specific answers.
+                    Answer masking is active. Click the blue button to Deactivate.
                   </p>
                 </div>
               )}
@@ -1064,7 +1101,7 @@ const PassageQuestion: React.FC<PassageQuestionProps> = ({
       )}
 
       {/* Navigation Footer */}
-      <div className="flex items-center justify-between p-4 border-t bg-gray-50">
+      <div className="flex items-center justify-end gap-2 p-4 border-t bg-gray-50">
         <Button
           variant="outline"
           onClick={onPreviousQuestion}
@@ -1073,12 +1110,6 @@ const PassageQuestion: React.FC<PassageQuestionProps> = ({
           <ChevronLeft className="w-4 h-4 mr-2" />
           Previous
         </Button>
-        
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-600">
-            {currentQuestionIndex + 1} of {totalQuestions}
-          </span>
-        </div>
         
         <Button
           onClick={() => {

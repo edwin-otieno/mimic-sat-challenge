@@ -72,7 +72,7 @@ export const TextInputQuestion: React.FC<TextInputQuestionProps> = ({
           onKeyDown={handleKeyDown}
           placeholder="Write your essay here..."
           disabled={disabled}
-          className="w-full min-h-[400px] text-base"
+          className="w-full min-h-[400px] text-xl"
         />
       ) : (
         <Input

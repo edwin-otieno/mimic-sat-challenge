@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Question, { QuestionData, QuestionType } from '@/components/Question';
 import TestNavigation from './TestNavigation';
 import ProgressBar from '@/components/ProgressBar';
@@ -74,6 +74,7 @@ export const TestContainer: React.FC<TestContainerProps> = ({
   const [isHighlighting, setIsHighlighting] = useState(false);
   const [selectedColor, setSelectedColor] = useState<string>('yellow');
   const [highlights, setHighlights] = useState<Array<{id: string, start: number, end: number, color: string}>>([]);
+  const questionAreaRef = useRef<HTMLDivElement>(null);
 
   // Always call hooks; avoid early return to keep hook order stable
   const safeQuestions = Array.isArray(questions) ? questions : [];
@@ -151,6 +152,29 @@ export const TestContainer: React.FC<TestContainerProps> = ({
     setShowExplanation(false);
   }, [currentQuestionIndex, selectedAnswer]);
 
+  // Auto-scroll to top of question area when question changes (for SAT and ACT Math)
+  useEffect(() => {
+    // Only auto-scroll for non-passage questions (SAT and ACT Math)
+    // Passage questions are handled in PassageQuestion component
+    if (!currentQuestion) return;
+    
+    const isPassageModule = currentQuestion.module_type === 'reading' || 
+                            currentQuestion.module_type === 'english' || 
+                            currentQuestion.module_type === 'science' ||
+                            currentQuestion.module_type === 'writing';
+    
+    if (!isPassageModule && questionAreaRef.current) {
+      // Use setTimeout to ensure DOM is updated
+      setTimeout(() => {
+        questionAreaRef.current?.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'start',
+          inline: 'nearest'
+        });
+      }, 50);
+    }
+  }, [currentQuestionIndex, currentQuestion?.id, currentQuestion]);
+
   const handleAnswerChange = (answer: string) => {
     if (currentQuestion.question_type === QuestionType.TextInput) {
       setTextAnswer(answer);
@@ -185,7 +209,7 @@ export const TestContainer: React.FC<TestContainerProps> = ({
         <ProgressBar current={currentQuestionIndex + 1} total={safeQuestions.length} />
       </div>
       
-      <div className="flex justify-between items-center mb-4">
+      <div ref={questionAreaRef} className="flex justify-between items-center mb-4">
         <h2 className="text-2xl font-bold">
           {moduleName}{testCategory === 'SAT' ? ` - Part ${currentPart}` : ''}
         </h2>
@@ -198,32 +222,6 @@ export const TestContainer: React.FC<TestContainerProps> = ({
             />
             <span className="text-sm">Line Reader</span>
           </div>
-          <div className="flex items-center space-x-2">
-            <Switch
-              checked={isHighlighting}
-              onCheckedChange={setIsHighlighting}
-            />
-            <Highlighter className="h-4 w-4" />
-            <span className="text-sm">Text Highlighter</span>
-            {isHighlighting && (
-              <div className="flex items-center space-x-1 ml-2">
-                <span className="text-xs text-gray-600">Color:</span>
-                {['yellow', 'green', 'blue', 'pink', 'orange', 'purple'].map((color) => (
-                  <button
-                    key={color}
-                    className={`w-4 h-4 rounded-full border-2 ${
-                      selectedColor === color ? 'border-gray-800' : 'border-gray-300'
-                    }`}
-                    style={{ backgroundColor: color === 'yellow' ? '#fef08a' : color === 'green' ? '#bbf7d0' : color === 'blue' ? '#bfdbfe' : color === 'pink' ? '#fce7f3' : color === 'orange' ? '#fed7aa' : '#e9d5ff' }}
-                    onClick={() => setSelectedColor(color)}
-                    title={color}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
           {currentQuestion && (
             <>
               <Button
@@ -235,7 +233,7 @@ export const TestContainer: React.FC<TestContainerProps> = ({
                 {isQuestionFlagged ? "Unflag Question" : "Flag for Review"}
               </Button>
               <button
-                className={`px-[25px] py-1 rounded border flex items-center justify-center text-sm font-bold w-8 h-8 ml-2 ${crossOutMode ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300'} transition`}
+                className={`px-[25px] py-1 rounded border flex items-center justify-center text-sm font-bold w-8 h-8 ${crossOutMode ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300'} transition`}
                 title={crossOutMode ? 'Disable answer cross out' : 'Enable answer cross out'}
                 onClick={() => setCrossOutMode((prev) => !prev)}
                 aria-pressed={crossOutMode}
@@ -244,7 +242,7 @@ export const TestContainer: React.FC<TestContainerProps> = ({
                 {testCategory === 'ACT' ? 'X' : 'ABC'}
               </button>
               <button
-                className={`px-[25px] py-1 rounded border flex items-center justify-center text-sm font-bold w-8 h-8 ml-2 ${isAnswerMasking ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300'} transition`}
+                className={`px-[25px] py-1 rounded border flex items-center justify-center text-sm font-bold w-8 h-8 ${isAnswerMasking ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300'} transition`}
                 title={isAnswerMasking ? 'Disable answer masking' : 'Enable answer masking'}
                 onClick={() => {
                   setIsAnswerMasking((prev) => !prev);
@@ -258,6 +256,37 @@ export const TestContainer: React.FC<TestContainerProps> = ({
               </button>
             </>
           )}
+          <div className="flex items-center space-x-1 border rounded-md px-2 py-1">
+            <Highlighter className="h-4 w-4" />
+            <span className="text-xs">Highlighter</span>
+            {isHighlighting && (
+              <div className="flex items-center space-x-1 ml-2">
+                {['yellow', 'green', 'blue', 'pink', 'orange', 'purple'].map((color) => (
+                  <button
+                    key={color}
+                    className={`w-3 h-3 rounded-full border ${
+                      selectedColor === color ? 'border-gray-800' : 'border-gray-300'
+                    }`}
+                    style={{ backgroundColor: color === 'yellow' ? '#fef08a' : color === 'green' ? '#bbf7d0' : color === 'blue' ? '#bfdbfe' : color === 'pink' ? '#fce7f3' : color === 'orange' ? '#fed7aa' : '#e9d5ff' }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedColor(color);
+                    }}
+                    title={color}
+                  />
+                ))}
+              </div>
+            )}
+            <button
+              className={`ml-2 px-2 py-1 rounded text-xs ${isHighlighting ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsHighlighting((prev) => !prev);
+              }}
+            >
+              {isHighlighting ? 'On' : 'Off'}
+            </button>
+          </div>
         </div>
       </div>
       
@@ -406,6 +435,24 @@ export const TestContainer: React.FC<TestContainerProps> = ({
                           sequentialQuestionNumber={sequentialQuestionNumber}
                         />
                       )}
+                      
+                      {/* Cross-out Mode Instructions */}
+                      {crossOutMode && (
+                        <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                          <p className="text-sm text-yellow-800">
+                            Cross-out mode is active. Click the blue button to Deactivate.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Answer Masking Instructions */}
+                      {isAnswerMasking && (
+                        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                          <p className="text-sm text-blue-800">
+                            Answer masking is active. Click the blue button to Deactivate.
+                          </p>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 </div>
@@ -458,6 +505,24 @@ export const TestContainer: React.FC<TestContainerProps> = ({
                       }}
                       sequentialQuestionNumber={sequentialQuestionNumber}
                     />
+                  )}
+                  
+                  {/* Cross-out Mode Instructions */}
+                  {crossOutMode && (
+                    <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                      <p className="text-sm text-yellow-800">
+                        Cross-out mode is active. Click the blue button to Deactivate.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Answer Masking Instructions */}
+                  {isAnswerMasking && (
+                    <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                      <p className="text-sm text-blue-800">
+                        Answer masking is active. Click the blue button to Deactivate.
+                      </p>
+                    </div>
                   )}
                 </CardContent>
               </Card>

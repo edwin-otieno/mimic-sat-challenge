@@ -211,9 +211,9 @@ const Dashboard = () => {
               <div className="space-y-1">
                 {completedScores.map((module) => (
                   <div key={module.module_id} className="text-xs text-gray-600">
-                    <span className="font-medium">{module.module_name}:</span> {module.score}/{module.total}
+                    <span className="font-medium">Correct Questions:</span> {module.score}/{module.total}
                     {module.scaled_score !== null && module.scaled_score !== undefined && (
-                      <span className="ml-2 text-blue-600">(Scaled: {module.scaled_score})</span>
+                      <span className="ml-2 text-blue-600">({module.module_name} Score: {module.scaled_score})</span>
                     )}
                   </div>
                 ))}

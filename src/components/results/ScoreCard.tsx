@@ -54,7 +54,7 @@ const ScoreCard: React.FC<ScoreCardProps> = ({ score, total, scaledScoring, scal
             <>
               <p className="text-5xl font-bold mb-2">{scaledScoreValue}</p>
               <p className="text-sm text-gray-500 mb-4">
-                {testCategory === 'ACT' ? 'Composite Score' : 'Scaled Score'}
+                {testCategory === 'ACT' ? 'Composite Score' : 'Total Score'}
               </p>
             </>
           ) : (

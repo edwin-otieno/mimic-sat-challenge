@@ -222,26 +222,28 @@ const QuestionReview: React.FC<QuestionReviewProps> = React.memo(({ questions, u
       ) : (
         /* Show tabs for full test review */
         <Tabs defaultValue={Object.keys(moduleGroups)[0]} className="w-full">
-          <TabsList className="mb-4">
-            {Object.entries(moduleGroups).map(([moduleType, moduleQuestions]) => {
-              const getModuleDisplayName = (type: string) => {
-                switch (type) {
-                  case "reading_writing": return "Reading & Writing";
-                  case "math": return "Math";
-                  case "english": return "English";
-                  case "reading": return "Reading";
-                  case "science": return "Science";
-                  case "writing": return "Writing";
-                  default: return type;
-                }
-              };
-              return (
-                <TabsTrigger key={moduleType} value={moduleType}>
-                  {getModuleDisplayName(moduleType)} ({moduleQuestions.length} questions)
-                </TabsTrigger>
-              );
-            })}
-          </TabsList>
+          <div className="mb-4 overflow-x-auto -mx-1 px-1">
+            <TabsList className="inline-flex w-auto min-w-full flex-wrap gap-1 sm:flex-nowrap">
+              {Object.entries(moduleGroups).map(([moduleType, moduleQuestions]) => {
+                const getModuleDisplayName = (type: string) => {
+                  switch (type) {
+                    case "reading_writing": return "Reading & Writing";
+                    case "math": return "Math";
+                    case "english": return "English";
+                    case "reading": return "Reading";
+                    case "science": return "Science";
+                    case "writing": return "Writing";
+                    default: return type;
+                  }
+                };
+                return (
+                  <TabsTrigger key={moduleType} value={moduleType} className="whitespace-nowrap flex-shrink-0">
+                    {getModuleDisplayName(moduleType)} ({moduleQuestions.length})
+                  </TabsTrigger>
+                );
+              })}
+            </TabsList>
+          </div>
           
           {Object.entries(moduleGroups).map(([moduleType, moduleQuestions]) => {
             const getModuleDisplayName = (type: string) => {
