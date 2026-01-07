@@ -56,6 +56,43 @@ const QuestionReview: React.FC<QuestionReviewProps> = React.memo(({ questions, u
       }
       moduleGroups[moduleType].push(q);
     });
+    
+    // Sort questions within each module group to maintain test order
+    // For passage-based questions: sort by passage_order first, then question_number
+    // For non-passage questions: sort by question_order or question_number
+    Object.keys(moduleGroups).forEach(moduleType => {
+      moduleGroups[moduleType].sort((a, b) => {
+        // Check if questions belong to passages
+        const aHasPassage = !!a.passage_id;
+        const bHasPassage = !!b.passage_id;
+        
+        // If both have passages, sort by passage_order first, then question_number
+        if (aHasPassage && bHasPassage) {
+          // Get passage_order from the question (added when loading)
+          const aPassageOrder = (a as any).passage_order ?? 999999;
+          const bPassageOrder = (b as any).passage_order ?? 999999;
+          
+          if (aPassageOrder !== bPassageOrder) {
+            return aPassageOrder - bPassageOrder;
+          }
+          
+          // Same passage, sort by question_number
+          const aQNum = a.question_number ?? 0;
+          const bQNum = b.question_number ?? 0;
+          return aQNum - bQNum;
+        }
+        
+        // If only one has a passage, put passage questions first (or handle as needed)
+        if (aHasPassage && !bHasPassage) return -1;
+        if (!aHasPassage && bHasPassage) return 1;
+        
+        // Neither has passage, sort by question_order or question_number
+        const orderA = a.question_order ?? a.question_number ?? 0;
+        const orderB = b.question_order ?? b.question_number ?? 0;
+        return orderA - orderB;
+      });
+    });
+    
     return { moduleGroups };
   }, [questions, moduleType]);
 

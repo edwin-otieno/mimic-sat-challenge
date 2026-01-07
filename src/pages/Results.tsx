@@ -83,6 +83,55 @@ const Results = () => {
   const scoreSectionRef = useRef<HTMLDivElement>(null);
   
   const state = location.state as ResultsState;
+  const [questionsWithPassageOrder, setQuestionsWithPassageOrder] = useState<QuestionData[] | null>(null);
+  
+  // Load passages and add passage_order to questions for current test results
+  useEffect(() => {
+    if (!state?.questions || state.questions.length === 0) {
+      setQuestionsWithPassageOrder(null);
+      return;
+    }
+    
+    // Check if any questions have passage_id but no passage_order
+    const hasPassageQuestions = state.questions.some(q => q.passage_id && !(q as any).passage_order);
+    if (!hasPassageQuestions) {
+      // All questions already have passage_order or no passage questions
+      setQuestionsWithPassageOrder(state.questions);
+      return;
+    }
+    
+    // Get test_id from first question
+    const testId = state.questions[0]?.test_id;
+    if (!testId) {
+      setQuestionsWithPassageOrder(state.questions);
+      return;
+    }
+    
+    // Load passages to get passage_order mapping
+    const loadPassages = async () => {
+      const { data: passagesData, error: passagesError } = await supabase
+        .from('passages')
+        .select('id, passage_order')
+        .eq('test_id', testId);
+      
+      const passageOrderMap = new Map<string, number>();
+      if (passagesData && !passagesError) {
+        passagesData.forEach(p => {
+          passageOrderMap.set(p.id, p.passage_order);
+        });
+      }
+      
+      // Add passage_order to questions
+      const questionsWithOrder = state.questions.map(q => ({
+        ...q,
+        passage_order: q.passage_id ? passageOrderMap.get(q.passage_id) : undefined
+      }));
+      
+      setQuestionsWithPassageOrder(questionsWithOrder);
+    };
+    
+    loadPassages();
+  }, [state?.questions]);
   
   // Move hooks to top level to avoid conditional hook calls
   const memoizedScaledScore = useMemo(() => {
@@ -469,6 +518,19 @@ const Results = () => {
         const testCategory = (testRow.data.category || 'SAT') as 'SAT' | 'ACT';
         setHistoryTestCategory(testCategory);
 
+        // Load passages to get passage_order mapping
+        const { data: passagesData, error: passagesError } = await supabase
+          .from('passages')
+          .select('id, passage_order')
+          .eq('test_id', testRow.data.id);
+        
+        const passageOrderMap = new Map<string, number>();
+        if (passagesData && !passagesError) {
+          passagesData.forEach(p => {
+            passageOrderMap.set(p.id, p.passage_order);
+          });
+        }
+
         const { data: questionsData, error: questionsError } = await supabase
           .from('test_questions')
           .select(`
@@ -495,7 +557,9 @@ const Results = () => {
             id: opt.id,
             text: opt.text,
             is_correct: opt.is_correct
-          })) || []
+          })) || [],
+          // Add passage_order if available
+          passage_order: q.passage_id ? passageOrderMap.get(q.passage_id) : undefined
         })) as unknown as QuestionData[];
         
         console.log('Transformed questions:', questions.length);
@@ -1080,7 +1144,8 @@ const Results = () => {
               questions={(() => {
                 // Filter questions to only show completed modules
                 const completedModulesSet = new Set(state.completedModules || []);
-                return state.questions.filter(q => 
+                const questionsToUse = questionsWithPassageOrder || state.questions;
+                return questionsToUse.filter(q => 
                   completedModulesSet.has(q.module_type || '')
                 );
               })()} 

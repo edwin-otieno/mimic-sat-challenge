@@ -50,6 +50,7 @@ const TestInterface = () => {
   const [questions, setQuestions] = useState<QuestionData[]>([]);
   const [scaledScoring, setScaledScoring] = useState<ScaledScore[]>([]);
   const [passages, setPassages] = useState<Record<string, Passage[]>>({});
+  const [moduleQuestionsWithPassageOrder, setModuleQuestionsWithPassageOrder] = useState<Record<string, QuestionData[]>>({});
   const [currentPassageIndex, setCurrentPassageIndex] = useState(0);
   const [currentQuestionInPassage, setCurrentQuestionInPassage] = useState(0);
   const [showConfirmSubmit, setShowConfirmSubmit] = useState(false);
@@ -659,7 +660,53 @@ const TestInterface = () => {
   const getCurrentPartQuestions = () => {
     const moduleType = selectedModule || getCurrentModuleType();
     const part = currentPart[moduleType] || 1;
-    return moduleParts[moduleType]?.[part - 1] || [];
+    
+    // Check if this is an ACT test with passages
+    const isACTTest = currentTest?.test_category === 'ACT' || 
+      (currentTest?.modules && Array.isArray(currentTest.modules) && 
+       currentTest.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type)));
+    
+    let partQuestions: QuestionData[] = [];
+    
+    // For ACT passage modules, get questions from passages
+    if (isACTTest && (moduleType === 'english' || moduleType === 'reading' || moduleType === 'science')) {
+      partQuestions = getAllModulePassageQuestions();
+    } else {
+      // For SAT tests or ACT Math/Writing, use moduleParts
+      partQuestions = moduleParts[moduleType]?.[part - 1] || [];
+    }
+    
+    // Apply the same sorting logic as QuestionReview: passage_order first, then question_number
+    return partQuestions.sort((a, b) => {
+      // Check if questions belong to passages
+      const aHasPassage = !!a.passage_id;
+      const bHasPassage = !!b.passage_id;
+      
+      // If both have passages, sort by passage_order first, then question_number
+      if (aHasPassage && bHasPassage) {
+        // Get passage_order from the question (added when loading)
+        const aPassageOrder = (a as any).passage_order ?? 999999;
+        const bPassageOrder = (b as any).passage_order ?? 999999;
+        
+        if (aPassageOrder !== bPassageOrder) {
+          return aPassageOrder - bPassageOrder;
+        }
+        
+        // Same passage, sort by question_number
+        const aQNum = a.question_number ?? 0;
+        const bQNum = b.question_number ?? 0;
+        return aQNum - bQNum;
+      }
+      
+      // If only one has a passage, put passage questions first
+      if (aHasPassage && !bHasPassage) return -1;
+      if (!aHasPassage && bHasPassage) return 1;
+      
+      // Neither has passage, sort by question_order or question_number
+      const orderA = a.question_order ?? a.question_number ?? 0;
+      const orderB = b.question_order ?? b.question_number ?? 0;
+      return orderA - orderB;
+    });
   };
 
   // Update navigation logic
@@ -1980,21 +2027,24 @@ const TestInterface = () => {
       console.log(`   - partStartIndex: ${partStartIndex}`);
       console.log(`   - partEndIndex: ${partEndIndex}`);
       
-      // Check if saved currentQuestionIndex is within range for this module
-      const savedIndexInRange = currentQuestionIndex >= partStartIndex && 
-                                 currentQuestionIndex <= partEndIndex &&
-                                 currentQuestionIndex >= 0;
-      
-      // Use lastSavedQuestionIndex if available, otherwise fall back to currentQuestionIndex if it's in range
+      // Only resume from saved position if there's a saved state specifically for this module
+      // Don't use currentQuestionIndex as fallback - it might be from a different module
+      // Only use lastSavedQuestionIndex if it exists and is valid for this module
       const resumeIndex = (lastSavedQuestionIndex !== undefined && 
           lastSavedQuestionIndex >= partStartIndex && 
-                          lastSavedQuestionIndex <= partEndIndex) 
-                        ? lastSavedQuestionIndex 
-                        : (savedIndexInRange ? currentQuestionIndex : undefined);
+          lastSavedQuestionIndex <= partEndIndex) 
+        ? lastSavedQuestionIndex 
+        : undefined;
       
-      console.log(`   - savedIndexInRange: ${savedIndexInRange}`);
+      console.log(`   - lastSavedQuestionIndex: ${lastSavedQuestionIndex}`);
       console.log(`   - resumeIndex: ${resumeIndex}`);
+      console.log(`   - hasUserAnswersForModule: ${hasUserAnswersForModule}`);
+      console.log(`   - hasAnyUserAnswers: ${hasAnyUserAnswers}`);
       
+      // Only resume if:
+      // 1. User has answers specifically for this module, AND
+      // 2. There are user answers somewhere (not a completely new account), AND
+      // 3. There's a saved question index specifically for this module (lastSavedQuestionIndex)
       if (hasUserAnswersForModule && hasAnyUserAnswers && resumeIndex !== undefined) {
         // Use the resume index (from lastSavedQuestions or currentQuestionIndex)
         // For passage-based modules, convert global index to passage indices FIRST
@@ -2014,6 +2064,8 @@ const TestInterface = () => {
           setCurrentPassageIndex(indices.passageIndex);
           setCurrentQuestionInPassage(indices.questionInPassage);
           setCurrentQuestionIndex(resumeIndex);
+          // Mark as restored so useEffect doesn't override
+          hasRestoredForCurrentStateRef.current = true;
           console.log(`✅ [handleModuleSelection] ${moduleType}: Resuming from saved question index: ${resumeIndex} (passage ${indices.passageIndex}, question ${indices.questionInPassage})`);
       } else {
           // Non-passage module - just set the global index
@@ -2033,6 +2085,8 @@ const TestInterface = () => {
         if (isPassageModule) {
           setCurrentPassageIndex(0);
           setCurrentQuestionInPassage(0);
+          // Mark as restored so useEffect doesn't override
+          hasRestoredForCurrentStateRef.current = true;
         }
         
         setCurrentQuestionIndex(partStartIndex);
@@ -2330,6 +2384,7 @@ const TestInterface = () => {
   const hasRestoredForCurrentStateRef = useRef<boolean>(false);
 
   // Reset or restore passage indices when selected module changes or state is loaded
+  // NOTE: This should NOT interfere with handleModuleSelection which sets passage indices correctly
   useEffect(() => {
     if (!selectedModule) return;
     
@@ -2337,50 +2392,353 @@ const TestInterface = () => {
     const isPassageModule = modulePassages.length > 0;
     const moduleChanged = lastRestoredModuleRef.current !== selectedModule;
     
-    // Restore passage indices when:
-    // 1. State is loaded AND (module changed OR we haven't restored for this state yet)
-    // 2. This is a passage module
-    if (stateLoaded && isPassageModule && (moduleChanged || !hasRestoredForCurrentStateRef.current)) {
-      const indices = convertGlobalIndexToPassageIndices(currentQuestionIndex, modulePassages);
-      console.log(`[useEffect] Module: ${selectedModule}, Restoring passage indices from global index ${currentQuestionIndex} to passage ${indices.passageIndex}, question ${indices.questionInPassage}`);
-      setCurrentPassageIndex(indices.passageIndex);
-      setCurrentQuestionInPassage(indices.questionInPassage);
+    // Only restore if:
+    // 1. Module changed (not just state loaded), AND
+    // 2. State is loaded, AND
+    // 3. We haven't restored yet for this module, AND
+    // 4. This is a passage module
+    // This prevents interference with handleModuleSelection which sets passage indices when module is selected
+    if (stateLoaded && isPassageModule && moduleChanged && !hasRestoredForCurrentStateRef.current) {
+      const hasUserAnswers = Object.keys(userAnswers).length > 0;
+      
+      // Only restore if there are user answers (saved state)
+      // Otherwise, let handleModuleSelection set it to 0,0
+      if (hasUserAnswers) {
+        // Get the module start index to convert global index to module-relative index
+        const partQuestions = modulePassages.reduce((acc, p) => {
+          return acc.concat(p.questions || []);
+        }, [] as QuestionData[]);
+        
+        let moduleStartIndex = -1;
+        if (partQuestions.length > 0) {
+          moduleStartIndex = questions.findIndex(q => q.id === partQuestions[0].id);
+        }
+        
+        // Convert global index to module-relative index, then to passage indices
+        if (moduleStartIndex >= 0 && currentQuestionIndex >= moduleStartIndex) {
+          const moduleRelativeIndex = currentQuestionIndex - moduleStartIndex;
+          const indices = convertGlobalIndexToPassageIndices(moduleRelativeIndex, modulePassages);
+          console.log(`[useEffect] Module: ${selectedModule}, Restoring passage indices from global index ${currentQuestionIndex} -> module-relative ${moduleRelativeIndex} -> passage ${indices.passageIndex}, question ${indices.questionInPassage}`);
+          setCurrentPassageIndex(indices.passageIndex);
+          setCurrentQuestionInPassage(indices.questionInPassage);
+          hasRestoredForCurrentStateRef.current = true;
+        }
+      } else {
+        // New account - let handleModuleSelection handle it
+        console.log(`[useEffect] Module: ${selectedModule}, New account - letting handleModuleSelection set passage indices`);
+        hasRestoredForCurrentStateRef.current = false;
+      }
+      
       lastRestoredModuleRef.current = selectedModule;
-      hasRestoredForCurrentStateRef.current = true;
-    } else if (moduleChanged) {
-      // Module changed but state not loaded yet, or not a passage module - reset to defaults
+    } else if (moduleChanged && !stateLoaded) {
+      // Module changed but state not loaded yet - reset to defaults
       console.log(`[useEffect] Module changed to: ${selectedModule}, Resetting passage indices. Passages available: ${modulePassages.length}, State loaded: ${stateLoaded}`);
       setCurrentPassageIndex(0);
       setCurrentQuestionInPassage(0);
       lastRestoredModuleRef.current = selectedModule;
       hasRestoredForCurrentStateRef.current = false;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedModule, passages, stateLoaded]);
   
   // Also restore when currentQuestionIndex changes after state is loaded (for initial restore)
+  // NOTE: This effect should NOT interfere with handleModuleSelection
+  // It only runs when module changes or state is loaded, not when currentQuestionIndex changes
+  // because handleModuleSelection already sets the correct passage indices
   useEffect(() => {
     if (!selectedModule || !stateLoaded) return;
     
     const modulePassages = passages[selectedModule] || [];
     const isPassageModule = modulePassages.length > 0;
+    const moduleChanged = lastRestoredModuleRef.current !== selectedModule;
     
-    // Only restore if we haven't restored yet for this state
-    // BUT: Don't restore if user has no answers (new account) - let handleModuleSelection handle it
-    const hasUserAnswers = Object.keys(userAnswers).length > 0;
-    if (isPassageModule && !hasRestoredForCurrentStateRef.current && hasUserAnswers) {
-      const indices = convertGlobalIndexToPassageIndices(currentQuestionIndex, modulePassages);
-      console.log(`[useEffect] Restoring passage indices from currentQuestionIndex change: ${currentQuestionIndex} to passage ${indices.passageIndex}, question ${indices.questionInPassage}`);
-      setCurrentPassageIndex(indices.passageIndex);
-      setCurrentQuestionInPassage(indices.questionInPassage);
-      hasRestoredForCurrentStateRef.current = true;
-    } else if (isPassageModule && !hasUserAnswers) {
-      // New account - ensure we start at passage 0, question 0
-      console.log(`[useEffect] New account detected (no answers) - resetting passage indices to 0,0`);
-      setCurrentPassageIndex(0);
-      setCurrentQuestionInPassage(0);
-      hasRestoredForCurrentStateRef.current = false; // Allow handleModuleSelection to set it
+    // Only restore passage indices if:
+    // 1. Module changed (not just question index changed), AND
+    // 2. We haven't restored for this module yet, AND
+    // 3. This is a passage module
+    // This prevents interference with handleModuleSelection which already sets passage indices correctly
+    if (isPassageModule && moduleChanged && !hasRestoredForCurrentStateRef.current) {
+      const hasUserAnswers = Object.keys(userAnswers).length > 0;
+      
+      // Only restore if there are user answers (saved state)
+      // Otherwise, let handleModuleSelection set it to 0,0
+      if (hasUserAnswers) {
+        // Get the module start index to convert global index to module-relative index
+        const moduleType = selectedModule;
+        const partQuestions = modulePassages.reduce((acc, p) => {
+          return acc.concat(p.questions || []);
+        }, [] as QuestionData[]);
+        
+        let moduleStartIndex = -1;
+        if (partQuestions.length > 0) {
+          moduleStartIndex = questions.findIndex(q => q.id === partQuestions[0].id);
+        }
+        
+        // Convert global index to module-relative index, then to passage indices
+        if (moduleStartIndex >= 0 && currentQuestionIndex >= moduleStartIndex) {
+          const moduleRelativeIndex = currentQuestionIndex - moduleStartIndex;
+          const indices = convertGlobalIndexToPassageIndices(moduleRelativeIndex, modulePassages);
+          console.log(`[useEffect] Restoring passage indices for module ${selectedModule}: global ${currentQuestionIndex} -> module-relative ${moduleRelativeIndex} -> passage ${indices.passageIndex}, question ${indices.questionInPassage}`);
+          setCurrentPassageIndex(indices.passageIndex);
+          setCurrentQuestionInPassage(indices.questionInPassage);
+          hasRestoredForCurrentStateRef.current = true;
+        }
+      } else {
+        // New account - ensure we start at passage 0, question 0
+        console.log(`[useEffect] New account detected (no answers) - resetting passage indices to 0,0`);
+        setCurrentPassageIndex(0);
+        setCurrentQuestionInPassage(0);
+        hasRestoredForCurrentStateRef.current = false; // Allow handleModuleSelection to set it
+      }
+      
+      lastRestoredModuleRef.current = selectedModule;
     }
-  }, [currentQuestionIndex, selectedModule, passages, stateLoaded, userAnswers]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedModule, passages, stateLoaded]);
+
+  // Load passages and add passage_order to questions for Section Results page (duplicate Results page logic)
+  useEffect(() => {
+    if (questions.length === 0) {
+      setModuleQuestionsWithPassageOrder({});
+      return;
+    }
+    
+    // Check if any questions have passage_id but no passage_order
+    const hasPassageQuestions = questions.some(q => q.passage_id && !(q as any).passage_order);
+    
+    // If passages are already loaded, use them to add passage_order
+    if (Object.keys(passages).length > 0 && hasPassageQuestions) {
+      const passageOrderMap = new Map<string, number>();
+      Object.values(passages).forEach(modulePassages => {
+        modulePassages.forEach(p => {
+          passageOrderMap.set(p.id, p.passage_order);
+        });
+      });
+      
+      const updatedQuestions = questions.map(q => ({
+        ...q,
+        passage_order: q.passage_id ? (passageOrderMap.get(q.passage_id) ?? (q as any).passage_order) : undefined
+      }));
+      
+      const needsUpdate = updatedQuestions.some((q, i) => (q as any).passage_order !== (questions[i] as any).passage_order);
+      if (needsUpdate) {
+        setQuestions(updatedQuestions);
+      }
+      
+      // Group by module type
+      const grouped: Record<string, QuestionData[]> = {};
+      updatedQuestions.forEach(q => {
+        const moduleType = q.module_type || 'reading_writing';
+        if (!grouped[moduleType]) {
+          grouped[moduleType] = [];
+        }
+        grouped[moduleType].push(q);
+      });
+      
+      // Sort questions within each module group
+      Object.keys(grouped).forEach(moduleType => {
+        grouped[moduleType].sort((a, b) => {
+          const aHasPassage = !!a.passage_id;
+          const bHasPassage = !!b.passage_id;
+          
+          if (aHasPassage && bHasPassage) {
+            const aPassageOrder = (a as any).passage_order ?? 999999;
+            const bPassageOrder = (b as any).passage_order ?? 999999;
+            if (aPassageOrder !== bPassageOrder) {
+              return aPassageOrder - bPassageOrder;
+            }
+            const aQNum = a.question_number ?? 0;
+            const bQNum = b.question_number ?? 0;
+            return aQNum - bQNum;
+          }
+          
+          if (aHasPassage && !bHasPassage) return -1;
+          if (!aHasPassage && bHasPassage) return 1;
+          
+          const orderA = a.question_order ?? a.question_number ?? 0;
+          const orderB = b.question_order ?? b.question_number ?? 0;
+          return orderA - orderB;
+        });
+      });
+      
+      setModuleQuestionsWithPassageOrder(grouped);
+      return;
+    }
+    
+    if (!hasPassageQuestions) {
+      // All questions already have passage_order or no passage questions
+      // Group by module type
+      const grouped: Record<string, QuestionData[]> = {};
+      questions.forEach(q => {
+        const moduleType = q.module_type || 'reading_writing';
+        if (!grouped[moduleType]) {
+          grouped[moduleType] = [];
+        }
+        grouped[moduleType].push(q);
+      });
+      
+      // Sort questions within each module group using the same logic as QuestionReview
+      Object.keys(grouped).forEach(moduleType => {
+        grouped[moduleType].sort((a, b) => {
+          // Check if questions belong to passages
+          const aHasPassage = !!a.passage_id;
+          const bHasPassage = !!b.passage_id;
+          
+          // If both have passages, sort by passage_order first, then question_number
+          if (aHasPassage && bHasPassage) {
+            const aPassageOrder = (a as any).passage_order ?? 999999;
+            const bPassageOrder = (b as any).passage_order ?? 999999;
+            
+            if (aPassageOrder !== bPassageOrder) {
+              return aPassageOrder - bPassageOrder;
+            }
+            
+            // Same passage, sort by question_number
+            const aQNum = a.question_number ?? 0;
+            const bQNum = b.question_number ?? 0;
+            return aQNum - bQNum;
+          }
+          
+          // If only one has a passage, put passage questions first
+          if (aHasPassage && !bHasPassage) return -1;
+          if (!aHasPassage && bHasPassage) return 1;
+          
+          // Neither has passage, sort by question_order or question_number
+          const orderA = a.question_order ?? a.question_number ?? 0;
+          const orderB = b.question_order ?? b.question_number ?? 0;
+          return orderA - orderB;
+        });
+      });
+      
+      setModuleQuestionsWithPassageOrder(grouped);
+      return;
+    }
+    
+    // Get test_id from first question
+    const testId = questions[0]?.test_id;
+    if (!testId) {
+      // Group by module type without passage_order
+      const grouped: Record<string, QuestionData[]> = {};
+      questions.forEach(q => {
+        const moduleType = q.module_type || 'reading_writing';
+        if (!grouped[moduleType]) {
+          grouped[moduleType] = [];
+        }
+        grouped[moduleType].push(q);
+      });
+      
+      // Sort questions within each module group using the same logic as QuestionReview
+      Object.keys(grouped).forEach(moduleType => {
+        grouped[moduleType].sort((a, b) => {
+          // Check if questions belong to passages
+          const aHasPassage = !!a.passage_id;
+          const bHasPassage = !!b.passage_id;
+          
+          // If both have passages, sort by passage_order first, then question_number
+          if (aHasPassage && bHasPassage) {
+            const aPassageOrder = (a as any).passage_order ?? 999999;
+            const bPassageOrder = (b as any).passage_order ?? 999999;
+            
+            if (aPassageOrder !== bPassageOrder) {
+              return aPassageOrder - bPassageOrder;
+            }
+            
+            // Same passage, sort by question_number
+            const aQNum = a.question_number ?? 0;
+            const bQNum = b.question_number ?? 0;
+            return aQNum - bQNum;
+          }
+          
+          // If only one has a passage, put passage questions first
+          if (aHasPassage && !bHasPassage) return -1;
+          if (!aHasPassage && bHasPassage) return 1;
+          
+          // Neither has passage, sort by question_order or question_number
+          const orderA = a.question_order ?? a.question_number ?? 0;
+          const orderB = b.question_order ?? b.question_number ?? 0;
+          return orderA - orderB;
+        });
+      });
+      
+      setModuleQuestionsWithPassageOrder(grouped);
+      return;
+    }
+    
+    // Load passages to get passage_order mapping
+    const loadPassages = async () => {
+      const { data: passagesData, error: passagesError } = await supabase
+        .from('passages')
+        .select('id, passage_order')
+        .eq('test_id', testId);
+      
+      const passageOrderMap = new Map<string, number>();
+      if (passagesData && !passagesError) {
+        passagesData.forEach(p => {
+          passageOrderMap.set(p.id, p.passage_order);
+        });
+      }
+      
+      // Add passage_order to questions (update main questions array like Results page)
+      const updatedQuestions = questions.map(q => ({
+        ...q,
+        passage_order: q.passage_id ? passageOrderMap.get(q.passage_id) : undefined
+      }));
+      
+      // Check if we actually need to update (prevent infinite loop)
+      const needsUpdate = updatedQuestions.some((q, i) => (q as any).passage_order !== (questions[i] as any).passage_order);
+      if (needsUpdate) {
+        // Update main questions array so QuestionReview receives questions with passage_order
+        setQuestions(updatedQuestions);
+      }
+      
+      // Group by module type
+      const grouped: Record<string, QuestionData[]> = {};
+      updatedQuestions.forEach(q => {
+        const moduleType = q.module_type || 'reading_writing';
+        if (!grouped[moduleType]) {
+          grouped[moduleType] = [];
+        }
+        grouped[moduleType].push(q);
+      });
+      
+      // Sort questions within each module group using the same logic as QuestionReview
+      Object.keys(grouped).forEach(moduleType => {
+        grouped[moduleType].sort((a, b) => {
+          // Check if questions belong to passages
+          const aHasPassage = !!a.passage_id;
+          const bHasPassage = !!b.passage_id;
+          
+          // If both have passages, sort by passage_order first, then question_number
+          if (aHasPassage && bHasPassage) {
+            const aPassageOrder = (a as any).passage_order ?? 999999;
+            const bPassageOrder = (b as any).passage_order ?? 999999;
+            
+            if (aPassageOrder !== bPassageOrder) {
+              return aPassageOrder - bPassageOrder;
+            }
+            
+            // Same passage, sort by question_number
+            const aQNum = a.question_number ?? 0;
+            const bQNum = b.question_number ?? 0;
+            return aQNum - bQNum;
+          }
+          
+          // If only one has a passage, put passage questions first
+          if (aHasPassage && !bHasPassage) return -1;
+          if (!aHasPassage && bHasPassage) return 1;
+          
+          // Neither has passage, sort by question_order or question_number
+          const orderA = a.question_order ?? a.question_number ?? 0;
+          const orderB = b.question_order ?? b.question_number ?? 0;
+          return orderA - orderB;
+        });
+      });
+      
+      setModuleQuestionsWithPassageOrder(grouped);
+    };
+    
+    loadPassages();
+  }, [questions, passages]);
 
   // Get all questions from all passages in current module with sequential numbering
   const getAllModulePassageQuestions = () => {
@@ -2388,13 +2746,28 @@ const TestInterface = () => {
     const allQuestions: QuestionData[] = [];
     let sequentialQuestionNumber = 1;
     
-    modulePassages.forEach(passage => {
+    // Sort passages by passage_order first
+    const sortedPassages = [...modulePassages].sort((a, b) => {
+      const aOrder = a.passage_order ?? 0;
+      const bOrder = b.passage_order ?? 0;
+      return aOrder - bOrder;
+    });
+    
+    sortedPassages.forEach(passage => {
       if (passage.questions && passage.questions.length > 0) {
-        passage.questions.forEach(question => {
+        // Sort questions within passage by question_number
+        const sortedQuestions = [...passage.questions].sort((a, b) => {
+          const aNum = a.question_number ?? 0;
+          const bNum = b.question_number ?? 0;
+          return aNum - bNum;
+        });
+        
+        sortedQuestions.forEach(question => {
           // Assign sequential question number across all passages
           allQuestions.push({
             ...question,
-            question_number: sequentialQuestionNumber
+            question_number: sequentialQuestionNumber,
+            passage_order: passage.passage_order // Add passage_order to question
           });
           sequentialQuestionNumber++;
         });
@@ -2495,10 +2868,8 @@ const TestInterface = () => {
     console.log('Questions set:', testData.questions.length);
     console.log('Scaled scoring set:', testData.scaledScoring.length);
     
-    // Load passages for ACT tests
-    if (testData.test.test_category === 'ACT') {
-      loadPassages(testData.test.id);
-    }
+    // Load passages for all tests (both ACT and SAT can have passages)
+    loadPassages(testData.test.id);
     
     // Group questions by module type dynamically
     const grouped: { [moduleType: string]: QuestionData[] } = {};
@@ -2527,6 +2898,47 @@ const TestInterface = () => {
     setModuleParts(parts);
     
     console.log('Module parts set:', Object.keys(parts));
+    
+    // Load passages and add passage_order to questions if needed
+    const hasPassageQuestions = testData.questions.some(q => q.passage_id && !(q as any).passage_order);
+    if (hasPassageQuestions && testData.test.id) {
+      // Load passages to get passage_order mapping
+      supabase
+        .from('passages')
+        .select('id, passage_order')
+        .eq('test_id', testData.test.id)
+        .then(({ data: passagesData, error: passagesError }) => {
+          if (!passagesError && passagesData) {
+            const passageOrderMap = new Map<string, number>();
+            passagesData.forEach(p => {
+              passageOrderMap.set(p.id, p.passage_order);
+            });
+            
+            // Update main questions array with passage_order
+            const updatedQuestions = testData.questions.map(q => ({
+              ...q,
+              passage_order: q.passage_id ? passageOrderMap.get(q.passage_id) : undefined
+            }));
+            setQuestions(updatedQuestions);
+            
+            // Update moduleParts with passage_order
+            const updatedParts: { [moduleType: string]: [QuestionData[], QuestionData[]] } = {};
+            Object.entries(parts).forEach(([moduleType, partQuestions]) => {
+              updatedParts[moduleType] = [
+                partQuestions[0].map(q => ({
+                  ...q,
+                  passage_order: q.passage_id ? passageOrderMap.get(q.passage_id) : undefined
+                })),
+                partQuestions[1].map(q => ({
+                  ...q,
+                  passage_order: q.passage_id ? passageOrderMap.get(q.passage_id) : undefined
+                }))
+              ];
+            });
+            setModuleParts(updatedParts);
+          }
+        });
+    }
     
     // Only set default values if no state was loaded from persistence
     if (!stateLoaded) {
@@ -3105,7 +3517,6 @@ const TestInterface = () => {
   // Add the module scores screen
   if (showModuleScores) {
     const currentModuleType = selectedModule || getCurrentModuleType();
-    const currentModuleQuestions = questions.filter(q => q.module_type === currentModuleType);
     
     // Determine test category for conditional styling
     const testCategoryForScores = testData?.test?.test_category || currentTest?.test_category || 'SAT';
@@ -3114,6 +3525,37 @@ const TestInterface = () => {
        testData.test.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type))) ||
       (currentTest?.modules && Array.isArray(currentTest.modules) && 
        currentTest.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type)));
+    
+    // Use questions with passage_order from state (same logic as Results page)
+    let currentModuleQuestions = moduleQuestionsWithPassageOrder[currentModuleType];
+    
+    // If questions aren't ready yet, use fallback but ensure they're sorted
+    if (!currentModuleQuestions || currentModuleQuestions.length === 0) {
+      currentModuleQuestions = questions.filter(q => q.module_type === currentModuleType);
+      // Sort them using the same logic
+      currentModuleQuestions.sort((a, b) => {
+        const aHasPassage = !!a.passage_id;
+        const bHasPassage = !!b.passage_id;
+        
+        if (aHasPassage && bHasPassage) {
+          const aPassageOrder = (a as any).passage_order ?? 999999;
+          const bPassageOrder = (b as any).passage_order ?? 999999;
+          if (aPassageOrder !== bPassageOrder) {
+            return aPassageOrder - bPassageOrder;
+          }
+          const aQNum = a.question_number ?? 0;
+          const bQNum = b.question_number ?? 0;
+          return aQNum - bQNum;
+        }
+        
+        if (aHasPassage && !bHasPassage) return -1;
+        if (!aHasPassage && bHasPassage) return 1;
+        
+        const orderA = a.question_order ?? a.question_number ?? 0;
+        const orderB = b.question_order ?? b.question_number ?? 0;
+        return orderA - orderB;
+      });
+    }
     
     const sectionOrModule = isACTTestForScores ? 'Section' : 'Module';
     
@@ -3176,7 +3618,32 @@ const TestInterface = () => {
               {/* Add Answer Review Section */}
               <div className="mt-8 pt-6 border-t border-gray-200">
                 <QuestionReview 
-                  questions={currentModuleQuestions}
+                  questions={(() => {
+                    // Ensure questions are sorted correctly before passing to QuestionReview (same as Results page)
+                    const sorted = [...currentModuleQuestions].sort((a, b) => {
+                      const aHasPassage = !!a.passage_id;
+                      const bHasPassage = !!b.passage_id;
+                      
+                      if (aHasPassage && bHasPassage) {
+                        const aPassageOrder = (a as any).passage_order ?? 999999;
+                        const bPassageOrder = (b as any).passage_order ?? 999999;
+                        if (aPassageOrder !== bPassageOrder) {
+                          return aPassageOrder - bPassageOrder;
+                        }
+                        const aQNum = a.question_number ?? 0;
+                        const bQNum = b.question_number ?? 0;
+                        return aQNum - bQNum;
+                      }
+                      
+                      if (aHasPassage && !bHasPassage) return -1;
+                      if (!aHasPassage && bHasPassage) return 1;
+                      
+                      const orderA = a.question_order ?? a.question_number ?? 0;
+                      const orderB = b.question_order ?? b.question_number ?? 0;
+                      return orderA - orderB;
+                    });
+                    return sorted;
+                  })()}
                   userAnswers={userAnswers}
                   moduleType={currentModuleType}
                   testCategory={testCategoryForScores as 'SAT' | 'ACT'}

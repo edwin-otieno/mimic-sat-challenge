@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { renderFormattedText } from '@/lib/utils';
+import { renderFormattedText, normalizeParagraphWhitespace } from '@/lib/utils';
 import { Passage, PassageQuestion as PassageQuestionType } from '@/components/admin/passages/types';
 import { QuestionType } from '@/components/admin/questions/types';
 import { TextInputQuestion } from '@/components/student/TextInputQuestion';
@@ -779,25 +779,47 @@ const PassageQuestion: React.FC<PassageQuestionProps> = ({
             <Card className="h-full flex flex-col rounded-none border-0 min-h-0">
               <CardHeader className="pb-3 flex-shrink-0 border-b">
                 <CardTitle className="text-base">
-                  Passage {passage.title ? (
-                    <span dangerouslySetInnerHTML={{ __html: `(${passage.title})` }} />
-                  ) : passage.passage_order ? (
-                    `(${passage.passage_order})`
-                  ) : ''}
+                  {passage.module_type === 'english' ? (
+                    // English: Passage 1 (Title of passage)
+                    <>
+                      Passage {passage.passage_order || 1}
+                      {passage.title && (
+                        <span dangerouslySetInnerHTML={{ __html: ` (${passage.title})` }} />
+                      )}
+                    </>
+                  ) : (
+                    // Reading and Science: Just "Passage"
+                    'Passage'
+                  )}
                 </CardTitle>
               </CardHeader>
               <CardContent ref={passageContentRef} className="flex-1 overflow-y-auto min-h-0">
                 <div 
                   ref={passageRef}
-                  className="text-xl max-w-none highlightable-text leading-relaxed"
+                  className="text-xl max-w-none highlightable-text leading-relaxed [&_p]:block [&_p]:mt-2 [&_p]:mb-1 [&_p]:first:mt-0 [&_div]:block [&_div]:mt-2 [&_div]:mb-1 [&_span]:inline"
+                  style={{ whiteSpace: 'normal', lineHeight: '1.6', fontSize: '1.25rem' }}
                   onMouseUp={handleTextSelection}
                   onClick={handleTextSelection}
                 >
                   {(() => {
                     const passageContent = typeof passage.content === 'string' ? passage.content : String(passage.content || '');
+                    
+                    // Debug: log the raw content to see what we're working with
+                    console.log('[PassageQuestion] Raw passage content (first 500 chars):', passageContent.substring(0, 500));
+                    console.log('[PassageQuestion] Raw passage content (last 200 chars):', passageContent.substring(Math.max(0, passageContent.length - 200)));
+                    
+                    // Normalize whitespace in <p> tags to prevent unwanted line breaks
+                    // Do this once at the beginning so all subsequent processing uses normalized content
+                    const normalizedContent = normalizeParagraphWhitespace(passageContent);
+                    
+                    // Debug: log normalized content to see if it changed
+                    if (normalizedContent !== passageContent) {
+                      console.log('[PassageQuestion] Content was normalized. Normalized (first 500 chars):', normalizedContent.substring(0, 500));
+                    }
+                    
                     // Get plain text version for position matching (sentence_references use plain text positions)
-                    const passageContentPlain = passageContent.replace(/<[^>]*>/g, '');
-                    const { sentences, sentenceRanges } = splitPassageIntoSentences(passageContent);
+                    const passageContentPlain = normalizedContent.replace(/<[^>]*>/g, '');
+                    const { sentences, sentenceRanges } = splitPassageIntoSentences(normalizedContent);
                     
                     console.log(`[PassageQuestion] Rendering passage with ${sentences.length} sentences, autoHighlightedSentences:`, Array.from(autoHighlightedSentences), 'autoHighlightedRanges:', Array.from(autoHighlightedRanges.entries()));
                     
@@ -808,87 +830,134 @@ const PassageQuestion: React.FC<PassageQuestionProps> = ({
                     if (!hasHighlights) {
                       // No highlights, render HTML directly to preserve all formatting (including indentation)
                       // Use dangerouslySetInnerHTML to preserve HTML structure exactly
-                      return <div dangerouslySetInnerHTML={{ __html: passageContent }} />;
+                      return <div dangerouslySetInnerHTML={{ __html: normalizedContent }} />;
                     }
                     
                     // Render passage with auto-highlighted sentences
                     // Note: For highlighted sentences, we'll render HTML, but highlighting uses plain text positions
                     // This means HTML formatting may not align perfectly with highlights, but it's a trade-off
+                    // Group sentences by paragraph to prevent unwanted line breaks
                     const parts: React.ReactNode[] = [];
                     let lastIndex = 0;
+                    let currentParagraphParts: React.ReactNode[] = [];
+                    let isInParagraph = false;
                     
                     sentences.forEach((sentence, index) => {
                       const range = sentenceRanges[index]; // Plain text positions
                       const isFullSentenceHighlighted = autoHighlightedSentences.has(index);
                       const sentenceHighlightRanges = autoHighlightedRanges.get(index) || [];
                       
-                      // Extract the HTML segment for this sentence from the original content
+                      // Extract the HTML segment for this sentence from the normalized content
                       // Map plain text position to HTML position (approximate)
-                      const htmlStart = findHtmlPosition(passageContent, passageContentPlain, range.start);
-                      const htmlEnd = findHtmlPosition(passageContent, passageContentPlain, range.end);
-                      const sentenceHtml = passageContent.substring(htmlStart, htmlEnd);
+                      const htmlStart = findHtmlPosition(normalizedContent, passageContentPlain, range.start);
+                      const htmlEnd = findHtmlPosition(normalizedContent, passageContentPlain, range.end);
+                      let sentenceHtml = normalizedContent.substring(htmlStart, htmlEnd);
                       
-                      // Add text before this sentence (if any) - preserve HTML
+                      // Check if this sentence starts with a <p> tag (should start on new line)
+                      const startsWithParagraph = /^\s*<p[^>]*>/i.test(sentenceHtml);
+                      
+                      // Check if the content before this sentence ends with </p> (indicating start of new paragraph)
+                      // Also check if there's a <p> tag in the before HTML (new paragraph starting)
+                      let isStartOfNewParagraph = startsWithParagraph;
+                      let beforeHtml = '';
                       if (range.start > lastIndex) {
-                        const beforePlainText = passageContentPlain.substring(lastIndex, range.start);
-                        const beforeHtmlStart = findHtmlPosition(passageContent, passageContentPlain, lastIndex);
-                        const beforeHtmlEnd = findHtmlPosition(passageContent, passageContentPlain, range.start);
-                        const beforeHtml = passageContent.substring(beforeHtmlStart, beforeHtmlEnd);
-                        if (beforeHtml) {
-                          parts.push(
-                            <span key={`before-${index}`} dangerouslySetInnerHTML={{ __html: beforeHtml }} />
-                          );
-                        }
+                        const beforeHtmlStart = findHtmlPosition(normalizedContent, passageContentPlain, lastIndex);
+                        const beforeHtmlEnd = findHtmlPosition(normalizedContent, passageContentPlain, range.start);
+                        beforeHtml = normalizedContent.substring(beforeHtmlStart, beforeHtmlEnd);
+                        // If beforeHtml ends with </p> OR contains a <p> tag, this sentence starts a new paragraph
+                        const beforeTrimmed = beforeHtml.trim();
+                        isStartOfNewParagraph = beforeTrimmed.endsWith('</p>') || beforeTrimmed.includes('<p') || startsWithParagraph;
                       }
                       
-                      // Render sentence with highlights
+                      // Remove certain block-level tags and line break elements from sentence HTML
+                      // Block-level tags like <p> should not appear inside inline elements
+                      // This prevents browser from auto-closing tags and breaking the structure
+                      sentenceHtml = sentenceHtml
+                        .replace(/<p[^>]*>/gi, '') // Remove opening <p> tags
+                        .replace(/<\/p>/gi, '') // Remove closing </p> tags
+                        .replace(/<br\s*\/?>/gi, ' ') // Replace <br> tags with spaces
+                        .replace(/<br\s*\/?>/gi, ' ') // Replace <br/> tags with spaces
+                        .replace(/>\s+</g, '><') // Remove whitespace between tags
+                        .replace(/\n/g, ' ') // Replace newlines with spaces
+                        .replace(/\r/g, ' ') // Replace carriage returns with spaces
+                        .replace(/\t/g, ' ') // Replace tabs with spaces
+                        .replace(/\s+/g, ' ') // Collapse all whitespace sequences into single spaces
+                        .trim(); // Remove leading/trailing whitespace
+                      
+                      // Add text before this sentence (if any) - preserve HTML
+                      // Only add "before" HTML if it's not empty and indicates a paragraph break
+                      if (range.start > lastIndex && beforeHtml.trim()) {
+                        // Normalize whitespace in before HTML too
+                        const normalizedBeforeHtml = beforeHtml
+                          .replace(/>\s+</g, '><')
+                          .replace(/\n/g, ' ')
+                          .replace(/\r/g, ' ')
+                          .replace(/\t/g, ' ')
+                          .replace(/\s+/g, ' ')
+                          .trim();
+                        
+                        // Only render "before" HTML if it contains paragraph tags (indicating a paragraph break)
+                        // Otherwise, skip it to avoid creating breaks between sentences in the same paragraph
+                        if (normalizedBeforeHtml && (normalizedBeforeHtml.includes('<p') || normalizedBeforeHtml.endsWith('</p>'))) {
+                          // Contains paragraph tags - render in div to force block-level display
+                          parts.push(
+                            <div key={`before-${index}`} dangerouslySetInnerHTML={{ __html: normalizedBeforeHtml }} />
+                          );
+                        }
+                        // If no paragraph tags, don't render "before" HTML - it's just the previous sentence content
+                        // This prevents unwanted breaks between sentences in the same paragraph
+                      }
+                      
+                      // Process sentence HTML for highlights
+                      let processedSentenceHtml = sentenceHtml;
                       if (isFullSentenceHighlighted && sentenceHighlightRanges.length === 0) {
-                        // Full sentence highlight - preserve HTML, no extra padding
-                        parts.push(
-                          <span
-                            key={`sentence-${index}`}
-                            data-sentence-index={index}
-                            className="bg-yellow-200 rounded transition-colors"
-                            style={{ padding: '0' }}
-                            dangerouslySetInnerHTML={{ __html: sentenceHtml }}
-                          />
-                        );
+                        // Wrap in highlight span
+                        processedSentenceHtml = `<span class="bg-yellow-200 rounded transition-colors" style="padding: 0;" data-sentence-index="${index}">${sentenceHtml}</span>`;
                       } else if (sentenceHighlightRanges.length > 0) {
-                        // Partial sentence highlights - apply highlights to specific ranges while preserving HTML
-                        // Convert absolute ranges to relative ranges within the sentence
                         const relativeRanges = sentenceHighlightRanges.map(r => ({
                           start: Math.max(0, r.start - range.start),
                           end: Math.min(sentence.length, r.end - range.start)
                         })).filter(r => r.start < r.end);
-                        
-                        // Apply highlights to HTML while preserving structure
-                        const highlightedHtml = applyHighlightsToHtml(sentenceHtml, sentence, relativeRanges);
-                        
-                        parts.push(
-                          <span
-                            key={`sentence-${index}`}
-                            data-sentence-index={index}
-                            dangerouslySetInnerHTML={{ __html: highlightedHtml }}
-                          />
-                        );
+                        processedSentenceHtml = applyHighlightsToHtml(sentenceHtml, sentence, relativeRanges);
+                        processedSentenceHtml = `<span data-sentence-index="${index}">${processedSentenceHtml}</span>`;
                       } else {
-                        // Normal sentence (no highlight) - preserve HTML
-                        parts.push(
-                          <span
-                            key={`sentence-${index}`}
-                            data-sentence-index={index}
-                            dangerouslySetInnerHTML={{ __html: sentenceHtml }}
-                          />
-                        );
+                        processedSentenceHtml = `<span data-sentence-index="${index}">${sentenceHtml}</span>`;
+                      }
+                      
+                      // If this is a new paragraph, flush the current paragraph and start a new one
+                      if (isStartOfNewParagraph) {
+                        // Render all sentences in the current paragraph together as a single HTML string
+                        if (currentParagraphParts.length > 0) {
+                          const paragraphHtml = currentParagraphParts.join(' ');
+                          parts.push(
+                            <div key={`paragraph-${parts.length}`} style={{ display: 'block', marginTop: '0.5rem', marginBottom: '0.25rem' }} dangerouslySetInnerHTML={{ __html: paragraphHtml }} />
+                          );
+                          currentParagraphParts = [];
+                        }
+                        // Start new paragraph with this sentence
+                        currentParagraphParts = [processedSentenceHtml];
+                        isInParagraph = true;
+                      } else {
+                        // Continuation of current paragraph - add HTML string to array
+                        currentParagraphParts.push(processedSentenceHtml);
+                        isInParagraph = true;
                       }
                       
                       lastIndex = range.end; // Plain text position
                     });
                     
+                    // Flush any remaining sentences in the current paragraph
+                    if (currentParagraphParts.length > 0) {
+                      const paragraphHtml = currentParagraphParts.join(' ');
+                      parts.push(
+                        <div key={`paragraph-final`} style={{ display: 'block', marginTop: '0.5rem', marginBottom: '0.25rem' }} dangerouslySetInnerHTML={{ __html: paragraphHtml }} />
+                      );
+                    }
+                    
                     // Add any remaining text after last sentence - preserve HTML
                     if (lastIndex < passageContentPlain.length) {
-                      const remainingHtmlStart = findHtmlPosition(passageContent, passageContentPlain, lastIndex);
-                      const remainingHtml = passageContent.substring(remainingHtmlStart);
+                      const remainingHtmlStart = findHtmlPosition(normalizedContent, passageContentPlain, lastIndex);
+                      const remainingHtml = normalizedContent.substring(remainingHtmlStart);
                       if (remainingHtml) {
                         parts.push(
                           <span key="after-last-sentence" dangerouslySetInnerHTML={{ __html: remainingHtml }} />
@@ -896,7 +965,7 @@ const PassageQuestion: React.FC<PassageQuestionProps> = ({
                       }
                     }
                     
-                    return parts.length > 0 ? parts : <span dangerouslySetInnerHTML={{ __html: passageContent }} />;
+                    return parts.length > 0 ? parts : <span dangerouslySetInnerHTML={{ __html: normalizedContent }} />;
                   })()}
                 </div>
               </CardContent>

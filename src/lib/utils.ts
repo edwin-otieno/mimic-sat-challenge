@@ -123,12 +123,24 @@ const findMatchingClosingTag = (text: string, tagName: string, startPos: number)
   pos = tagEnd + 1;
   
   while (pos < text.length && depth > 0) {
-    // Look for opening tags
-    const nextOpen = text.indexOf(openTag, pos);
+    // Look for opening tags - must be a complete tag (followed by space, >, or end)
+    let nextOpen = text.indexOf(openTag, pos);
+    // Make sure it's actually a tag (not part of another tag name)
+    while (nextOpen !== -1) {
+      const charAfter = text[nextOpen + openTag.length];
+      if (charAfter === ' ' || charAfter === '>' || charAfter === '\n' || charAfter === '\t') {
+        break; // Valid tag found
+      }
+      nextOpen = text.indexOf(openTag, nextOpen + 1);
+    }
+    
     // Look for closing tags
     const nextClose = text.indexOf(closeTag, pos);
     
-    if (nextClose === -1) return -1; // No closing tag found
+    if (nextClose === -1) {
+      // No closing tag found - this is malformed HTML
+      return -1;
+    }
     
     if (nextOpen !== -1 && nextOpen < nextClose) {
       // Found another opening tag before closing tag - increase depth
@@ -205,6 +217,18 @@ const extractBlockElements = (text: string): Array<{ type: 'block' | 'text'; con
     
     // Add the block element
     const blockContent = text.substring(nextBlockStart, blockEnd);
+    
+    // Debug: log if we're extracting a <p> tag to see if it's being closed correctly
+    if (nextBlockTag === 'p') {
+      console.log('[extractBlockElements] Extracted <p> block:', {
+        start: nextBlockStart,
+        end: blockEnd,
+        content: blockContent.substring(0, 150),
+        fullLength: blockContent.length,
+        originalTextAround: text.substring(Math.max(0, nextBlockStart - 20), Math.min(text.length, blockEnd + 20))
+      });
+    }
+    
     blocks.push({
       type: 'block',
       content: blockContent,
@@ -224,6 +248,47 @@ const extractBlockElements = (text: string): Array<{ type: 'block' | 'text'; con
   return blocks;
 };
 
+// Helper function to normalize whitespace inside <p> tags
+// IMPORTANT: This function should NOT modify HTML structure, only whitespace
+export const normalizeParagraphWhitespace = (html: string): string => {
+  // Use a more robust approach that handles nested tags correctly
+  // Process from the end to avoid index issues when replacing
+  let result = html;
+  const pTagMatches: Array<{ fullMatch: string; attrs: string; content: string; index: number }> = [];
+  
+  // Find all <p> tags using a regex
+  const pTagRegex = /<p([^>]*)>([\s\S]*?)<\/p>/gi;
+  let match;
+  
+  while ((match = pTagRegex.exec(html)) !== null) {
+    pTagMatches.push({
+      fullMatch: match[0],
+      attrs: match[1] || '',
+      content: match[2] || '',
+      index: match.index
+    });
+  }
+  
+  // Process from end to start to maintain correct indices
+  for (let i = pTagMatches.length - 1; i >= 0; i--) {
+    const pMatch = pTagMatches[i];
+    
+    // Only normalize whitespace in the content, don't modify structure
+    // IMPORTANT: Only remove whitespace BETWEEN tags, not between tags and text
+    let normalized = pMatch.content
+      .replace(/>\s+</g, '><') // Remove whitespace BETWEEN tags ("> \n <" -> "><")
+      .replace(/\s+/g, ' ') // Collapse all remaining whitespace sequences (newlines, tabs, multiple spaces) into single spaces
+      .trim();
+    
+    // Replace the original match with normalized version
+    const before = result.substring(0, pMatch.index);
+    const after = result.substring(pMatch.index + pMatch.fullMatch.length);
+    result = before + `<p${pMatch.attrs}>${normalized}</p>` + after;
+  }
+  
+  return result;
+};
+
 // Helper function to render text without tables (original logic)
 const renderTextWithoutTables = (text: string, keyPrefix: string): React.ReactNode => {
   // First, extract complete HTML block elements to preserve their structure
@@ -233,13 +298,24 @@ const renderTextWithoutTables = (text: string, keyPrefix: string): React.ReactNo
   
   blocks.forEach((block, blockIndex) => {
     if (block.type === 'block') {
+      // Debug: log block extraction for <p> tags
+      if (block.content.trim().startsWith('<p')) {
+        console.log('[renderTextWithoutTables] Extracted block:', {
+          content: block.content.substring(0, 200),
+          fullLength: block.content.length
+        });
+      }
+      
+      // Normalize whitespace inside <p> tags to prevent unwanted line breaks
+      const normalizedContent = normalizeParagraphWhitespace(block.content);
+      
       // Render block element as-is, preserving its HTML structure
       // Normalize spacing within block elements - reduce excessive whitespace
       parts.push(
         React.createElement('div', {
           key: `${keyPrefix}-block-${blockIndex}`,
-          className: 'mb-2 break-words overflow-wrap-break-word [&_div]:break-words [&_div]:overflow-wrap-break-word [&_p]:break-words [&_p]:overflow-wrap-break-word [&_p]:leading-normal [&_p]:my-0 [&_p]:mb-1 [&_h1]:leading-normal [&_h1]:my-1 [&_h2]:leading-normal [&_h2]:my-1 [&_h3]:leading-normal [&_h3]:my-1 [&_h4]:leading-normal [&_h4]:my-1 [&_h5]:leading-normal [&_h5]:my-1 [&_h6]:leading-normal [&_h6]:my-1 [&_ul]:leading-normal [&_ul]:my-1 [&_ul]:space-y-0 [&_li]:leading-normal [&_li]:my-0 [&_li]:mb-0.5',
-          dangerouslySetInnerHTML: { __html: block.content }
+          className: 'mb-2 break-words overflow-wrap-break-word [&_div]:break-words [&_div]:overflow-wrap-break-word [&_p]:break-words [&_p]:overflow-wrap-break-word [&_p]:leading-normal [&_p]:my-0 [&_p]:mb-1 [&_p]:whitespace-normal [&_h1]:leading-normal [&_h1]:my-1 [&_h2]:leading-normal [&_h2]:my-1 [&_h3]:leading-normal [&_h3]:my-1 [&_h4]:leading-normal [&_h4]:my-1 [&_h5]:leading-normal [&_h5]:my-1 [&_h6]:leading-normal [&_h6]:my-1 [&_ul]:leading-normal [&_ul]:my-1 [&_ul]:space-y-0 [&_li]:leading-normal [&_li]:my-0 [&_li]:mb-0.5',
+          dangerouslySetInnerHTML: { __html: normalizedContent }
         })
       );
     } else {

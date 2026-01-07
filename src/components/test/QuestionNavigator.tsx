@@ -175,11 +175,11 @@ const QuestionNavigator: React.FC<QuestionNavigatorProps> = ({
     
     return (
       <div className={cn(
-        "h-full"
+        "h-full flex flex-col"
       )}>
         <h3 className="text-sm font-semibold mb-3">Questions</h3>
         <Legend />
-        <div className="space-y-2 max-h-[calc(100vh-200px)] overflow-y-auto">
+        <div className="space-y-2 flex-1 overflow-y-auto min-h-0">
           {filteredQuestions.length === 0 ? (
             <div className="text-xs text-gray-500 text-center py-4">
               No questions found for this filter

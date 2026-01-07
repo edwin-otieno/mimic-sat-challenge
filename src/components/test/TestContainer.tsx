@@ -376,7 +376,7 @@ export const TestContainer: React.FC<TestContainerProps> = ({
             {/* For ACT Math, show vertical navigator on left side */}
             {testCategory === 'ACT' ? (
               <div className="flex gap-4">
-                <div className="w-40 border-r overflow-y-auto bg-gray-50 p-3" style={{ maxHeight: '450px' }}>
+                <div className="w-40 border-r bg-gray-50 p-3 h-[500px] overflow-hidden">
                   <QuestionNavigator
                     questions={safeQuestions}
                     currentIndex={currentQuestionIndex}
@@ -705,10 +705,10 @@ export const TestContainer: React.FC<TestContainerProps> = ({
       
       <div className={`flex justify-end gap-2 mt-8 ${testCategory === 'ACT' && currentModuleType === 'math' ? 'mb-24' : ''}`}>
         <Button variant="outline" onClick={onPreviousQuestion} disabled={currentQuestionIndex === 0}>
-          Previous Question
+          {currentModuleType === 'math' ? 'Previous' : 'Previous Question'}
         </Button>
         <Button onClick={handleNext}>
-          {isLastQuestion ? 'Finish Module' : 'Next Question'}
+          {isLastQuestion ? 'Finish Module' : (currentModuleType === 'math' ? 'Next' : 'Next Question')}
         </Button>
       </div>
       {/* Only show horizontal navigator if not ACT Math (which has vertical navigator) and not Essay/Writing module */}

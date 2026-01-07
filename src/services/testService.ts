@@ -26,6 +26,11 @@ const convertDbQuestionToQuestionData = (
     imageUrl: question.image_url,
     question_type: question.question_type,
     correct_answer: question.correct_answer,
+    question_order: question.question_order,
+    question_number: question.question_number,
+    passage_id: question.passage_id,
+    test_id: question.test_id,
+    sentence_references: question.sentence_references ? (typeof question.sentence_references === 'string' ? JSON.parse(question.sentence_references) : question.sentence_references) : undefined,
     options: options
       .filter(option => option.question_id === question.id)
       .map(option => ({
