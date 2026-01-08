@@ -394,6 +394,20 @@ const PassageQuestion: React.FC<PassageQuestionProps> = ({
     }
   }, [currentQuestionIndex, currentQuestion, passage.content, testCategory]);
 
+  // Auto-scroll passage content to top when passage changes
+  useEffect(() => {
+    // Scroll the passage content to the top when transitioning to a new passage
+    if (passageContentRef.current) {
+      // Use setTimeout to ensure DOM is updated
+      setTimeout(() => {
+        passageContentRef.current?.scrollTo({ 
+          top: 0,
+          behavior: 'smooth'
+        });
+      }, 50);
+    }
+  }, [passage.id]);
+
   // Auto-scroll to question header when question changes
   useEffect(() => {
     // Scroll the question content area to show the header
