@@ -172,18 +172,18 @@ const Register = () => {
               />
               <div>
                 <label htmlFor="school" className="block text-sm font-medium text-gray-700 mb-2">
-                  School (Optional)
+                  Camp Location
                 </label>
                 <Select value={selectedSchool} onValueChange={setSelectedSchool}>
                   <SelectTrigger className="rounded-full border border-gray-300 px-5 py-3 text-base focus:outline-none focus:ring-2 focus:ring-[#1a3c7c]">
-                    <SelectValue placeholder="Select your school" />
+                    <SelectValue placeholder="Select your camp location" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">None</SelectItem>
                     {loadingSchools ? (
-                      <div className="px-2 py-1.5 text-sm text-gray-500">Loading schools...</div>
+                      <div className="px-2 py-1.5 text-sm text-gray-500">Loading camp locations...</div>
                     ) : schools.length === 0 ? (
-                      <div className="px-2 py-1.5 text-sm text-gray-500">No schools available</div>
+                      <div className="px-2 py-1.5 text-sm text-gray-500">No camp locations available</div>
                     ) : (
                       schools.map((school) => (
                         <SelectItem key={school.id} value={school.id}>

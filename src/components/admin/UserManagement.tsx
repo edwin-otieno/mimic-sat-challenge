@@ -28,7 +28,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from '@/hooks/use-toast';
-import { Pencil, Trash2, Key } from 'lucide-react';
+import { Pencil, Trash2, Key, ArrowRightLeft } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
 
@@ -38,6 +38,11 @@ interface User {
   first_name: string | null;
   last_name: string | null;
   role: "admin" | "student" | "teacher";
+  school_id: string | null;
+  schools?: {
+    id: string;
+    name: string;
+  } | null;
 }
 
 const UserManagement = () => {
@@ -46,18 +51,53 @@ const UserManagement = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isResetPasswordDialogOpen, setIsResetPasswordDialogOpen] = useState(false);
+  const [isMoveSchoolDialogOpen, setIsMoveSchoolDialogOpen] = useState(false);
   const [newRole, setNewRole] = useState<"admin" | "student" | "teacher">("student");
   const [newPassword, setNewPassword] = useState("");
+  const [newSchoolId, setNewSchoolId] = useState<string>("none");
+  const [schools, setSchools] = useState<Array<{ id: string; name: string }>>([]);
   
+  // Fetch schools
+  useEffect(() => {
+    const fetchSchools = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('schools')
+          .select('id, name')
+          .order('name', { ascending: true });
+
+        if (error) {
+          console.error('Error fetching schools:', error);
+          return;
+        }
+        
+        setSchools(data || []);
+      } catch (error) {
+        console.error('Unexpected error fetching schools:', error);
+      }
+    };
+
+    fetchSchools();
+  }, []);
+
   // Fetch all users from Supabase profiles table
   const { data: users, isLoading, error, refetch } = useQuery({
     queryKey: ['profiles'],
     queryFn: async () => {
       console.log('Fetching users from profiles table');
-      // Make sure we're not filtering the profiles table
+      // Fetch users with school information
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, email, first_name, last_name, role, created_at')
+        .select(`
+          id, 
+          email, 
+          first_name, 
+          last_name, 
+          role, 
+          school_id,
+          created_at,
+          schools(id, name)
+        `)
         .order('created_at', { ascending: false })
         .limit(100);
       
@@ -86,6 +126,45 @@ const UserManagement = () => {
     setSelectedUser(user);
     setNewPassword("");
     setIsResetPasswordDialogOpen(true);
+  };
+
+  const handleMoveSchool = (user: User) => {
+    setSelectedUser(user);
+    setNewSchoolId(user.school_id || "none");
+    setIsMoveSchoolDialogOpen(true);
+  };
+
+  const saveSchoolChange = async () => {
+    if (!selectedUser) return;
+    
+    try {
+      const schoolIdToSet = newSchoolId === "none" ? null : newSchoolId;
+      
+      const { error } = await supabaseAdmin
+        .from('profiles')
+        .update({ school_id: schoolIdToSet })
+        .eq('id', selectedUser.id);
+
+      if (error) throw error;
+      
+      const schoolName = schoolIdToSet 
+        ? schools.find(s => s.id === schoolIdToSet)?.name || 'Unknown'
+        : 'None';
+      
+      toast({ 
+        title: "Success", 
+        description: `${selectedUser.first_name} ${selectedUser.last_name} moved to ${schoolName}` 
+      });
+      
+      setIsMoveSchoolDialogOpen(false);
+      refetch();
+    } catch (error: any) {
+      toast({ 
+        title: "Error", 
+        description: `Failed to update school: ${error.message || "Unknown error"}`, 
+        variant: "destructive" 
+      });
+    }
   };
 
   const saveRole = async () => {
@@ -231,6 +310,7 @@ const UserManagement = () => {
               <TableHead>Name</TableHead>
               <TableHead>Email</TableHead>
               <TableHead>Role</TableHead>
+              <TableHead>Camp Location</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -248,6 +328,9 @@ const UserManagement = () => {
                     {user.role}
                   </span>
                 </TableCell>
+                <TableCell>
+                  {user.schools?.name || <span className="text-gray-400">None</span>}
+                </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-2">
                     <Button 
@@ -258,6 +341,17 @@ const UserManagement = () => {
                       <Pencil className="h-4 w-4" />
                       <span className="sr-only">Edit</span>
                     </Button>
+                    {user.role === 'student' && (
+                      <Button 
+                        size="sm" 
+                        variant="ghost" 
+                        onClick={() => handleMoveSchool(user)}
+                        title="Move to different camp location"
+                      >
+                        <ArrowRightLeft className="h-4 w-4" />
+                        <span className="sr-only">Move School</span>
+                      </Button>
+                    )}
                     <Button 
                       size="sm" 
                       variant="ghost" 
@@ -337,6 +431,41 @@ const UserManagement = () => {
               <Button type="button" variant="outline">Cancel</Button>
             </DialogClose>
             <Button onClick={resetPassword}>Reset Password</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isMoveSchoolDialogOpen} onOpenChange={setIsMoveSchoolDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Move Student to Different Camp Location</DialogTitle>
+            <DialogDescription>
+              Move {selectedUser?.first_name} {selectedUser?.last_name} to a different camp location
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="mb-4 text-sm text-gray-600">
+              Current camp location: <strong>{selectedUser?.schools?.name || 'None'}</strong>
+            </p>
+            <Select value={newSchoolId} onValueChange={setNewSchoolId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select a camp location" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None</SelectItem>
+                {schools.map((school) => (
+                  <SelectItem key={school.id} value={school.id}>
+                    {school.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">Cancel</Button>
+            </DialogClose>
+            <Button onClick={saveSchoolChange}>Move Student</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
