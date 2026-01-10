@@ -97,17 +97,16 @@ const QuestionReview: React.FC<QuestionReviewProps> = React.memo(({ questions, u
   }, [questions, moduleType]);
 
   // Function to get option letters based on test category and question number
-  // For ACT tests: alternate between A/B/C/D (odd) and F/G/H/J (even) based on question number
-  // For SAT tests: always use A/B/C/D/E
-  const getOptionLetter = (question: QuestionData, optionIndex: number): string => {
-    if (testCategory === 'ACT') {
-      // Use question_number, question_order, or fallback to index
-      const qNum = question.question_number ?? question.question_order ?? (questions.findIndex(q => q.id === question.id) + 1);
+  // For ACT tests with passage questions or Math questions: alternate between A/B/C/D (odd) and F/G/H/J (even) based on question number
+  // For other questions or SAT tests: always use A/B/C/D/E
+  const getOptionLetter = (question: QuestionData, sequentialQuestionNumber: number, optionIndex: number): string => {
+    if (testCategory === 'ACT' && (question.passage_id || question.module_type === 'math')) {
+      // Apply alternating lettering for passage questions and Math questions
       // ACT alternates: odd = A/B/C/D, even = F/G/H/J
-      const letters = qNum % 2 === 1 ? ['A', 'B', 'C', 'D'] : ['F', 'G', 'H', 'J'];
+      const letters = sequentialQuestionNumber % 2 === 1 ? ['A', 'B', 'C', 'D'] : ['F', 'G', 'H', 'J'];
       return letters[optionIndex] || String.fromCharCode(65 + optionIndex);
     }
-    // Default: A, B, C, D, E
+    // Default: A, B, C, D, E (for other questions or SAT tests)
     return String.fromCharCode(65 + optionIndex);
   };
 
@@ -199,9 +198,9 @@ const QuestionReview: React.FC<QuestionReviewProps> = React.memo(({ questions, u
                   </div>
                 );
               } else {
-                // Use the alternating lettering function for ACT tests
+                // Use the alternating lettering function for ACT passage questions
                 const correctLetter = correctOptionIndex >= 0 
-                  ? getOptionLetter(question, correctOptionIndex)
+                  ? getOptionLetter(question, index + 1, correctOptionIndex)
                   : '?';
                 resultIndicator = (
                   <div className="text-red-500 mb-2">
@@ -225,7 +224,7 @@ const QuestionReview: React.FC<QuestionReviewProps> = React.memo(({ questions, u
                   onAnswerChange={() => {}} // Read-only
                   showExplanation={true}
                   testCategory={testCategory}
-                  sequentialQuestionNumber={question.question_number ?? question.question_order ?? (index + 1)}
+                  sequentialQuestionNumber={index + 1}
                 />
               </div>
             );

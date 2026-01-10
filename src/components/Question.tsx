@@ -127,10 +127,12 @@ const Question: React.FC<QuestionProps> = ({
     selection.removeAllRanges();
   };
   
-  // For ACT tests, alternate between A/B/C/D and F/G/H/J based on question number
+  // For ACT tests with passage questions or Math questions, alternate between A/B/C/D and F/G/H/J based on question number
   // Odd question numbers (1, 3, 5...) use A/B/C/D, even (2, 4, 6...) use F/G/H/J
+  // Other questions always use A/B/C/D/E
   const getOptionLetters = (): string[] => {
-    if (testCategory === 'ACT') {
+    if (testCategory === 'ACT' && (question.passage_id || question.module_type === 'math')) {
+      // Apply alternating lettering for passage questions and Math questions
       // Use sequentialQuestionNumber (passed prop), question_number (for passage questions), or question_order
       // sequentialQuestionNumber is preferred as it's the most accurate (1-based sequential number)
       const qNum = sequentialQuestionNumber ?? question.question_number ?? question.question_order;
@@ -140,7 +142,7 @@ const Question: React.FC<QuestionProps> = ({
         return qNum % 2 === 1 ? ['A', 'B', 'C', 'D'] : ['F', 'G', 'H', 'J'];
       }
     }
-    // Default: A, B, C, D, E
+    // Default: A, B, C, D, E (for other questions or SAT tests)
     return ['A', 'B', 'C', 'D', 'E'];
   };
   
