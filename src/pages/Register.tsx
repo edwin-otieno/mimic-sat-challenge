@@ -19,7 +19,7 @@ const Register = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [selectedSchool, setSelectedSchool] = useState<string>("none");
+  const [selectedSchool, setSelectedSchool] = useState<string>("");
   const [schools, setSchools] = useState<Array<{ id: string; name: string }>>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingSchools, setLoadingSchools] = useState(true);
@@ -60,8 +60,12 @@ const Register = () => {
       alert("Passwords don't match");
       return;
     }
+    if (!selectedSchool) {
+      alert("Please select a camp location");
+      return;
+    }
     setIsLoading(true);
-    await signUp(email, password, firstName, lastName, selectedSchool && selectedSchool !== "none" ? selectedSchool : undefined);
+    await signUp(email, password, firstName, lastName, selectedSchool);
     setIsLoading(false);
   };
 
@@ -179,7 +183,6 @@ const Register = () => {
                     <SelectValue placeholder="Select your camp location" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
                     {loadingSchools ? (
                       <div className="px-2 py-1.5 text-sm text-gray-500">Loading camp locations...</div>
                     ) : schools.length === 0 ? (
