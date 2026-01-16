@@ -8,12 +8,12 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
-    allowedHosts: ["taatesting.com"],
+    allowedHosts: ["taatesting.com", "www.taatesting.com"],
   },
   preview: {
     host: "::",
     port: 8080,
-    allowedHosts: ["taatesting.com"],
+    allowedHosts: ["taatesting.com", "www.taatesting.com"],
   },
   plugins: [
     react(),

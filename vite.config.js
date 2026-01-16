@@ -8,7 +8,7 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "127.0.0.1",
     port: 8080,
-    allowedHosts: ["taatesting.com"],
+    allowedHosts: ["taatesting.com", "www.taatesting.com"],
     proxy: {
       '/api': {
         target: 'http://localhost:8080',
@@ -20,7 +20,7 @@ export default defineConfig(({ mode }) => ({
   preview: {
     host: "127.0.0.1",
     port: 8080,
-    allowedHosts: ["taatesting.com"],
+    allowedHosts: ["taatesting.com", "www.taatesting.com"],
   },
   plugins: [
     react(),
