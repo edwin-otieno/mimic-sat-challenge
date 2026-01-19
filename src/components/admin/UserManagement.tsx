@@ -45,6 +45,8 @@ interface User {
   } | null;
 }
 
+const USERS_PER_PAGE = 100;
+
 const UserManagement = () => {
   const { toast } = useToast();
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -56,6 +58,8 @@ const UserManagement = () => {
   const [newPassword, setNewPassword] = useState("");
   const [newSchoolId, setNewSchoolId] = useState<string>("none");
   const [schools, setSchools] = useState<Array<{ id: string; name: string }>>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalUsers, setTotalUsers] = useState(0);
   
   // Fetch schools
   useEffect(() => {
@@ -80,13 +84,17 @@ const UserManagement = () => {
     fetchSchools();
   }, []);
 
-  // Fetch all users from Supabase profiles table
+  // Fetch all users from Supabase profiles table with pagination
   const { data: users, isLoading, error, refetch } = useQuery({
-    queryKey: ['profiles'],
+    queryKey: ['profiles', currentPage],
     queryFn: async () => {
       console.log('Fetching users from profiles table');
-      // Fetch users with school information
-      const { data, error } = await supabase
+      // Calculate pagination range
+      const from = (currentPage - 1) * USERS_PER_PAGE;
+      const to = from + USERS_PER_PAGE - 1;
+      
+      // Fetch users with school information and total count
+      const { data, error, count } = await supabase
         .from('profiles')
         .select(`
           id, 
@@ -97,14 +105,17 @@ const UserManagement = () => {
           school_id,
           created_at,
           schools(id, name)
-        `)
+        `, { count: 'exact' })
         .order('created_at', { ascending: false })
-        .limit(100);
+        .range(from, to);
       
       if (error) {
         console.error('Error fetching users:', error);
         throw error;
       }
+      
+      // Update total users count
+      setTotalUsers(count || 0);
       
       console.log('Fetched users:', data);
       return data as User[];
@@ -294,12 +305,16 @@ const UserManagement = () => {
     );
   }
 
+  const totalPages = Math.ceil(totalUsers / USERS_PER_PAGE);
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-medium">User Management</h3>
         <p className="text-sm text-gray-500">
-          {users ? `${users.length} users found` : 'No users found'}
+          {totalUsers > 0 
+            ? `Showing ${((currentPage - 1) * USERS_PER_PAGE) + 1} to ${Math.min(currentPage * USERS_PER_PAGE, totalUsers)} of ${totalUsers} users`
+            : 'No users found'}
         </p>
       </div>
 
@@ -378,6 +393,33 @@ const UserManagement = () => {
       ) : (
         <div className="text-center p-8 bg-gray-50 rounded-md">
           <p className="text-gray-500">No users found.</p>
+        </div>
+      )}
+
+      {/* Pagination Controls */}
+      {users && users.length > 0 && totalPages > 1 && (
+        <div className="flex items-center justify-between mt-4">
+          <div className="text-sm text-gray-500">
+            Page {currentPage} of {totalPages}
+          </div>
+          <div className="flex items-center space-x-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1 || isLoading}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+              disabled={currentPage === totalPages || isLoading}
+            >
+              Next
+            </Button>
+          </div>
         </div>
       )}
 

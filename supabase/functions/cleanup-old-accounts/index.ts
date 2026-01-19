@@ -47,6 +47,12 @@ serve(async (req) => {
     // Delete each old student account
     for (const profile of oldProfiles) {
       try {
+        // Double-check that this is a student account (safety check)
+        if (profile.role !== 'student') {
+          errors.push(`Skipping deletion of non-student account: ${profile.email} (role: ${profile.role})`)
+          continue
+        }
+
         // First delete from profiles table
         const { error: profileDeleteError } = await supabaseClient
           .from('profiles')
