@@ -3030,7 +3030,7 @@ const TestInterface = () => {
       } finally {
         setIsAutoSaving(false);
       }
-    }, 5 * 60 * 1000); // 5 minutes in milliseconds
+    }, 15 * 60 * 1000); // 15 minutes in milliseconds (reduced from 5 to minimize DB load)
 
     return () => clearInterval(autoSaveInterval);
   }, [user, permalink, stateLoaded, currentQuestionIndex, userAnswers, flaggedQuestions, crossedOutOptions, testStartTime, currentModuleStartTime, currentModuleTimeLeft, currentPartTimeLeft, timerRunning, timerVisible, currentPart, selectedModule, partTimes, showModuleSelection, completedModules, showModuleScores, showPartTransition, lastSavedQuestions, saveTestState]);
@@ -3101,7 +3101,7 @@ const TestInterface = () => {
       } finally {
         setIsAutoSaving(false);
       }
-    }, 2000); // Save 2 seconds after last change
+    }, 5000); // Save 5 seconds after last change (increased from 2s to batch more changes)
 
     return () => clearTimeout(saveTimeout);
   }, [userAnswers, currentQuestionIndex, flaggedQuestions, crossedOutOptions]);

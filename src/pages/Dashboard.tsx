@@ -49,73 +49,116 @@ const Dashboard = () => {
       const progressStatus: Record<string, boolean> = {};
       const moduleScoresMap: Record<string, Array<{module_id: string, module_name: string, score: number, total: number, scaled_score: number | null}>> = {};
       
+      // First pass: check all test progress
       for (const test of availableTests) {
         const testId = test.permalink || test.id;
         try {
           const inProgress = await checkTestInProgress(testId);
           progressStatus[testId] = inProgress;
+        } catch (error) {
+          console.error(`Error checking progress for test ${testId}:`, error);
+          progressStatus[testId] = false;
+        }
+      }
+      
+      // Get all tests that are in progress
+      const testsInProgress = availableTests.filter(test => {
+        const testId = test.permalink || test.id;
+        return progressStatus[testId];
+      });
+      
+      // OPTIMIZED: Batch fetch all test results and module results (fixes N+1 problem)
+      if (testsInProgress.length > 0) {
+        try {
+          const testIds = testsInProgress.map(t => t.id);
           
-          // If test is in progress, fetch module results to show completed section scores
-          if (inProgress) {
-            try {
-              // Get the most recent test_result for this test
-              const { data: testResult } = await supabase
-                .from('test_results')
-                .select('id')
-                .eq('user_id', user.id)
-                .eq('test_id', test.id)
-                .order('created_at', { ascending: false })
-                .limit(1)
-                .maybeSingle();
-              
-              if (testResult?.id) {
-                // Fetch module results
-                const { data: moduleResults } = await supabase
-                  .from('module_results')
-                  .select('module_id, module_name, score, total, scaled_score')
-                  .eq('test_result_id', testResult.id);
+          // Fetch all test_results in one query
+          const { data: allTestResults } = await supabase
+            .from('test_results')
+            .select('id, test_id')
+            .eq('user_id', user.id)
+            .in('test_id', testIds)
+            .order('created_at', { ascending: false });
+          
+          if (allTestResults && allTestResults.length > 0) {
+            // Get the most recent test_result per test_id
+            const latestTestResults = allTestResults.reduce((acc, result) => {
+              if (!acc[result.test_id]) {
+                acc[result.test_id] = result;
+              }
+              return acc;
+            }, {} as Record<string, any>);
+            
+            const testResultIds = Object.values(latestTestResults).map((r: any) => r.id);
+            
+            // Fetch ALL module results in one query
+            const { data: allModuleResults } = await supabase
+              .from('module_results')
+              .select('module_id, module_name, score, total, scaled_score, test_result_id')
+              .in('test_result_id', testResultIds);
+            
+            // Fetch ALL essay grades in one query
+            const { data: allEssayGrades } = await supabase
+              .from('essay_grades')
+              .select('test_result_id, score')
+              .in('test_result_id', testResultIds);
+            
+            // Group module results by test_result_id
+            const moduleResultsByTestResultId = (allModuleResults || []).reduce((acc, module) => {
+              if (!acc[module.test_result_id]) {
+                acc[module.test_result_id] = [];
+              }
+              acc[module.test_result_id].push(module);
+              return acc;
+            }, {} as Record<string, any[]>);
+            
+            // Create essay grades map
+            const essayGradesByTestResultId = (allEssayGrades || []).reduce((acc, grade) => {
+              acc[grade.test_result_id] = grade;
+              return acc;
+            }, {} as Record<string, any>);
+            
+            // Map results to tests
+            testsInProgress.forEach(test => {
+              const testResult = latestTestResults[test.id];
+              if (testResult) {
+                let moduleResultsData = moduleResultsByTestResultId[testResult.id] || [];
+                const essayGrade = essayGradesByTestResultId[testResult.id];
                 
-                let moduleResultsData = moduleResults || [];
-                
-                // Also check for essay grade
-                try {
-                  const essayGrade = await fetchEssayGrade(testResult.id);
-                  if (essayGrade && essayGrade.score !== null) {
-                    const writingIndex = moduleResultsData.findIndex(m => 
-                      m.module_id === 'writing' || m.module_id === 'essay' ||
-                      m.module_name?.toLowerCase().includes('essay') || m.module_name?.toLowerCase().includes('writing')
-                    );
-                    
-                    if (writingIndex >= 0) {
-                      moduleResultsData[writingIndex] = {
-                        ...moduleResultsData[writingIndex],
-                        scaled_score: essayGrade.score
-                      };
-                    } else {
-                      moduleResultsData.push({
+                if (essayGrade && essayGrade.score !== null) {
+                  const writingIndex = moduleResultsData.findIndex(m => 
+                    m.module_id === 'writing' || m.module_id === 'essay' ||
+                    m.module_name?.toLowerCase().includes('essay') || m.module_name?.toLowerCase().includes('writing')
+                  );
+                  
+                  if (writingIndex >= 0) {
+                    moduleResultsData[writingIndex] = {
+                      ...moduleResultsData[writingIndex],
+                      scaled_score: essayGrade.score
+                    };
+                  } else {
+                    moduleResultsData = [
+                      ...moduleResultsData,
+                      {
                         module_id: 'writing',
                         module_name: 'Writing',
                         score: 1,
                         total: 1,
                         scaled_score: essayGrade.score
-                      });
-                    }
+                      }
+                    ];
                   }
-                } catch (essayError) {
-                  console.error('Error fetching essay grade:', essayError);
                 }
                 
                 if (moduleResultsData.length > 0) {
+                  const testId = test.permalink || test.id;
                   moduleScoresMap[testId] = moduleResultsData;
                 }
               }
-            } catch (error) {
-              console.error(`Error fetching module scores for test ${testId}:`, error);
-            }
+            });
           }
         } catch (error) {
-          console.error(`Error checking progress for test ${testId}:`, error);
-          progressStatus[testId] = false;
+          console.error('Error batch fetching module scores:', error);
         }
       }
       

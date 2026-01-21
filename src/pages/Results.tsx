@@ -253,56 +253,79 @@ const Results = () => {
         removed: testResults.length - deduplicatedResults.length
       });
       
-      // Fetch module results for deduplicated test results (limit fields to reduce egress)
-      const moduleResultPromises = deduplicatedResults.map(async (testResult) => {
-        const { data: moduleData, error: moduleError } = await supabase
-          .from('module_results')
-          .select('id, module_id, module_name, score, total, scaled_score')
-          .eq('test_result_id', testResult.id);
-        
-        if (moduleError) {
-          console.error('Error fetching module results for test_result:', testResult.id, moduleError);
-          return [];
+      // OPTIMIZED: Batch fetch all module results in a single query (fixes N+1 problem)
+      const testResultIds = deduplicatedResults.map(r => r.id);
+      
+      // Fetch ALL module results in one query
+      const { data: allModuleResults, error: moduleError } = await supabase
+        .from('module_results')
+        .select('id, module_id, module_name, score, total, scaled_score, test_result_id')
+        .in('test_result_id', testResultIds);
+      
+      if (moduleError) {
+        console.error('Error fetching module results:', moduleError);
+      }
+      
+      // Fetch ALL essay grades in one query
+      const { data: allEssayGrades, error: essayError } = await supabase
+        .from('essay_grades')
+        .select('test_result_id, score')
+        .in('test_result_id', testResultIds);
+      
+      if (essayError) {
+        console.error('Error fetching essay grades:', essayError);
+      }
+      
+      // Group module results by test_result_id
+      const moduleResultsByTestId = (allModuleResults || []).reduce((acc, module) => {
+        if (!acc[module.test_result_id]) {
+          acc[module.test_result_id] = [];
         }
+        acc[module.test_result_id].push(module);
+        return acc;
+      }, {} as Record<string, ModuleResult[]>);
+      
+      // Create a map of essay grades by test_result_id
+      const essayGradesByTestId = (allEssayGrades || []).reduce((acc, grade) => {
+        acc[grade.test_result_id] = grade;
+        return acc;
+      }, {} as Record<string, any>);
+      
+      // Process module results and merge essay grades
+      const moduleResultsResponses = deduplicatedResults.map((testResult) => {
+        let moduleResults = moduleResultsByTestId[testResult.id] || [];
+        const essayGrade = essayGradesByTestId[testResult.id];
         
-        let moduleResults = moduleData || [];
-        try {
-          const essayGrade = await fetchEssayGrade(testResult.id);
-          if (essayGrade && essayGrade.score !== null) {
-            const writingIndex = moduleResults.findIndex(module => 
-              module.module_id === 'writing' ||
-              module.module_id === 'essay' ||
-              module.module_name?.toLowerCase().includes('essay') ||
-              module.module_name?.toLowerCase().includes('writing')
-            );
-            
-            if (writingIndex >= 0) {
-              moduleResults[writingIndex] = {
-                ...moduleResults[writingIndex],
+        if (essayGrade && essayGrade.score !== null) {
+          const writingIndex = moduleResults.findIndex(module => 
+            module.module_id === 'writing' ||
+            module.module_id === 'essay' ||
+            module.module_name?.toLowerCase().includes('essay') ||
+            module.module_name?.toLowerCase().includes('writing')
+          );
+          
+          if (writingIndex >= 0) {
+            moduleResults[writingIndex] = {
+              ...moduleResults[writingIndex],
+              scaled_score: essayGrade.score
+            };
+          } else {
+            moduleResults = [
+              ...moduleResults,
+              {
+                id: `essay-${testResult.id}`,
+                module_id: 'writing',
+                module_name: 'Writing',
+                score: 0,
+                total: 0,
                 scaled_score: essayGrade.score
-              };
-            } else {
-              moduleResults = [
-                ...moduleResults,
-                {
-                  id: `essay-${testResult.id}`,
-                  module_id: 'writing',
-                  module_name: 'Writing',
-                  score: 0,
-                  total: 0,
-                  scaled_score: essayGrade.score
-                } as ModuleResult
-              ];
-            }
+              } as ModuleResult
+            ];
           }
-        } catch (essayError) {
-          console.error('Error loading essay grade for history view:', essayError);
         }
         
         return moduleResults;
       });
-      
-      const moduleResultsResponses = await Promise.all(moduleResultPromises);
       
       // Combine deduplicated test results with their module results
       const combinedResults: SavedTestResults[] = deduplicatedResults.map((testResult, index) => ({
