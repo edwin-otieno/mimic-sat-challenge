@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { 
   Card, 
@@ -62,6 +62,11 @@ const StudentResults = () => {
   const [essayScore, setEssayScore] = useState<number | ''>('');
   const [essayComments, setEssayComments] = useState<string>('');
   const [essayLoading, setEssayLoading] = useState<boolean>(false);
+  
+  // Cache for module results and essay grades to prevent repeated queries
+  const moduleResultsCache = useRef<Map<string, { data: any[], timestamp: number }>>(new Map());
+  const essayGradesCache = useRef<Map<string, { data: any | null, timestamp: number }>>(new Map());
+  const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
   
   // Fetch all student results
   useEffect(() => {
@@ -159,39 +164,33 @@ const StudentResults = () => {
         const deduplicatedData = Array.from(dedupMap.values())
           .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
         
-        // Get user profiles for each result
-        const formattedResults = await Promise.all(deduplicatedData.map(async result => {
-          // Fetch the user profile separately
-          const { data: profileData, error: profileError } = await supabase
-            .from('profiles')
-            .select('first_name, last_name, email')
-            .eq('id', result.user_id)
-            .single();
-            
-          if (profileError) {
-            console.error('Error fetching profile:', profileError);
-            return {
-              ...result,
-              studentName: 'Unknown User',
-              studentEmail: 'N/A',
-              testName: tests.find(test => test.id === result.test_id)?.title || result.test_id,
-              completedAt: new Date(result.created_at).toLocaleString(),
-              score: `${result.total_score}/${result.total_questions}`,
-              percentage: Math.round((result.total_score / result.total_questions) * 100)
-            };
-          }
+        // OPTIMIZED: Batch fetch all user profiles in one query (fixes N+1 problem)
+        const uniqueUserIds = [...new Set(deduplicatedData.map(r => r.user_id))];
+        const { data: allProfiles } = await supabase
+          .from('profiles')
+          .select('id, first_name, last_name, email')
+          .in('id', uniqueUserIds);
+        
+        // Create a map of profiles by user_id for quick lookup
+        const profilesMap = new Map((allProfiles || []).map(p => [p.id, p]));
+        
+        // Format results using cached profiles
+        const formattedResults = deduplicatedData.map(result => {
+          const profileData = profilesMap.get(result.user_id);
           
           return {
             ...result,
-            studentName: `${profileData.first_name || ''} ${profileData.last_name || ''}`.trim() || 'No Name',
-            studentEmail: profileData.email || 'No Email',
+            studentName: profileData 
+              ? `${profileData.first_name || ''} ${profileData.last_name || ''}`.trim() || 'No Name'
+              : 'Unknown User',
+            studentEmail: profileData?.email || 'N/A',
             testName: tests.find(test => test.id === result.test_id)?.title || result.test_id,
             completedAt: new Date(result.created_at).toLocaleString(),
             score: `${result.total_score}/${result.total_questions}`,
             percentage: result.total_questions > 0 ? Math.round((result.total_score / result.total_questions) * 100) : 0,
             is_completed: result.is_completed !== null && result.is_completed !== undefined ? result.is_completed : true // Default to true for backward compatibility, but preserve false values
           };
-        }));
+        });
         
         setResults(formattedResults);
       } catch (error: any) {
@@ -267,24 +266,20 @@ const StudentResults = () => {
     }
   };
   
-  // Fetch module results for a specific test result
+  // Fetch module results for a specific test result (with caching)
   const fetchModuleResults = async (resultId: string) => {
     try {
       console.log('🔵 Fetching module results for test_result_id:', resultId);
       
-      // First, let's check if there are ANY module results for this test_result_id
-      const { data: allModuleResults, error: allError } = await supabase
-        .from('module_results')
-        .select('*')
-        .eq('test_result_id', resultId);
-      
-      console.log('📊 All module results for test_result_id:', resultId, ':', allModuleResults);
-      
-      if (allError) {
-        console.error('❌ Error fetching all module results:', allError);
+      // Check cache first
+      const cached = moduleResultsCache.current.get(resultId);
+      if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+        console.log('✅ Using cached module results for:', resultId);
+        setModuleResults(cached.data);
+        return;
       }
       
-      // Also check for module results with similar test_result_ids (in case of mismatch)
+      // Fetch test result data first
       const { data: testResultData } = await supabase
         .from('test_results')
         .select('id, user_id, test_id, is_completed, created_at')
@@ -293,9 +288,7 @@ const StudentResults = () => {
       
       console.log('📋 Test result details:', testResultData);
       
-      // Only fetch module results for the current test_result_id
-      // Don't merge from other test attempts - only show modules that were actually completed in this attempt
-      
+      // Fetch module results for the current test_result_id
       const { data, error } = await supabase
         .from('module_results')
         .select('*')
@@ -307,8 +300,18 @@ const StudentResults = () => {
         throw error;
       }
       
-      // Also fetch essay grade if it exists and merge it into writing module
-      const essayGrade = await fetchEssayGrade(resultId);
+      // Check cache for essay grade
+      let essayGrade: any | null = null;
+      const cachedEssay = essayGradesCache.current.get(resultId);
+      if (cachedEssay && Date.now() - cachedEssay.timestamp < CACHE_DURATION) {
+        console.log('✅ Using cached essay grade for:', resultId);
+        essayGrade = cachedEssay.data;
+      } else {
+        // Fetch essay grade if not cached
+        essayGrade = await fetchEssayGrade(resultId);
+        // Cache the essay grade
+        essayGradesCache.current.set(resultId, { data: essayGrade, timestamp: Date.now() });
+      }
       let moduleResultsData = data || [];
       
       if (essayGrade && essayGrade.score !== null) {
@@ -367,6 +370,10 @@ const StudentResults = () => {
       }, []);
       
       console.log('✅ Fetched module results (deduplicated):', deduplicatedResults);
+      
+      // Cache the results
+      moduleResultsCache.current.set(resultId, { data: deduplicatedResults, timestamp: Date.now() });
+      
       setModuleResults(deduplicatedResults);
       
       // Auto-fix: Check if all modules are completed but test is still marked as incomplete
@@ -469,7 +476,8 @@ const StudentResults = () => {
   const handleViewResult = async (result: any) => {
     console.log('🔍 handleViewResult - result.is_completed:', result.is_completed);
     setSelectedResult(result);
-    fetchModuleResults(result.id);
+    // Only fetch if not already cached or cache expired
+    await fetchModuleResults(result.id);
     setShowResultDetails(true);
     // Load essay answers and existing grade if applicable
     loadEssayData(result);
