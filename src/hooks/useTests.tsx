@@ -19,6 +19,9 @@ export const useTests = () => {
   const queryClient = useQueryClient();
   const [tests, setTests] = useState<Test[]>([]);
   const { user } = useAuth();
+  const inProgressCacheRef = useRef<Map<string, { value: boolean; ts: number }>>(new Map());
+  const inProgressInflightRef = useRef<Map<string, Promise<boolean>>>(new Map());
+  const IN_PROGRESS_TTL_MS = 60_000; // 60s TTL to reduce test_states load
 
   // Helper to normalize test data from DB
   const normalizeTest = (test: any): Test => {
@@ -62,6 +65,12 @@ export const useTests = () => {
       setTests(queryData);
     }
   }, [queryData]);
+
+  // Clear caches when user changes (prevents cross-user leakage)
+  useEffect(() => {
+    inProgressCacheRef.current.clear();
+    inProgressInflightRef.current.clear();
+  }, [user?.id]);
 
   // Create a new test
   const createTest = async (testData: Partial<Test>) => {
@@ -137,27 +146,52 @@ export const useTests = () => {
   };
 
   const checkTestInProgress = async (testPermalink: string): Promise<boolean> => {
-    if (!user) return false;
-    
-    try {
-      const { data, error } = await supabase
-        .from('test_states')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('test_permalink', testPermalink)
-        .limit(1)
-        .single();
+    if (!user || !testPermalink) return false;
 
-      if (error && error.code !== 'PGRST116') { // PGRST116 is "no rows returned"
-        console.error('Error checking test state:', error);
-        return false;
-      }
+    const key = `${user.id}:${testPermalink}`;
+    const now = Date.now();
 
-      return !!data;
-    } catch (error) {
-      console.error('Error checking test in progress:', error);
-      return false;
+    // 1) Fast path: TTL cache hit
+    const cached = inProgressCacheRef.current.get(key);
+    if (cached && now - cached.ts < IN_PROGRESS_TTL_MS) {
+      return cached.value;
     }
+
+    // 2) Dedupe concurrent requests for same key
+    const inflight = inProgressInflightRef.current.get(key);
+    if (inflight) return inflight;
+
+    const p = (async (): Promise<boolean> => {
+      try {
+        const { data, error } = await supabase
+          .from('test_states')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('test_permalink', testPermalink)
+          .limit(1)
+          .maybeSingle();
+
+        if (error) {
+          console.error('Error checking test state:', error);
+          // Cache a short-lived negative result to avoid hot-looping on transient errors
+          inProgressCacheRef.current.set(key, { value: false, ts: Date.now() });
+          return false;
+        }
+
+        const value = !!data;
+        inProgressCacheRef.current.set(key, { value, ts: Date.now() });
+        return value;
+      } catch (err) {
+        console.error('Error checking test in progress:', err);
+        inProgressCacheRef.current.set(key, { value: false, ts: Date.now() });
+        return false;
+      } finally {
+        inProgressInflightRef.current.delete(key);
+      }
+    })();
+
+    inProgressInflightRef.current.set(key, p);
+    return p;
   };
 
   return {
