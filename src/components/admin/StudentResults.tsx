@@ -63,10 +63,23 @@ const StudentResults = () => {
   const [essayComments, setEssayComments] = useState<string>('');
   const [essayLoading, setEssayLoading] = useState<boolean>(false);
   
-  // Cache for module results and essay grades to prevent repeated queries
-  const moduleResultsCache = useRef<Map<string, { data: any[], timestamp: number }>>(new Map());
-  const essayGradesCache = useRef<Map<string, { data: any | null, timestamp: number }>>(new Map());
-  const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+  // Module-level cache (persists across component remounts)
+  // Using module-level variable instead of useRef to persist across unmounts
+  const moduleResultsCache = (() => {
+    if (!(window as any).__moduleResultsCache) {
+      (window as any).__moduleResultsCache = new Map<string, { data: any[], timestamp: number }>();
+    }
+    return (window as any).__moduleResultsCache;
+  })();
+  
+  const essayGradesCache = (() => {
+    if (!(window as any).__essayGradesCache) {
+      (window as any).__essayGradesCache = new Map<string, { data: any | null, timestamp: number }>();
+    }
+    return (window as any).__essayGradesCache;
+  })();
+  
+  const CACHE_DURATION = 15 * 60 * 1000; // 15 minutes (increased from 5)
   
   // Fetch all student results
   useEffect(() => {
@@ -272,7 +285,7 @@ const StudentResults = () => {
       console.log('🔵 Fetching module results for test_result_id:', resultId);
       
       // Check cache first
-      const cached = moduleResultsCache.current.get(resultId);
+      const cached = moduleResultsCache.get(resultId);
       if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
         console.log('✅ Using cached module results for:', resultId);
         setModuleResults(cached.data);
@@ -300,18 +313,8 @@ const StudentResults = () => {
         throw error;
       }
       
-      // Check cache for essay grade
-      let essayGrade: any | null = null;
-      const cachedEssay = essayGradesCache.current.get(resultId);
-      if (cachedEssay && Date.now() - cachedEssay.timestamp < CACHE_DURATION) {
-        console.log('✅ Using cached essay grade for:', resultId);
-        essayGrade = cachedEssay.data;
-      } else {
-        // Fetch essay grade if not cached
-        essayGrade = await fetchEssayGrade(resultId);
-        // Cache the essay grade
-        essayGradesCache.current.set(resultId, { data: essayGrade, timestamp: Date.now() });
-      }
+      // Fetch essay grade (uses module-level cache in testService)
+      const essayGrade = await fetchEssayGrade(resultId);
       let moduleResultsData = data || [];
       
       if (essayGrade && essayGrade.score !== null) {
@@ -372,7 +375,17 @@ const StudentResults = () => {
       console.log('✅ Fetched module results (deduplicated):', deduplicatedResults);
       
       // Cache the results
-      moduleResultsCache.current.set(resultId, { data: deduplicatedResults, timestamp: Date.now() });
+      moduleResultsCache.set(resultId, { data: deduplicatedResults, timestamp: Date.now() });
+      
+      // Clean up old cache entries (keep cache size reasonable)
+      if (moduleResultsCache.size > 500) {
+        const now = Date.now();
+        for (const [key, value] of moduleResultsCache.entries()) {
+          if (now - value.timestamp > CACHE_DURATION) {
+            moduleResultsCache.delete(key);
+          }
+        }
+      }
       
       setModuleResults(deduplicatedResults);
       
@@ -473,11 +486,29 @@ const StudentResults = () => {
     }
   };
   
+  // Debounce to prevent rapid-fire requests
+  const pendingRequests = useRef<Set<string>>(new Set());
+  
   const handleViewResult = async (result: any) => {
     console.log('🔍 handleViewResult - result.is_completed:', result.is_completed);
     setSelectedResult(result);
-    // Only fetch if not already cached or cache expired
-    await fetchModuleResults(result.id);
+    
+    // Prevent duplicate requests for the same result
+    if (pendingRequests.current.has(result.id)) {
+      console.log('⏸️ Request already pending for:', result.id);
+      setShowResultDetails(true);
+      return;
+    }
+    
+    pendingRequests.current.add(result.id);
+    try {
+      await fetchModuleResults(result.id);
+    } finally {
+      // Remove after a short delay to allow request to complete
+      setTimeout(() => {
+        pendingRequests.current.delete(result.id);
+      }, 1000);
+    }
     setShowResultDetails(true);
     // Load essay answers and existing grade if applicable
     loadEssayData(result);

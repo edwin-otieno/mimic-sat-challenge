@@ -842,13 +842,38 @@ export interface EssayGrade {
   updated_at?: string;
 }
 
+// Module-level cache for essay grades (persists across component remounts)
+const essayGradeCache = new Map<string, { data: EssayGrade | null, timestamp: number }>();
+const ESSAY_CACHE_DURATION = 10 * 60 * 1000; // 10 minutes
+
 export const fetchEssayGrade = async (testResultId: string): Promise<EssayGrade | null> => {
+  // Check cache first
+  const cached = essayGradeCache.get(testResultId);
+  if (cached && Date.now() - cached.timestamp < ESSAY_CACHE_DURATION) {
+    return cached.data;
+  }
+  
+  // Fetch from database
   const { data, error } = await supabase
     .from('essay_grades')
     .select('*')
     .eq('test_result_id', testResultId)
     .maybeSingle();
   if (error) throw error;
+  
+  // Cache the result
+  essayGradeCache.set(testResultId, { data: data as EssayGrade | null, timestamp: Date.now() });
+  
+  // Clean up old cache entries (keep cache size reasonable)
+  if (essayGradeCache.size > 1000) {
+    const now = Date.now();
+    for (const [key, value] of essayGradeCache.entries()) {
+      if (now - value.timestamp > ESSAY_CACHE_DURATION) {
+        essayGradeCache.delete(key);
+      }
+    }
+  }
+  
   return data as EssayGrade | null;
 };
 
