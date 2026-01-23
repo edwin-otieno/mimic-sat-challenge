@@ -40,6 +40,8 @@ const Dashboard = () => {
   }, [tests, selectedCategory]);
 
   useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+    
     const checkAllTestProgress = async () => {
       if (!user || availableTests.length === 0) {
         setLoadingProgress(false);
@@ -49,7 +51,7 @@ const Dashboard = () => {
       const progressStatus: Record<string, boolean> = {};
       const moduleScoresMap: Record<string, Array<{module_id: string, module_name: string, score: number, total: number, scaled_score: number | null}>> = {};
       
-      // First pass: check all test progress
+      // First pass: check all test progress (cached function will dedupe)
       for (const test of availableTests) {
         const testId = test.permalink || test.id;
         try {
@@ -167,7 +169,12 @@ const Dashboard = () => {
       setLoadingProgress(false);
     };
 
-    checkAllTestProgress();
+    // Debounce to prevent rapid re-checks when dependencies change
+    timeoutId = setTimeout(() => {
+      checkAllTestProgress();
+    }, 500); // 500ms debounce
+
+    return () => clearTimeout(timeoutId);
   }, [user, availableTests, checkTestInProgress]);
 
   const startTest = (testId: string) => {
