@@ -37,6 +37,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useTests } from '@/hooks/useTests';
 import { useAuth } from '@/contexts/AuthContext';
 import { fetchEssayGrade, upsertEssayGrade } from '@/services/testService';
+import { EssayDisplayWithPages } from '@/components/EssayDisplayWithPages';
 
 const RESULTS_PER_PAGE = 15;
 
@@ -1264,7 +1265,7 @@ const StudentResults = () => {
                         <div className="text-gray-500">Loading essay...</div>
                       ) : essayText ? (
                         <div className="space-y-4">
-                          <div className="p-4 bg-gray-50 rounded-md whitespace-pre-wrap text-xl">{essayText}</div>
+                          <EssayDisplayWithPages text={essayText} />
                           <div className="flex gap-4 items-end">
                             <div className="w-48">
                               <label className="block text-sm font-medium text-gray-700 mb-1">Score (0-12)</label>

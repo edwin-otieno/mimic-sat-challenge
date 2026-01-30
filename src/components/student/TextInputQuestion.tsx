@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
+import { EssayTextareaWithPages } from '@/components/EssayTextareaWithPages';
 import { QuestionData } from '@/components/Question';
 
 interface TextInputQuestionProps {
@@ -66,7 +66,7 @@ export const TextInputQuestion: React.FC<TextInputQuestionProps> = ({
   return (
     <div className="space-y-4">
       {isEssay ? (
-        <Textarea
+        <EssayTextareaWithPages
           value={answer}
           onChange={handleChange}
           onKeyDown={handleKeyDown}

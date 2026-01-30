@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { supabaseAdmin } from '@/integrations/supabase/admin-client';
@@ -28,7 +28,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from '@/hooks/use-toast';
-import { Pencil, Trash2, Key, ArrowRightLeft } from 'lucide-react';
+import { Pencil, Trash2, Key, ArrowRightLeft, Search } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
 
@@ -60,6 +60,32 @@ const UserManagement = () => {
   const [schools, setSchools] = useState<Array<{ id: string; name: string }>>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalUsers, setTotalUsers] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+  const [sortOrder, setSortOrder] = useState<'name-asc' | 'name-desc' | 'email-asc' | 'email-desc' | 'none'>('none');
+  
+  // Debounce search query to avoid refetching on every keystroke
+  // Clear immediately when search is empty, otherwise debounce
+  useEffect(() => {
+    if (searchQuery === '') {
+      // Clear immediately when search is empty
+      setDebouncedSearchQuery('');
+      return;
+    }
+    
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300); // Wait 300ms after user stops typing
+    
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+  
+  // Reset pagination when search or sort changes
+  useEffect(() => {
+    if (debouncedSearchQuery.trim() !== '' || sortOrder !== 'none') {
+      setCurrentPage(1);
+    }
+  }, [debouncedSearchQuery, sortOrder]);
   
   // Fetch schools
   useEffect(() => {
@@ -84,17 +110,16 @@ const UserManagement = () => {
     fetchSchools();
   }, []);
 
-  // Fetch all users from Supabase profiles table with pagination
+  // Fetch all users from Supabase profiles table
+  // When searching or sorting, fetch all users; otherwise use pagination
+  const shouldFetchAll = debouncedSearchQuery.trim() !== '' || sortOrder !== 'none';
+  
   const { data: users, isLoading, error, refetch } = useQuery({
-    queryKey: ['profiles', currentPage],
+    queryKey: ['profiles', currentPage, debouncedSearchQuery, sortOrder],
     queryFn: async () => {
-      console.log('Fetching users from profiles table');
-      // Calculate pagination range
-      const from = (currentPage - 1) * USERS_PER_PAGE;
-      const to = from + USERS_PER_PAGE - 1;
+      console.log('Fetching users from profiles table', { shouldFetchAll, debouncedSearchQuery, sortOrder });
       
-      // Fetch users with school information and total count
-      const { data, error, count } = await supabase
+      let query = supabase
         .from('profiles')
         .select(`
           id, 
@@ -105,9 +130,20 @@ const UserManagement = () => {
           school_id,
           created_at,
           schools(id, name)
-        `, { count: 'exact' })
-        .order('created_at', { ascending: false })
-        .range(from, to);
+        `, { count: 'exact' });
+      
+      // If searching or sorting, fetch all users; otherwise use pagination
+      if (shouldFetchAll) {
+        // Fetch all users for client-side filtering/sorting
+        query = query.order('created_at', { ascending: false });
+      } else {
+        // Use pagination when not searching/sorting
+        const from = (currentPage - 1) * USERS_PER_PAGE;
+        const to = from + USERS_PER_PAGE - 1;
+        query = query.order('created_at', { ascending: false }).range(from, to);
+      }
+      
+      const { data, error, count } = await query;
       
       if (error) {
         console.error('Error fetching users:', error);
@@ -117,7 +153,7 @@ const UserManagement = () => {
       // Update total users count
       setTotalUsers(count || 0);
       
-      console.log('Fetched users:', data);
+      console.log('Fetched users:', data?.length, 'total:', count);
       return data as User[];
     }
   });
@@ -293,6 +329,54 @@ const UserManagement = () => {
     }
   };
 
+  // Filter and sort users - must be called before any early returns
+  const filteredAndSortedUsers = useMemo(() => {
+    if (!users) return [];
+    
+    let filtered = users;
+    
+    // Apply search filter
+    if (debouncedSearchQuery.trim()) {
+      const query = debouncedSearchQuery.toLowerCase().trim();
+      filtered = users.filter(user => {
+        const fullName = `${user.first_name || ''} ${user.last_name || ''}`.toLowerCase();
+        const email = (user.email || '').toLowerCase();
+        const schoolName = (user.schools?.name || '').toLowerCase();
+        return fullName.includes(query) || email.includes(query) || schoolName.includes(query);
+      });
+    }
+    
+    // Apply sorting
+    if (sortOrder !== 'none') {
+      filtered = [...filtered].sort((a, b) => {
+        if (sortOrder === 'name-asc' || sortOrder === 'name-desc') {
+          const nameA = `${a.first_name || ''} ${a.last_name || ''}`.trim().toLowerCase();
+          const nameB = `${b.first_name || ''} ${b.last_name || ''}`.trim().toLowerCase();
+          const comparison = nameA.localeCompare(nameB);
+          return sortOrder === 'name-asc' ? comparison : -comparison;
+        } else if (sortOrder === 'email-asc' || sortOrder === 'email-desc') {
+          const emailA = (a.email || '').toLowerCase();
+          const emailB = (b.email || '').toLowerCase();
+          const comparison = emailA.localeCompare(emailB);
+          return sortOrder === 'email-asc' ? comparison : -comparison;
+        }
+        return 0;
+      });
+    }
+    
+    return filtered;
+  }, [users, debouncedSearchQuery, sortOrder]);
+
+  const displayedUsersCount = filteredAndSortedUsers.length;
+  // When searching/sorting, show all filtered results; otherwise use pagination
+  const usersToDisplay = shouldFetchAll 
+    ? filteredAndSortedUsers 
+    : filteredAndSortedUsers;
+  
+  const totalPages = shouldFetchAll 
+    ? 1 
+    : Math.ceil(totalUsers / USERS_PER_PAGE);
+
   if (isLoading) {
     return <div className="flex justify-center p-8">Loading users...</div>;
   }
@@ -305,20 +389,55 @@ const UserManagement = () => {
     );
   }
 
-  const totalPages = Math.ceil(totalUsers / USERS_PER_PAGE);
-
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-medium">User Management</h3>
         <p className="text-sm text-gray-500">
-          {totalUsers > 0 
-            ? `Showing ${((currentPage - 1) * USERS_PER_PAGE) + 1} to ${Math.min(currentPage * USERS_PER_PAGE, totalUsers)} of ${totalUsers} users`
-            : 'No users found'}
+          {shouldFetchAll 
+            ? (displayedUsersCount > 0 
+                ? `Showing ${displayedUsersCount} of ${totalUsers} users${debouncedSearchQuery ? ' (filtered)' : ''}`
+                : 'No users found')
+            : (totalUsers > 0 
+                ? `Showing ${((currentPage - 1) * USERS_PER_PAGE) + 1} to ${Math.min(currentPage * USERS_PER_PAGE, totalUsers)} of ${totalUsers} users`
+                : 'No users found')}
         </p>
       </div>
 
-      {users && users.length > 0 ? (
+      {/* Search and Filter Controls */}
+      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+        <div className="relative flex-1 w-full sm:w-auto">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
+          <Input
+            placeholder="Search users by name, email, or camp location..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-8"
+          />
+        </div>
+        <Select value={sortOrder} onValueChange={(value: 'name-asc' | 'name-desc' | 'email-asc' | 'email-desc' | 'none') => setSortOrder(value)}>
+          <SelectTrigger className="w-full sm:w-[200px]">
+            <SelectValue placeholder="Sort by..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">No sorting</SelectItem>
+            <SelectItem value="name-asc">Name (A-Z)</SelectItem>
+            <SelectItem value="name-desc">Name (Z-A)</SelectItem>
+            <SelectItem value="email-asc">Email (A-Z)</SelectItem>
+            <SelectItem value="email-desc">Email (Z-A)</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {debouncedSearchQuery && (
+        <p className="text-sm text-gray-500">
+          {displayedUsersCount === 0 
+            ? 'No users match your search'
+            : `Found ${displayedUsersCount} user${displayedUsersCount === 1 ? '' : 's'}`}
+        </p>
+      )}
+
+      {usersToDisplay && usersToDisplay.length > 0 ? (
         <Table>
           <TableHeader>
             <TableRow>
@@ -330,7 +449,7 @@ const UserManagement = () => {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {users.map((user) => (
+            {usersToDisplay.map((user) => (
               <TableRow key={user.id}>
                 <TableCell className="font-medium">
                   {user.first_name} {user.last_name}
@@ -392,12 +511,14 @@ const UserManagement = () => {
         </Table>
       ) : (
         <div className="text-center p-8 bg-gray-50 rounded-md">
-          <p className="text-gray-500">No users found.</p>
+          <p className="text-gray-500">
+            {searchQuery ? 'No users match your search criteria.' : 'No users found.'}
+          </p>
         </div>
       )}
 
-      {/* Pagination Controls */}
-      {users && users.length > 0 && totalPages > 1 && (
+      {/* Pagination Controls - only show when not searching/sorting */}
+      {!shouldFetchAll && users && users.length > 0 && totalPages > 1 && (
         <div className="flex items-center justify-between mt-4">
           <div className="text-sm text-gray-500">
             Page {currentPage} of {totalPages}
