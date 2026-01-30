@@ -136,29 +136,83 @@ const UserManagement = () => {
           schools(id, name)
         `, { count: 'exact' });
       
-      // If searching or sorting, fetch all users; otherwise use pagination
+      // If searching or sorting, fetch all users in batches; otherwise use pagination
       if (shouldFetchAll) {
         // Fetch all users for client-side filtering/sorting
-        query = query.order('created_at', { ascending: false });
+        // Supabase has a 1000 row limit, so we need to fetch in batches
+        const allUsers: User[] = [];
+        const batchSize = 1000;
+        let from = 0;
+        let hasMore = true;
+        
+        // First, get the total count
+        const { count, error: countError } = await supabase
+          .from('profiles')
+          .select('*', { count: 'exact', head: true });
+        
+        if (countError) {
+          console.error('Error fetching user count:', countError);
+          throw countError;
+        }
+        
+        const totalCount = count || 0;
+        setTotalUsers(totalCount);
+        
+        // Fetch all users in batches
+        while (hasMore) {
+          const to = from + batchSize - 1;
+          const batchQuery = supabase
+            .from('profiles')
+            .select(`
+              id, 
+              email, 
+              first_name, 
+              last_name, 
+              role, 
+              school_id,
+              created_at,
+              schools(id, name)
+            `)
+            .order('created_at', { ascending: false })
+            .range(from, to);
+          
+          const { data: batchData, error: batchError } = await batchQuery;
+          
+          if (batchError) {
+            console.error('Error fetching user batch:', batchError);
+            throw batchError;
+          }
+          
+          if (batchData && batchData.length > 0) {
+            allUsers.push(...(batchData as User[]));
+            from += batchSize;
+            hasMore = batchData.length === batchSize && from < totalCount;
+          } else {
+            hasMore = false;
+          }
+        }
+        
+        console.log('Fetched all users:', allUsers.length, 'total:', totalCount);
+        return allUsers;
       } else {
         // Use pagination when not searching/sorting
         const from = (currentPage - 1) * USERS_PER_PAGE;
         const to = from + USERS_PER_PAGE - 1;
         query = query.order('created_at', { ascending: false }).range(from, to);
+        
+        const { data, error, count } = await query;
+        
+        if (error) {
+          console.error('Error fetching users:', error);
+          throw error;
+        }
+        
+        // Update total users count
+        setTotalUsers(count || 0);
+        
+        console.log('Fetched users:', data?.length, 'total:', count);
+        return data as User[];
       }
-      
-      const { data, error, count } = await query;
-      
-      if (error) {
-        console.error('Error fetching users:', error);
-        throw error;
-      }
-      
-      // Update total users count
-      setTotalUsers(count || 0);
-      
-      console.log('Fetched users:', data?.length, 'total:', count);
-      return data as User[];
     }
   });
 
