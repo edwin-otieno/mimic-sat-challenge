@@ -46,6 +46,7 @@ interface User {
 }
 
 const USERS_PER_PAGE = 100;
+const USERS_PER_PAGE_SORTED = 1000; // Pagination size when sorting without search
 
 const UserManagement = () => {
   const { toast } = useToast();
@@ -111,8 +112,11 @@ const UserManagement = () => {
   }, []);
 
   // Fetch all users from Supabase profiles table
-  // When searching or sorting, fetch all users; otherwise use pagination
-  const shouldFetchAll = debouncedSearchQuery.trim() !== '' || sortOrder !== 'none';
+  // When searching, fetch all users; when sorting without search, fetch all for client-side pagination
+  // Otherwise use server-side pagination
+  const hasSearch = debouncedSearchQuery.trim() !== '';
+  const hasSort = sortOrder !== 'none';
+  const shouldFetchAll = hasSearch || hasSort; // Fetch all when searching or sorting
   
   const { data: users, isLoading, error, refetch } = useQuery({
     queryKey: ['profiles', currentPage, debouncedSearchQuery, sortOrder],
@@ -368,13 +372,27 @@ const UserManagement = () => {
   }, [users, debouncedSearchQuery, sortOrder]);
 
   const displayedUsersCount = filteredAndSortedUsers.length;
-  // When searching/sorting, show all filtered results; otherwise use pagination
-  const usersToDisplay = shouldFetchAll 
-    ? filteredAndSortedUsers 
+  
+  // Determine pagination behavior:
+  // - When searching: show all filtered results (no pagination)
+  // - When sorting without search: paginate sorted results at 1,000 per page
+  // - Otherwise: use server-side pagination at 100 per page
+  const shouldPaginateSorted = hasSort && !hasSearch;
+  const paginationSize = shouldPaginateSorted ? USERS_PER_PAGE_SORTED : USERS_PER_PAGE;
+  
+  // Apply client-side pagination when sorting without search
+  const usersToDisplay = shouldPaginateSorted
+    ? filteredAndSortedUsers.slice(
+        (currentPage - 1) * paginationSize,
+        currentPage * paginationSize
+      )
     : filteredAndSortedUsers;
   
-  const totalPages = shouldFetchAll 
-    ? 1 
+  // Calculate total pages
+  const totalPages = hasSearch
+    ? 1 // No pagination when searching
+    : shouldPaginateSorted
+    ? Math.ceil(filteredAndSortedUsers.length / paginationSize)
     : Math.ceil(totalUsers / USERS_PER_PAGE);
 
   if (isLoading) {
@@ -394,9 +412,13 @@ const UserManagement = () => {
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-medium">User Management</h3>
         <p className="text-sm text-gray-500">
-          {shouldFetchAll 
+          {hasSearch 
             ? (displayedUsersCount > 0 
-                ? `Showing ${displayedUsersCount} of ${totalUsers} users${debouncedSearchQuery ? ' (filtered)' : ''}`
+                ? `Showing ${displayedUsersCount} of ${totalUsers} users (filtered)`
+                : 'No users found')
+            : shouldPaginateSorted
+            ? (filteredAndSortedUsers.length > 0
+                ? `Showing ${((currentPage - 1) * paginationSize) + 1} to ${Math.min(currentPage * paginationSize, filteredAndSortedUsers.length)} of ${filteredAndSortedUsers.length} users (sorted)`
                 : 'No users found')
             : (totalUsers > 0 
                 ? `Showing ${((currentPage - 1) * USERS_PER_PAGE) + 1} to ${Math.min(currentPage * USERS_PER_PAGE, totalUsers)} of ${totalUsers} users`
@@ -512,13 +534,13 @@ const UserManagement = () => {
       ) : (
         <div className="text-center p-8 bg-gray-50 rounded-md">
           <p className="text-gray-500">
-            {searchQuery ? 'No users match your search criteria.' : 'No users found.'}
+            {hasSearch ? 'No users match your search criteria.' : 'No users found.'}
           </p>
         </div>
       )}
 
-      {/* Pagination Controls - only show when not searching/sorting */}
-      {!shouldFetchAll && users && users.length > 0 && totalPages > 1 && (
+      {/* Pagination Controls - show when pagination is needed */}
+      {!hasSearch && users && users.length > 0 && totalPages > 1 && (
         <div className="flex items-center justify-between mt-4">
           <div className="text-sm text-gray-500">
             Page {currentPage} of {totalPages}
