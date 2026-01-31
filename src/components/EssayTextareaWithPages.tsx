@@ -9,8 +9,8 @@ interface EssayTextareaWithPagesProps extends React.TextareaHTMLAttributes<HTMLT
   className?: string;
 }
 
-// Standard page height for essay: 11" page with 1" top and bottom margins = 9" = ~864px at 96 DPI
-const PAGE_HEIGHT_PX = 864;
+// Page breaks after every 15 lines
+const LINES_PER_PAGE = 15;
 
 export const EssayTextareaWithPages: React.FC<EssayTextareaWithPagesProps> = ({
   value,
@@ -23,7 +23,7 @@ export const EssayTextareaWithPages: React.FC<EssayTextareaWithPagesProps> = ({
   const [pageBreaks, setPageBreaks] = useState<number[]>([]);
   const [pageCount, setPageCount] = useState(1);
 
-  // Calculate page breaks based on textarea scroll height
+  // Calculate page breaks based on line count (15 lines per page)
   useEffect(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
@@ -31,21 +31,41 @@ export const EssayTextareaWithPages: React.FC<EssayTextareaWithPagesProps> = ({
     const calculatePageBreaks = () => {
       const computedStyle = window.getComputedStyle(textarea);
       const paddingTop = parseFloat(computedStyle.paddingTop) || 0;
-      const paddingBottom = parseFloat(computedStyle.paddingBottom) || 0;
+      const fontSize = parseFloat(computedStyle.fontSize) || 20; // Default to 20px for text-xl
+      const lineHeight = parseFloat(computedStyle.lineHeight) || fontSize * 1.5;
       
-      // Use the actual scrollHeight of the textarea
-      // This accounts for all text including word wrapping
-      const scrollHeight = textarea.scrollHeight;
-      const contentHeight = scrollHeight - paddingTop - paddingBottom;
+      // Count the number of lines in the text
+      const text = value || '';
+      const lines = text.split('\n');
       
-      // Calculate number of pages
-      const pages = Math.max(1, Math.ceil(contentHeight / PAGE_HEIGHT_PX));
+      // Calculate total lines accounting for word wrapping
+      // We'll use a temporary element to measure actual rendered lines
+      const tempDiv = document.createElement('div');
+      tempDiv.style.position = 'absolute';
+      tempDiv.style.visibility = 'hidden';
+      tempDiv.style.whiteSpace = 'pre-wrap';
+      tempDiv.style.width = `${textarea.clientWidth - parseFloat(computedStyle.paddingLeft) - parseFloat(computedStyle.paddingRight)}px`;
+      tempDiv.style.fontSize = computedStyle.fontSize;
+      tempDiv.style.fontFamily = computedStyle.fontFamily;
+      tempDiv.style.fontWeight = computedStyle.fontWeight;
+      tempDiv.style.letterSpacing = computedStyle.letterSpacing;
+      tempDiv.style.lineHeight = computedStyle.lineHeight;
+      tempDiv.textContent = text;
+      document.body.appendChild(tempDiv);
+      
+      const totalHeight = tempDiv.offsetHeight;
+      const actualLineCount = Math.ceil(totalHeight / lineHeight);
+      document.body.removeChild(tempDiv);
+      
+      // Calculate number of pages (15 lines per page)
+      const pages = Math.max(1, Math.ceil(actualLineCount / LINES_PER_PAGE));
       setPageCount(pages);
       
-      // Calculate page break positions
+      // Calculate page break positions (after lines 15, 30, 45, etc.)
       const breaks: number[] = [];
       for (let i = 1; i < pages; i++) {
-        const breakPosition = paddingTop + (i * PAGE_HEIGHT_PX);
+        const lineNumber = i * LINES_PER_PAGE;
+        const breakPosition = paddingTop + (lineNumber * lineHeight);
         breaks.push(breakPosition);
       }
       setPageBreaks(breaks);

@@ -853,13 +853,16 @@ export const fetchEssayGrade = async (testResultId: string): Promise<EssayGrade 
     return cached.data;
   }
   
-  // Fetch from database
-  const { data, error } = await supabase
+  // Fetch from database - use limit(1) to handle cases where multiple rows might exist
+  const { data: dataArray, error } = await supabase
     .from('essay_grades')
     .select('*')
     .eq('test_result_id', testResultId)
-    .maybeSingle();
+    .order('created_at', { ascending: false }) // Get the most recent one if multiple exist
+    .limit(1);
   if (error) throw error;
+  
+  const data = dataArray?.[0] || null;
   
   // Cache the result
   essayGradeCache.set(testResultId, { data: data as EssayGrade | null, timestamp: Date.now() });
@@ -899,19 +902,23 @@ export const upsertEssayGrade = async (grade: EssayGrade): Promise<EssayGrade> =
   
   if (existing) {
     // Update existing grade
-    ({ data, error } = await supabase
+    const { data: updateDataArray, error: updateError } = await supabase
       .from('essay_grades')
       .update(payload)
       .eq('id', existing.id)
       .select()
-      .single());
+      .limit(1);
+    data = updateDataArray?.[0];
+    error = updateError;
   } else {
     // Insert new grade
-    ({ data, error } = await supabase
+    const { data: insertDataArray, error: insertError } = await supabase
       .from('essay_grades')
       .insert(payload)
       .select()
-      .single());
+      .limit(1);
+    data = insertDataArray?.[0];
+    error = insertError;
   }
     
   if (error) {

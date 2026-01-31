@@ -38,6 +38,9 @@ import { useTests } from '@/hooks/useTests';
 import { useAuth } from '@/contexts/AuthContext';
 import { fetchEssayGrade, upsertEssayGrade } from '@/services/testService';
 import { EssayDisplayWithPages } from '@/components/EssayDisplayWithPages';
+import { Input } from '@/components/ui/input';
+import { Search } from 'lucide-react';
+import { useMemo } from 'react';
 
 const RESULTS_PER_PAGE = 15;
 
@@ -63,6 +66,8 @@ const StudentResults = () => {
   const [essayScore, setEssayScore] = useState<number | ''>('');
   const [essayComments, setEssayComments] = useState<string>('');
   const [essayLoading, setEssayLoading] = useState<boolean>(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   
   // Module-level cache (persists across component remounts)
   // Using module-level variable instead of useRef to persist across unmounts
@@ -81,6 +86,22 @@ const StudentResults = () => {
   })();
   
   const CACHE_DURATION = 15 * 60 * 1000; // 15 minutes (increased from 5)
+  
+  // Debounce search query to avoid refetching on every keystroke
+  // Clear immediately when search is empty, otherwise debounce
+  useEffect(() => {
+    if (searchQuery === '') {
+      // Clear immediately when search is empty
+      setDebouncedSearchQuery('');
+      return;
+    }
+    
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300); // Wait 300ms after user stops typing
+    
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
   
   // Fetch all student results
   useEffect(() => {
@@ -221,10 +242,25 @@ const StudentResults = () => {
     fetchResults();
   }, [selectedTest, selectedStudent, selectedSchool, tests, toast, currentPage]);
   
-  // Reset to first page when filters change
+  // Reset to first page when filters or search change
   useEffect(() => {
     setCurrentPage(1);
-  }, [selectedTest, selectedStudent, selectedSchool]);
+  }, [selectedTest, selectedStudent, selectedSchool, debouncedSearchQuery]);
+  
+  // Filter results based on search query
+  const filteredResults = useMemo(() => {
+    if (!debouncedSearchQuery.trim()) {
+      return results;
+    }
+    
+    const query = debouncedSearchQuery.toLowerCase().trim();
+    return results.filter(result => {
+      const studentName = (result.studentName || '').toLowerCase();
+      const studentEmail = (result.studentEmail || '').toLowerCase();
+      const testName = (result.testName || '').toLowerCase();
+      return studentName.includes(query) || studentEmail.includes(query) || testName.includes(query);
+    });
+  }, [results, debouncedSearchQuery]);
   
   // Debug: Log selectedResult changes
   useEffect(() => {
@@ -246,12 +282,13 @@ const StudentResults = () => {
       let testPermalink = tests.find(t => t.id === testId)?.permalink;
       
       if (!testPermalink) {
-        const { data: testData, error: testFetchError } = await supabase
+        const { data: testDataArray, error: testFetchError } = await supabase
           .from('tests')
           .select('permalink')
           .eq('id', testId)
-          .single();
+          .limit(1); // Use limit(1) instead of single() to handle edge cases gracefully
         
+        const testData = testDataArray?.[0];
         if (testFetchError) {
           console.error('⚠️ Unable to fetch test permalink for reset:', testFetchError);
         } else {
@@ -294,11 +331,22 @@ const StudentResults = () => {
       }
       
       // Fetch test result data first
-      const { data: testResultData } = await supabase
+      const { data: testResultDataArray, error: testResultError } = await supabase
         .from('test_results')
         .select('id, user_id, test_id, is_completed, created_at')
         .eq('id', resultId)
-        .single();
+        .limit(1); // Use limit(1) instead of single() to handle edge cases gracefully
+      
+      if (testResultError) {
+        console.error('❌ Error fetching test result:', testResultError);
+        throw testResultError;
+      }
+      
+      const testResultData = testResultDataArray?.[0];
+      if (!testResultData) {
+        console.error('❌ Test result not found:', resultId);
+        throw new Error('Test result not found');
+      }
       
       console.log('📋 Test result details:', testResultData);
       
@@ -429,11 +477,16 @@ const StudentResults = () => {
             }
             
             // Get current answers to preserve them
-            const { data: currentTestResult } = await supabase
+            const { data: currentTestResultArray, error: currentTestResultError } = await supabase
               .from('test_results')
               .select('answers')
               .eq('id', resultId)
-              .single();
+              .limit(1); // Use limit(1) instead of single() to handle edge cases gracefully
+            
+            const currentTestResult = currentTestResultArray?.[0];
+            if (currentTestResultError) {
+              console.error('⚠️ Error fetching current test result:', currentTestResultError);
+            }
             
             // Update the test result, preserving the answers field
             const { error: updateError } = await supabase
@@ -523,12 +576,13 @@ const StudentResults = () => {
     } else {
       // Fetch test category if not in cache
       try {
-        const { data: testData, error } = await supabase
+        const { data: testDataArray, error } = await supabase
           .from('tests')
           .select('test_category, category')
           .eq('id', result.test_id)
-          .single();
+          .limit(1); // Use limit(1) instead of single() to handle edge cases gracefully
         
+        const testData = testDataArray?.[0];
         if (!error && testData) {
           const category = (testData.test_category || testData.category || 'SAT') as 'SAT' | 'ACT';
           setSelectedTestCategory(category);
@@ -551,11 +605,17 @@ const StudentResults = () => {
       setEssayComments('');
       
       // Load answers field for essay text if present
-      const { data: tr, error } = await supabase
+      const { data: trArray, error } = await supabase
         .from('test_results')
         .select('answers, user_id, test_id')
         .eq('id', result.id)
-        .single();
+        .limit(1); // Use limit(1) instead of single() to handle edge cases gracefully
+      
+      const tr = trArray?.[0];
+      if (error) {
+        console.error('❌ Error fetching test result for essay:', error);
+        // Continue anyway, we'll try to find essay in other test_results
+      }
       
       console.log('📝 Loading essay data for test result:', result.id);
       console.log('📝 Test result data:', tr);
@@ -723,12 +783,13 @@ const StudentResults = () => {
         console.log('📝 Recovery params:', { user_id: tr.user_id, test_id: tr.test_id });
         try {
           // Get the test permalink from test_id
-          const { data: testData, error: testError } = await supabase
+          const { data: testDataArray, error: testError } = await supabase
             .from('tests')
             .select('permalink')
             .eq('id', tr.test_id)
-            .single();
+            .limit(1); // Use limit(1) instead of single() to handle edge cases gracefully
           
+          const testData = testDataArray?.[0];
           if (testError) {
             console.error('⚠️ Error fetching test permalink:', testError);
           }
@@ -946,7 +1007,7 @@ const StudentResults = () => {
           <CardDescription>View and analyze results from student practice tests</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Filter by Student
@@ -1012,6 +1073,26 @@ const StudentResults = () => {
             </div>
           </div>
           
+          {/* Search Input */}
+          <div className="mb-6">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
+              <Input
+                placeholder="Search results by student name, email, or test name..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-8"
+              />
+            </div>
+            {debouncedSearchQuery && (
+              <p className="mt-2 text-sm text-gray-500">
+                {filteredResults.length === 0 
+                  ? 'No results match your search'
+                  : `Found ${filteredResults.length} result${filteredResults.length === 1 ? '' : 's'}`}
+              </p>
+            )}
+          </div>
+          
           {loading ? (
             <div className="space-y-2">
               {[1, 2, 3].map(i => (
@@ -1020,7 +1101,7 @@ const StudentResults = () => {
                 </div>
               ))}
             </div>
-          ) : results.length > 0 ? (
+          ) : filteredResults.length > 0 ? (
             <>
               <div className="rounded-md border">
                 <Table>
@@ -1034,7 +1115,7 @@ const StudentResults = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {results.map(result => (
+                    {filteredResults.map(result => (
                       <TableRow key={result.id}>
                         <TableCell>
                           <div>
@@ -1081,30 +1162,32 @@ const StudentResults = () => {
                 </Table>
               </div>
               
-              {/* Pagination Controls */}
-              <div className="flex items-center justify-between mt-4">
-                <div className="text-sm text-gray-500">
-                  Showing {((currentPage - 1) * RESULTS_PER_PAGE) + 1} to {Math.min(currentPage * RESULTS_PER_PAGE, totalResults)} of {totalResults} results
+              {/* Pagination Controls - only show when not searching */}
+              {!debouncedSearchQuery && (
+                <div className="flex items-center justify-between mt-4">
+                  <div className="text-sm text-gray-500">
+                    Showing {((currentPage - 1) * RESULTS_PER_PAGE) + 1} to {Math.min(currentPage * RESULTS_PER_PAGE, totalResults)} of {totalResults} results
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                      disabled={currentPage === 1}
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                      disabled={currentPage === totalPages}
+                    >
+                      Next
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex items-center space-x-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                    disabled={currentPage === 1}
-                  >
-                    Previous
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                    disabled={currentPage === totalPages}
-                  >
-                    Next
-                  </Button>
-                </div>
-              </div>
+              )}
             </>
           ) : (
             <div className="py-8 text-center">
