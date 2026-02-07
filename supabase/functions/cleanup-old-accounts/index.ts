@@ -44,7 +44,7 @@ serve(async (req) => {
     const deletedAccounts = []
     const errors = []
 
-    // Delete each old student account
+    // Delete each old student account and ALL associated data (test_results -> module_results, essay_grades; test_states; profile; auth)
     for (const profile of oldProfiles) {
       try {
         // Double-check that this is a student account (safety check)
@@ -53,20 +53,44 @@ serve(async (req) => {
           continue
         }
 
-        // First delete from profiles table
+        const userId = profile.id
+
+        // 1) Delete test_results for this user first (CASCADE deletes module_results and essay_grades for those results)
+        const { error: testResultsDeleteError } = await supabaseClient
+          .from('test_results')
+          .delete()
+          .eq('user_id', userId)
+
+        if (testResultsDeleteError) {
+          errors.push(`Error deleting test_results for user ${profile.email}: ${testResultsDeleteError.message}`)
+          continue
+        }
+
+        // 2) Delete test_states for this user
+        const { error: testStatesDeleteError } = await supabaseClient
+          .from('test_states')
+          .delete()
+          .eq('user_id', userId)
+
+        if (testStatesDeleteError) {
+          errors.push(`Error deleting test_states for user ${profile.email}: ${testStatesDeleteError.message}`)
+          continue
+        }
+
+        // 3) Delete from profiles table
         const { error: profileDeleteError } = await supabaseClient
           .from('profiles')
           .delete()
-          .eq('id', profile.id)
+          .eq('id', userId)
 
         if (profileDeleteError) {
           errors.push(`Error deleting profile for user ${profile.email}: ${profileDeleteError.message}`)
           continue
         }
 
-        // Then delete the auth user
+        // 4) Finally delete the auth user
         const { error: authDeleteError } = await supabaseClient.auth.admin.deleteUser(
-          profile.id
+          userId
         )
 
         if (authDeleteError) {

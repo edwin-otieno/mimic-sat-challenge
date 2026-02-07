@@ -1,5 +1,4 @@
 import { supabaseAdmin } from '@/integrations/supabase/admin-client';
-import { supabase } from '@/integrations/supabase/client';
 
 /**
  * Deletes student accounts that are more than 6 months old
@@ -30,7 +29,7 @@ export const cleanupOldStudentAccounts = async () => {
 
     console.log(`Found ${oldProfiles.length} old student accounts to delete`);
 
-    // Delete each old student account
+    // Delete each old student account and ALL associated data (test_results -> module_results, essay_grades; test_states; profile; auth)
     for (const profile of oldProfiles) {
       try {
         // Double-check that this is a student account (safety check)
@@ -39,20 +38,44 @@ export const cleanupOldStudentAccounts = async () => {
           continue;
         }
 
-        // First delete from profiles table
+        const userId = profile.id;
+
+        // 1) Delete test_results for this user first (CASCADE deletes module_results and essay_grades for those results)
+        const { error: testResultsDeleteError } = await supabaseAdmin
+          .from('test_results')
+          .delete()
+          .eq('user_id', userId);
+
+        if (testResultsDeleteError) {
+          console.error(`Error deleting test_results for user ${profile.email}:`, testResultsDeleteError);
+          continue;
+        }
+
+        // 2) Delete test_states for this user
+        const { error: testStatesDeleteError } = await supabaseAdmin
+          .from('test_states')
+          .delete()
+          .eq('user_id', userId);
+
+        if (testStatesDeleteError) {
+          console.error(`Error deleting test_states for user ${profile.email}:`, testStatesDeleteError);
+          continue;
+        }
+
+        // 3) Delete from profiles table
         const { error: profileDeleteError } = await supabaseAdmin
           .from('profiles')
           .delete()
-          .eq('id', profile.id);
+          .eq('id', userId);
 
         if (profileDeleteError) {
           console.error(`Error deleting profile for user ${profile.email}:`, profileDeleteError);
           continue;
         }
 
-        // Then delete the auth user
+        // 4) Finally delete the auth user
         const { error: authDeleteError } = await supabaseAdmin.auth.admin.deleteUser(
-          profile.id
+          userId
         );
 
         if (authDeleteError) {
