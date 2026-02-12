@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { 
   Card, 
@@ -43,12 +44,11 @@ import { Search } from 'lucide-react';
 import { useMemo } from 'react';
 
 const RESULTS_PER_PAGE = 15;
+const RESULTS_BATCH_SIZE = 1000;
 
 const StudentResults = () => {
   const { toast } = useToast();
   const { tests } = useTests();
-  const [loading, setLoading] = useState(true);
-  const [results, setResults] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
   const [schools, setSchools] = useState<any[]>([]);
   const [selectedTest, setSelectedTest] = useState<string>('all');
@@ -102,145 +102,145 @@ const StudentResults = () => {
     
     return () => clearTimeout(timer);
   }, [searchQuery]);
-  
-  // Fetch all student results
+
+  // When searching, fetch all results (entire DB matching filters); otherwise use pagination — same pattern as User Management
+  const hasSearch = debouncedSearchQuery.trim() !== '';
+
+  // Fetch students and schools once for dropdowns
   useEffect(() => {
-    const fetchResults = async () => {
-      try {
-        setLoading(true);
-        
-        // Get students
-        const { data: studentsData, error: studentsError } = await supabase
+    const fetchStudentsAndSchools = async () => {
+      const { data: studentsData, error: studentsError } = await supabase
+        .from('profiles')
+        .select('id, first_name, last_name, email, school_id')
+        .eq('role', 'student');
+      if (!studentsError) setStudents(studentsData || []);
+
+      const { data: schoolsData, error: schoolsError } = await supabase
+        .from('schools')
+        .select('id, name')
+        .order('name', { ascending: true });
+      if (!schoolsError) setSchools(schoolsData || []);
+    };
+    fetchStudentsAndSchools();
+  }, []);
+
+  const { data: results = [], isLoading, error: resultsError } = useQuery({
+    queryKey: ['studentResults', selectedTest, selectedStudent, selectedSchool, currentPage, hasSearch],
+    queryFn: async () => {
+      let schoolStudentIds: string[] | null = null;
+      if (selectedSchool !== 'all') {
+        const { data: schoolStudents, error: schoolErr } = await supabase
           .from('profiles')
-          .select('id, first_name, last_name, email, school_id')
-          .eq('role', 'student');
-          
-        if (studentsError) {
-          throw studentsError;
-        }
-        
-        setStudents(studentsData || []);
-        
-        // Get schools
-        const { data: schoolsData, error: schoolsError } = await supabase
-          .from('schools')
-          .select('id, name')
-          .order('name', { ascending: true });
-          
-        if (schoolsError) {
-          console.error('Error fetching schools:', schoolsError);
-        } else {
-          setSchools(schoolsData || []);
-        }
-        
-        // Get test results based on filters (including in-progress tests)
-        let query = supabase
-          .from('test_results')
-          .select('id, test_id, user_id, total_score, total_questions, scaled_score, created_at, time_taken, is_completed', { count: 'exact' });
-          
-        if (selectedStudent !== 'all') {
-          query = query.eq('user_id', selectedStudent);
-        }
-        
-        if (selectedTest !== 'all') {
-          query = query.eq('test_id', selectedTest);
-        }
-        
-        // Filter by school if selected
-        if (selectedSchool !== 'all') {
-          // First, get all student IDs for the selected school
-          const { data: schoolStudents, error: schoolStudentsError } = await supabase
-            .from('profiles')
-            .select('id')
-            .eq('role', 'student')
-            .eq('school_id', selectedSchool);
-          
-          if (schoolStudentsError) {
-            console.error('Error fetching school students:', schoolStudentsError);
-          } else if (schoolStudents && schoolStudents.length > 0) {
-            const studentIds = schoolStudents.map(s => s.id);
-            query = query.in('user_id', studentIds);
+          .select('id')
+          .eq('role', 'student')
+          .eq('school_id', selectedSchool);
+        if (!schoolErr && schoolStudents?.length) schoolStudentIds = schoolStudents.map(s => s.id);
+      }
+
+      let baseQuery = supabase
+        .from('test_results')
+        .select('id, test_id, user_id, total_score, total_questions, scaled_score, created_at, time_taken, is_completed', { count: 'exact' })
+        .order('created_at', { ascending: false });
+
+      if (selectedStudent !== 'all') baseQuery = baseQuery.eq('user_id', selectedStudent);
+      if (selectedTest !== 'all') baseQuery = baseQuery.eq('test_id', selectedTest);
+      if (selectedSchool !== 'all') {
+        if (schoolStudentIds?.length) baseQuery = baseQuery.in('user_id', schoolStudentIds);
+        else baseQuery = baseQuery.eq('user_id', '00000000-0000-0000-0000-000000000000');
+      }
+
+      let rawData: any[] = [];
+      let totalCount = 0;
+
+      if (hasSearch) {
+        // Fetch ALL in batches (like User Management) for client-side search
+        let from = 0;
+        let hasMore = true;
+        while (hasMore) {
+          let batchQuery = supabase
+            .from('test_results')
+            .select('id, test_id, user_id, total_score, total_questions, scaled_score, created_at, time_taken, is_completed')
+            .order('created_at', { ascending: false })
+            .range(from, from + RESULTS_BATCH_SIZE - 1);
+          if (selectedStudent !== 'all') batchQuery = batchQuery.eq('user_id', selectedStudent);
+          if (selectedTest !== 'all') batchQuery = batchQuery.eq('test_id', selectedTest);
+          if (selectedSchool !== 'all') {
+            if (schoolStudentIds?.length) batchQuery = batchQuery.in('user_id', schoolStudentIds);
+            else batchQuery = batchQuery.eq('user_id', '00000000-0000-0000-0000-000000000000');
+          }
+          const { data: batchData, error: batchError } = await batchQuery;
+          if (batchError) throw batchError;
+          if (batchData?.length) {
+            rawData = rawData.concat(batchData);
+            from += RESULTS_BATCH_SIZE;
+            hasMore = batchData.length === RESULTS_BATCH_SIZE;
           } else {
-            // No students in this school, return empty results
-            query = query.eq('user_id', '00000000-0000-0000-0000-000000000000'); // Non-existent ID
+            hasMore = false;
           }
         }
-        
-        // Add pagination
+      } else {
         const from = (currentPage - 1) * RESULTS_PER_PAGE;
         const to = from + RESULTS_PER_PAGE - 1;
-        query = query.range(from, to).order('created_at', { ascending: false });
-        
-        const { data, error, count } = await query;
-        
-        if (error) {
-          throw error;
-        }
-        
-        setTotalResults(count || 0);
-        
-        // Deduplicate results per user/test combo but always keep the newest attempt
-        const dedupMap = new Map<string, any>();
-        (data || []).forEach(current => {
-          const key = `${current.user_id}-${current.test_id}`;
-          const existing = dedupMap.get(key);
-          if (!existing) {
-            dedupMap.set(key, current);
-            return;
-          }
-          
-          const currentDate = new Date(current.created_at);
-          const existingDate = new Date(existing.created_at);
-          
-          if (currentDate > existingDate) {
-            dedupMap.set(key, current);
-          }
-        });
-        const deduplicatedData = Array.from(dedupMap.values())
-          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-        
-        // OPTIMIZED: Batch fetch all user profiles in one query (fixes N+1 problem)
-        const uniqueUserIds = [...new Set(deduplicatedData.map(r => r.user_id))];
-        const { data: allProfiles } = await supabase
+        const { data, error, count } = await baseQuery.range(from, to);
+        if (error) throw error;
+        rawData = data || [];
+        totalCount = count || 0;
+      }
+
+      const dedupMap = new Map<string, any>();
+      rawData.forEach(current => {
+        const key = `${current.user_id}-${current.test_id}`;
+        const existing = dedupMap.get(key);
+        if (!existing || new Date(current.created_at) > new Date(existing.created_at)) dedupMap.set(key, current);
+      });
+      const deduplicatedData = Array.from(dedupMap.values())
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+      setTotalResults(hasSearch ? deduplicatedData.length : totalCount);
+
+      // Batch fetch profiles to avoid URL length limits (max ~100 IDs per query)
+      const uniqueUserIds = [...new Set(deduplicatedData.map(r => r.user_id))];
+      const PROFILE_BATCH_SIZE = 100;
+      const allProfiles: any[] = [];
+      
+      for (let i = 0; i < uniqueUserIds.length; i += PROFILE_BATCH_SIZE) {
+        const batchIds = uniqueUserIds.slice(i, i + PROFILE_BATCH_SIZE);
+        const { data: batchProfiles, error: profileError } = await supabase
           .from('profiles')
           .select('id, first_name, last_name, email')
-          .in('id', uniqueUserIds);
+          .in('id', batchIds);
         
-        // Create a map of profiles by user_id for quick lookup
-        const profilesMap = new Map((allProfiles || []).map(p => [p.id, p]));
-        
-        // Format results using cached profiles
-        const formattedResults = deduplicatedData.map(result => {
-          const profileData = profilesMap.get(result.user_id);
-          
-          return {
-            ...result,
-            studentName: profileData 
-              ? `${profileData.first_name || ''} ${profileData.last_name || ''}`.trim() || 'No Name'
-              : 'Unknown User',
-            studentEmail: profileData?.email || 'N/A',
-            testName: tests.find(test => test.id === result.test_id)?.title || result.test_id,
-            completedAt: new Date(result.created_at).toLocaleString(),
-            score: `${result.total_score}/${result.total_questions}`,
-            percentage: result.total_questions > 0 ? Math.round((result.total_score / result.total_questions) * 100) : 0,
-            is_completed: result.is_completed !== null && result.is_completed !== undefined ? result.is_completed : true // Default to true for backward compatibility, but preserve false values
-          };
-        });
-        
-        setResults(formattedResults);
-      } catch (error: any) {
-        toast({ 
-          title: "Error", 
-          description: "Failed to load student results: " + error.message,
-          variant: "destructive" 
-        });
-      } finally {
-        setLoading(false);
+        if (profileError) {
+          console.error('Error fetching profile batch:', profileError);
+          // Continue with other batches even if one fails
+        } else if (batchProfiles) {
+          allProfiles.push(...batchProfiles);
+        }
       }
-    };
-    
-    fetchResults();
-  }, [selectedTest, selectedStudent, selectedSchool, tests, toast, currentPage]);
+      
+      const profilesMap = new Map(allProfiles.map(p => [p.id, p]));
+
+      return deduplicatedData.map(result => {
+        const profileData = profilesMap.get(result.user_id);
+        return {
+          ...result,
+          studentName: profileData ? `${profileData.first_name || ''} ${profileData.last_name || ''}`.trim() || 'No Name' : 'Unknown User',
+          studentEmail: profileData?.email || 'N/A',
+          testName: tests.find(t => t.id === result.test_id)?.title || result.test_id,
+          completedAt: new Date(result.created_at).toLocaleString(),
+          score: `${result.total_score}/${result.total_questions}`,
+          percentage: result.total_questions > 0 ? Math.round((result.total_score / result.total_questions) * 100) : 0,
+          is_completed: result.is_completed !== null && result.is_completed !== undefined ? result.is_completed : true
+        };
+      });
+    }
+  });
+
+  useEffect(() => {
+    if (resultsError) {
+      toast({ title: 'Error', description: 'Failed to load student results: ' + (resultsError as Error).message, variant: 'destructive' });
+    }
+  }, [resultsError, toast]);
   
   // Reset to first page when filters or search change
   useEffect(() => {
@@ -274,8 +274,8 @@ const StudentResults = () => {
     }
   }, [selectedResult]);
   
-  // Calculate total pages
-  const totalPages = Math.ceil(totalResults / RESULTS_PER_PAGE);
+  // When searching: no pagination (show all filtered). Otherwise use server-side total.
+  const totalPages = hasSearch ? 1 : Math.ceil(totalResults / RESULTS_PER_PAGE);
   
   const resetStudentTestState = async (userId: string, testId: string) => {
     try {
@@ -1084,16 +1084,16 @@ const StudentResults = () => {
                 className="pl-8"
               />
             </div>
-            {debouncedSearchQuery && (
+            {debouncedSearchQuery && !isLoading && (
               <p className="mt-2 text-sm text-gray-500">
                 {filteredResults.length === 0 
                   ? 'No results match your search'
-                  : `Found ${filteredResults.length} result${filteredResults.length === 1 ? '' : 's'}`}
+                  : `Showing ${filteredResults.length} of ${totalResults} result${totalResults === 1 ? '' : 's'} (filtered)`}
               </p>
             )}
           </div>
           
-          {loading ? (
+          {isLoading ? (
             <div className="space-y-2">
               {[1, 2, 3].map(i => (
                 <div key={i} className="flex items-center space-x-4">
