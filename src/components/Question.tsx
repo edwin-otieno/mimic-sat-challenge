@@ -74,6 +74,10 @@ const Question: React.FC<QuestionProps> = ({
   onToggleUnmask,
   sequentialQuestionNumber,
 }) => {
+  const shouldShowExplanation =
+    !!question.explanation &&
+    (showExplanation || (testCategory === 'SAT' && question.module_type === 'math'));
+
   const handleOptionClick = (optionId: string) => {
     onAnswerChange(optionId);
   };
@@ -223,6 +227,21 @@ const Question: React.FC<QuestionProps> = ({
           disabled={showExplanation}
           isSubmitted={showExplanation}
         />
+        {shouldShowExplanation && (
+          <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-100">
+            <h4 className="font-semibold text-blue-800 mb-2">Explanation:</h4>
+            <div className="whitespace-pre-wrap italic">
+              {!isAdmin ? (
+                <TextHighlighter
+                  text={typeof question.explanation === 'string' ? question.explanation : String(question.explanation || '')}
+                  readOnly={true}
+                />
+              ) : (
+                renderFormattedText(typeof question.explanation === 'string' ? question.explanation : String(question.explanation || ''))
+              )}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -368,7 +387,7 @@ const Question: React.FC<QuestionProps> = ({
           </div>
         </div>
         
-        {question.explanation && (
+        {shouldShowExplanation && (
           <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-100">
             <h4 className="font-semibold text-blue-800 mb-2">Explanation:</h4>
             <div className="whitespace-pre-wrap italic">
@@ -500,7 +519,7 @@ const Question: React.FC<QuestionProps> = ({
         })}
       </div>
       
-      {question.explanation && (
+        {shouldShowExplanation && (
         <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-100">
           <h4 className="font-semibold text-blue-800 mb-2">Explanation:</h4>
           <div className="whitespace-pre-wrap italic">
