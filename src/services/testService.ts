@@ -14,6 +14,27 @@ const generateUUID = () => {
   });
 };
 
+const normalizeTestVariant = (variant?: string | null): 'full' | 'mini' => {
+  return variant === 'mini' ? 'mini' : 'full';
+};
+
+const normalizeTestCategory = (
+  category?: string | null,
+  testCategory?: string | null
+): 'SAT' | 'ACT' => {
+  const value = (category || testCategory || 'SAT').toUpperCase();
+  return value === 'ACT' ? 'ACT' : 'SAT';
+};
+
+const mapDbTestToFrontend = (test: Record<string, any>): Test => {
+  return {
+    ...test,
+    test_category: normalizeTestCategory(test.category, test.test_category),
+    test_variant: normalizeTestVariant(test.test_variant),
+    source_test_id: test.source_test_id || null,
+  } as Test;
+};
+
 const convertDbQuestionToQuestionData = (
   question: any, 
   options: any[]
@@ -389,6 +410,147 @@ export const deleteQuestion = async (questionId: string) => {
   }
 };
 
+export const cloneQuestionsFromTest = async (sourceTestId: string, targetTestId: string) => {
+  if (!sourceTestId || !targetTestId) {
+    throw new Error('Source test and target test are required');
+  }
+
+  if (sourceTestId === targetTestId) {
+    throw new Error('Source and target tests must be different');
+  }
+
+  const [{ data: sourceTest, error: sourceTestError }, { data: targetTest, error: targetTestError }] = await Promise.all([
+    supabase.from('tests').select('id, category, test_category').eq('id', sourceTestId).single(),
+    supabase.from('tests').select('id, category, test_category').eq('id', targetTestId).single()
+  ]);
+
+  if (sourceTestError || !sourceTest) {
+    throw new Error('Source test not found');
+  }
+
+  if (targetTestError || !targetTest) {
+    throw new Error('Target test not found');
+  }
+
+  const sourceCategory = sourceTest.category || sourceTest.test_category || 'SAT';
+  const targetCategory = targetTest.category || targetTest.test_category || 'SAT';
+  if (sourceCategory !== targetCategory) {
+    throw new Error('Source test category must match target test category');
+  }
+
+  // Replace previously imported or authored questions to keep mini tests deterministic.
+  await supabase.from('passages').delete().eq('test_id', targetTestId);
+  await supabase.from('test_questions').delete().eq('test_id', targetTestId);
+
+  const { data: sourcePassages, error: sourcePassagesError } = await supabase
+    .from('passages')
+    .select('*')
+    .eq('test_id', sourceTestId)
+    .order('passage_order', { ascending: true });
+
+  if (sourcePassagesError) {
+    throw sourcePassagesError;
+  }
+
+  const passageIdMap = new Map<string, string>();
+  if (sourcePassages && sourcePassages.length > 0) {
+    const clonedPassages = sourcePassages.map((passage) => {
+      const newId = generateUUID();
+      passageIdMap.set(passage.id, newId);
+      return {
+        id: newId,
+        test_id: targetTestId,
+        module_type: passage.module_type,
+        title: passage.title,
+        content: passage.content,
+        passage_order: passage.passage_order
+      };
+    });
+
+    const { error: insertPassagesError } = await supabase
+      .from('passages')
+      .insert(clonedPassages);
+
+    if (insertPassagesError) {
+      throw insertPassagesError;
+    }
+  }
+
+  const { data: sourceQuestions, error: sourceQuestionsError } = await supabase
+    .from('test_questions')
+    .select('*')
+    .eq('test_id', sourceTestId)
+    .order('question_order', { ascending: true });
+
+  if (sourceQuestionsError) {
+    throw sourceQuestionsError;
+  }
+
+  if (!sourceQuestions || sourceQuestions.length === 0) {
+    return { questionsCloned: 0, optionsCloned: 0, passagesCloned: sourcePassages?.length || 0 };
+  }
+
+  const questionIdMap = new Map<string, string>();
+  const clonedQuestions = sourceQuestions.map((question) => {
+    const newId = generateUUID();
+    questionIdMap.set(question.id, newId);
+    return {
+      id: newId,
+      test_id: targetTestId,
+      passage_id: question.passage_id ? passageIdMap.get(question.passage_id) || null : null,
+      text: question.text,
+      explanation: question.explanation,
+      module_type: question.module_type,
+      question_type: question.question_type,
+      image_url: question.image_url,
+      correct_answer: question.correct_answer,
+      question_number: question.question_number,
+      question_order: question.question_order,
+      sentence_references: question.sentence_references
+    };
+  });
+
+  const { error: insertQuestionsError } = await supabase
+    .from('test_questions')
+    .insert(clonedQuestions);
+
+  if (insertQuestionsError) {
+    throw insertQuestionsError;
+  }
+
+  const { data: sourceOptions, error: sourceOptionsError } = await supabase
+    .from('test_question_options')
+    .select('*')
+    .in('question_id', sourceQuestions.map((q) => q.id));
+
+  if (sourceOptionsError) {
+    throw sourceOptionsError;
+  }
+
+  const clonedOptions = (sourceOptions || []).map((option) => ({
+    id: generateUUID(),
+    question_id: questionIdMap.get(option.question_id),
+    text: option.text,
+    is_correct: option.is_correct
+  })).filter((option) => !!option.question_id);
+
+  if (clonedOptions.length > 0) {
+    const { error: insertOptionsError } = await supabase
+      .from('test_question_options')
+      .insert(clonedOptions);
+
+    if (insertOptionsError) {
+      throw insertOptionsError;
+    }
+  }
+
+  return {
+    questionsCloned: clonedQuestions.length,
+    optionsCloned: clonedOptions.length,
+    passagesCloned: sourcePassages?.length || 0
+  };
+};
+
 // --- TEST CRUD LOGIC ---
 
 // Get all tests from the database
@@ -428,8 +590,7 @@ export const getTests = async () => {
       }
       
       return {
-        ...test,
-        test_category: test.category || 'SAT', // Map category to test_category
+        ...mapDbTestToFrontend(test),
         modules: modules,
         scaled_scoring: scaledScoring || []
       };
@@ -456,12 +617,18 @@ export const createTestInDb = async (test: Test): Promise<Test> => {
     
     console.log('Generated permalink:', permalink);
     
-    const { test_category, ...testWithoutCategory } = test;
+    const { test_category, test_variant, source_test_id, ...testWithoutCategory } = test;
+    const resolvedCategory = normalizeTestCategory(test_category);
     const { data, error } = await supabase
       .from('tests')
       .insert([{
         ...testWithoutCategory,
-        category: test.test_category || 'SAT', // Map test_category to category for database
+        category: resolvedCategory,
+        test_category: resolvedCategory,
+        test_variant: normalizeTestVariant(test_variant),
+        source_test_id: source_test_id || null,
+        modules: test.modules ? JSON.stringify(test.modules) : null,
+        scaled_scoring: test.scaled_scoring ? JSON.stringify(test.scaled_scoring) : null,
         permalink,
         created_at: new Date().toISOString()
       }])
@@ -474,11 +641,7 @@ export const createTestInDb = async (test: Test): Promise<Test> => {
     }
     
     console.log('Test created successfully:', data);
-    // Map category back to test_category for consistency with frontend
-    return {
-      ...data,
-      test_category: data.category || 'SAT'
-    };
+    return mapDbTestToFrontend(data);
   } catch (error) {
     console.error('Error in createTestInDb:', error);
     throw error;
@@ -521,11 +684,14 @@ export const updateTestInDb = async (test) => {
   }
 
   // Prepare the test object for Supabase
-  const { test_category, ...testWithoutCategory } = test;
+  const { test_category, test_variant, source_test_id, ...testWithoutCategory } = test;
+  const resolvedCategory = normalizeTestCategory(test_category);
   const preparedTest = {
     ...testWithoutCategory,
-    // Map test_category to category for database
-    category: test.test_category || 'SAT',
+    category: resolvedCategory,
+    test_category: resolvedCategory,
+    test_variant: normalizeTestVariant(test_variant),
+    source_test_id: source_test_id || null,
     // Ensure modules and scaled_scoring are properly stringified
     modules: test.modules ? JSON.stringify(test.modules) : null,
     scaled_scoring: test.scaled_scoring ? JSON.stringify(test.scaled_scoring) : null,
@@ -580,10 +746,7 @@ export const updateTestInDb = async (test) => {
   }
   
   // Map category back to test_category for consistency with frontend
-  const mappedResult = {
-    ...updatedTest,
-    test_category: updatedTest.category || 'SAT'
-  };
+  const mappedResult = mapDbTestToFrontend(updatedTest);
   
   console.log('Mapped result for frontend:', JSON.stringify(mappedResult, null, 2));
   console.log('=== END UPDATE TEST DEBUG ===');
@@ -794,8 +957,7 @@ export const getTestWithQuestionsOptimized = async (testIdentifier: string): Pro
     
     const result = { 
       test: {
-        ...testResult.data,
-        test_category: testResult.data.category || testResult.data.test_category || 'SAT', // Map category to test_category
+        ...mapDbTestToFrontend(testResult.data),
         modules: parsedModules,
         scaled_scoring: parsedScaledScoring
       },

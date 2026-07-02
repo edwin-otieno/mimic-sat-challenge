@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import Header from "@/components/Header";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTests } from "@/hooks/useTests";
@@ -40,7 +41,9 @@ const Dashboard = () => {
   }, [tests, selectedCategory]);
 
   useEffect(() => {
-    let timeoutId: NodeJS.Timeout;
+    const timeoutId: NodeJS.Timeout = setTimeout(() => {
+      checkAllTestProgress();
+    }, 500); // 500ms debounce
     
     const checkAllTestProgress = async () => {
       if (!user || availableTests.length === 0) {
@@ -169,11 +172,6 @@ const Dashboard = () => {
       setLoadingProgress(false);
     };
 
-    // Debounce to prevent rapid re-checks when dependencies change
-    timeoutId = setTimeout(() => {
-      checkAllTestProgress();
-    }, 500); // 500ms debounce
-
     return () => clearTimeout(timeoutId);
   }, [user, availableTests, checkTestInProgress]);
 
@@ -213,6 +211,16 @@ const Dashboard = () => {
     const inProgress = testProgressStatus[testId];
     const completedScores = testModuleScores[testId] || [];
     const isACT = test.test_category === 'ACT';
+    const isMini = (test.test_variant || 'full') === 'mini';
+    const isMiniSat = isMini && test.test_category === 'SAT';
+    const moduleCount = isACT
+      ? 5
+      : isMiniSat
+        ? (test.modules?.length || 2)
+        : ((test.modules?.length || 2) * 2);
+    const moduleTypeDisplay = isMiniSat
+      ? (test.modules?.map((m) => m.name).join(', ') || 'Reading & Writing, Math')
+      : test.modules?.map((m) => m.type.split('_')[0]).join(', ');
     
     return (
       <Card key={test.id} className="hover:shadow-md transition-shadow">
@@ -228,7 +236,7 @@ const Dashboard = () => {
                   ? 'bg-blue-100 text-blue-800' 
                   : 'bg-green-100 text-green-800'
               }`}>
-                {test.test_category || 'SAT'}
+                {test.test_category || 'SAT'} {isMini ? 'Mini' : 'Full'}
               </span>
             </div>
           </div>
@@ -242,11 +250,11 @@ const Dashboard = () => {
           <div className="flex justify-between text-xs sm:text-sm gap-2 sm:gap-4 mb-3">
             <div className="flex flex-col">
               <span className="font-semibold text-gray-700">{isACT ? 'Sections' : 'Modules'}</span>
-              <span className="break-words">{test.test_category === 'ACT' ? 5 : ((test.modules?.length || 2) * 2)}</span>
+              <span className="break-words">{moduleCount}</span>
             </div>
             <div className="flex flex-col">
               <span className="font-semibold text-gray-700">Type</span>
-              <span className="break-words text-xs">{test.modules?.map(m => m.type.split('_')[0]).join(', ')}</span>
+              <span className="break-words text-xs">{moduleTypeDisplay}</span>
             </div>
             <div className="flex flex-col">
               <span className="font-semibold text-gray-700">Status</span>
@@ -285,8 +293,27 @@ const Dashboard = () => {
     );
   };
 
-  const satTests = availableTests.filter(t => t.test_category !== 'ACT');
-  const actTests = availableTests.filter(t => t.test_category === 'ACT');
+  const satFullTests = availableTests.filter(t => t.test_category === 'SAT' && (t.test_variant || 'full') !== 'mini');
+  const actFullTests = availableTests.filter(t => t.test_category === 'ACT' && (t.test_variant || 'full') !== 'mini');
+  const comboCampTests = availableTests.filter(t => (t.test_variant || 'full') === 'mini');
+
+  const renderTestGrid = (sectionTests: Test[]) => (
+    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 pt-2">
+      {sectionTests.map((test) => renderTestCard(test))}
+    </div>
+  );
+
+  const dashboardSections = [
+    selectedCategory !== 'SAT' && actFullTests.length > 0
+      ? { id: 'act-tests', title: 'ACT Tests', tests: actFullTests }
+      : null,
+    selectedCategory !== 'ACT' && satFullTests.length > 0
+      ? { id: 'sat-tests', title: 'SAT Tests', tests: satFullTests }
+      : null,
+    comboCampTests.length > 0
+      ? { id: 'combo-camp-tests', title: 'Combo Camp Tests', tests: comboCampTests }
+      : null,
+  ].filter(Boolean) as Array<{ id: string; title: string; tests: Test[] }>;
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -333,26 +360,22 @@ const Dashboard = () => {
           </div>
           
           {availableTests.length > 0 ? (
-            <>
-              {/* ACT Section */}
-              {selectedCategory !== 'SAT' && actTests.length > 0 && (
-                <div>
-                  <h4 className="font-semibold mb-2" style={{ fontSize: '2rem' }}>ACT Tests</h4>
-                  <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {actTests.map((test) => renderTestCard(test))}
-                  </div>
-                </div>
-              )}
-              {/* SAT Section - starts on a new row */}
-              {selectedCategory !== 'ACT' && satTests.length > 0 && (
-                <div className="mt-6">
-                  <h4 className="font-semibold mb-2" style={{ fontSize: '2rem' }}>SAT Tests</h4>
-                  <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {satTests.map((test) => renderTestCard(test))}
-                  </div>
-                </div>
-              )}
-            </>
+            <Accordion type="multiple" className="space-y-2">
+              {dashboardSections.map((section) => (
+                <AccordionItem
+                  key={section.id}
+                  value={section.id}
+                  className="border rounded-lg px-4 bg-white shadow-sm"
+                >
+                  <AccordionTrigger className="text-2xl font-semibold uppercase tracking-wide hover:no-underline py-5">
+                    {section.title}
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    {renderTestGrid(section.tests)}
+                  </AccordionContent>
+                </AccordionItem>
+              ))}
+            </Accordion>
           ) : (
             <div className="text-center p-8 bg-gray-50 rounded-lg border border-dashed">
               <p className="text-gray-500">No tests available at the moment. Please check back later.</p>

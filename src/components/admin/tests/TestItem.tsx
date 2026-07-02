@@ -39,6 +39,11 @@ const TestItem = ({
               <div>
                 <div className="font-medium">{test.title}</div>
                 <div className="text-sm text-gray-500 truncate">{test.description}</div>
+                {(test.test_variant || 'full') === 'mini' && (
+                  <span className="inline-block mt-1 px-2 py-0.5 text-xs rounded-full bg-purple-100 text-purple-800">
+                    Mini
+                  </span>
+                )}
               </div>
               <ChevronDown className={`h-5 w-5 ml-2 transition-transform ${isExpanded ? 'transform rotate-180' : ''}`} />
             </div>

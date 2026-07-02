@@ -30,6 +30,7 @@ interface TestContainerProps {
   showSubmitButton?: boolean;
   onSubmit?: () => void;
   currentPart?: 1 | 2;
+  showModulePartLabel?: boolean;
   crossOutMode: boolean;
   setCrossOutMode: React.Dispatch<React.SetStateAction<boolean>>;
   isAnswerMasking: boolean;
@@ -64,6 +65,7 @@ export const TestContainer: React.FC<TestContainerProps> = ({
   unmaskedAnswers,
   setUnmaskedAnswers,
   testCategory = 'SAT',
+  showModulePartLabel = true,
 }) => {
   const [showLineReader, setShowLineReader] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -211,7 +213,7 @@ export const TestContainer: React.FC<TestContainerProps> = ({
       
       <div ref={questionAreaRef} className="flex justify-between items-center mb-4">
         <h2 className="text-2xl font-bold">
-          {moduleName}{testCategory === 'SAT' ? ` - Part ${currentPart}` : ''}
+          {moduleName}{showModulePartLabel ? ` - Part ${currentPart}` : ''}
         </h2>
         <div className="flex items-center gap-4">
           {/* Removed saving indicator since auto-save is disabled */}

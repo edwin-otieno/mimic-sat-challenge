@@ -25,8 +25,12 @@ export const useTests = () => {
 
   // Helper to normalize test data from DB
   const normalizeTest = (test: any): Test => {
+    const category = (test.test_category || test.category || 'SAT').toUpperCase();
     return {
       ...test,
+      test_category: category === 'ACT' ? 'ACT' : 'SAT',
+      test_variant: test.test_variant === 'mini' ? 'mini' : 'full',
+      source_test_id: test.source_test_id || null,
       modules: typeof test.modules === 'string' ? JSON.parse(test.modules) : test.modules,
       scaled_scoring: typeof test.scaled_scoring === 'string' ? JSON.parse(test.scaled_scoring) : test.scaled_scoring || [],
     };
@@ -56,7 +60,7 @@ export const useTests = () => {
     staleTime: 30000, // Consider data fresh for 30 seconds
     gcTime: 5 * 60 * 1000, // Keep in cache for 5 minutes (formerly cacheTime)
     refetchOnWindowFocus: false, // Don't refetch when window regains focus
-    refetchOnMount: false, // Don't refetch when component mounts
+    refetchOnMount: true,
   });
 
   // Update tests state when query data changes
@@ -246,6 +250,8 @@ export const useOptimizedTest = (testId: string | null) => {
       // Map category to test_category for consistency
       if (result.test) {
         result.test.test_category = result.test.category || result.test.test_category || 'SAT';
+        result.test.test_variant = result.test.test_variant === 'mini' ? 'mini' : 'full';
+        result.test.source_test_id = result.test.source_test_id || null;
       }
       
       // Cache the result

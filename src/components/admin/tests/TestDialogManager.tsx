@@ -24,7 +24,7 @@ const TestDialogManager: React.FC<TestDialogManagerProps> = () => {
     testToDelete
   } = useTestOperations();
   
-  const { updateTest, createTest, deleteTest } = useTests();
+  const { tests, updateTest, createTest, deleteTest } = useTests();
   const { user } = useAuth();
 
   const handleDeleteConfirm = () => {
@@ -62,6 +62,8 @@ const TestDialogManager: React.FC<TestDialogManagerProps> = () => {
           description: values.description,
           is_active: values.is_active,
           test_category: values.test_category, // Include test category
+          test_variant: values.test_variant,
+          source_test_id: values.test_variant === 'mini' ? values.source_test_id || null : null,
           created_at: currentTest.created_at, // Preserve the original creation date
           // Ensure we properly save the scaled scoring data
           scaled_scoring: values.scaled_scoring ? values.scaled_scoring.map(item => ({
@@ -120,6 +122,8 @@ const TestDialogManager: React.FC<TestDialogManagerProps> = () => {
           description: values.description,
           is_active: values.is_active,
           test_category: values.test_category, // Include test category
+          test_variant: values.test_variant,
+          source_test_id: values.test_variant === 'mini' ? values.source_test_id || null : null,
           created_at: new Date().toISOString(),
           // Ensure we properly save the scaled scoring data
           scaled_scoring: values.scaled_scoring ? values.scaled_scoring.map(item => ({
@@ -185,6 +189,7 @@ const TestDialogManager: React.FC<TestDialogManagerProps> = () => {
         onOpenChange={setIsDialogOpen}
         isEditing={isEditing}
         currentTest={currentTest}
+        allTests={tests}
         onSubmit={onSubmit}
       />
 

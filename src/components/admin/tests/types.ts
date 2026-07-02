@@ -6,6 +6,8 @@ export interface Test {
   is_active: boolean;
   created_at: string;
   test_category: 'SAT' | 'ACT';
+  test_variant?: 'full' | 'mini';
+  source_test_id?: string | null;
   scaled_scoring?: ScaledScore[];
   modules?: TestModule[];
   permalink?: string;

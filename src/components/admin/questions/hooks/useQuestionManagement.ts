@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
@@ -72,101 +72,101 @@ export const useQuestionManagement = (testId: string) => {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Fetch questions from database
-  useEffect(() => {
-    const fetchQuestions = async () => {
-      try {
-        setLoading(true);
+  const fetchQuestions = useCallback(async () => {
+    try {
+      setLoading(true);
+      
+      // Fetch questions
+      const { data: questionsData, error: questionsError } = await supabase
+        .from('test_questions')
+        .select('*')
+        .eq('test_id', testId)
+        .order('question_order', { ascending: true });
         
-        // Fetch questions
-        const { data: questionsData, error: questionsError } = await supabase
-          .from('test_questions')
-          .select('*')
-          .eq('test_id', testId)
-          .order('question_order', { ascending: true });
-          
-        if (questionsError) {
-          toast({ 
-            title: "Error", 
-            description: `Failed to load questions: ${questionsError.message}`,
-            variant: "destructive" 
-          });
-          return;
-        }
-        
-        // Fetch options for all questions
-        const { data: optionsData, error: optionsError } = await supabase
-          .from('test_question_options')
-          .select('*')
-          .in('question_id', questionsData.map(q => q.id));
-          
-        if (optionsError) {
-          toast({ 
-            title: "Error", 
-            description: `Failed to load question options: ${optionsError.message}`,
-            variant: "destructive" 
-          });
-          return;
-        }
-        
-        // Group options by question
-        const optionsByQuestion: Record<string, any[]> = {};
-        optionsData.forEach(option => {
-          if (!optionsByQuestion[option.question_id]) {
-            optionsByQuestion[option.question_id] = [];
-          }
-          optionsByQuestion[option.question_id].push(option);
-        });
-        
-        // Map questions with their options
-        const loadedQuestions = questionsData
-          .sort((a, b) => {
-            // First sort by module_type
-            if (a.module_type !== b.module_type) {
-              return (a.module_type || '').localeCompare(b.module_type || '');
-            }
-            // Then by question_number within module
-            const aNum = a.question_number != null ? Number(a.question_number) : null;
-            const bNum = b.question_number != null ? Number(b.question_number) : null;
-            if (aNum !== null && bNum !== null) {
-              return aNum - bNum;
-            }
-            // Fallback to question_order
-            return (a.question_order || 0) - (b.question_order || 0);
-          })
-          .map(question => ({
-            id: question.id,
-            test_id: question.test_id,
-            text: question.text,
-            explanation: question.explanation,
-            module_type: question.module_type as "reading_writing" | "math" | "english" | "reading" | "science" | "writing",
-            question_type: question.question_type as QuestionType,
-            image_url: question.image_url,
-            correct_answer: question.correct_answer,
-            passage_id: question.passage_id,
-            question_number: question.question_number,
-            options: (optionsByQuestion[question.id] || []).map(option => ({
-              id: option.id,
-              text: option.text,
-              is_correct: option.is_correct
-            })),
-            question_order: question.question_order
-          }));
-        
-        setQuestions(loadedQuestions);
-      } catch (error: any) {
+      if (questionsError) {
         toast({ 
           title: "Error", 
-          description: `Failed to load questions: ${error.message}`,
+          description: `Failed to load questions: ${questionsError.message}`,
           variant: "destructive" 
         });
-      } finally {
-        setLoading(false);
+        return;
       }
-    };
-    
-    fetchQuestions();
+      
+      // Fetch options for all questions
+      const { data: optionsData, error: optionsError } = await supabase
+        .from('test_question_options')
+        .select('*')
+        .in('question_id', questionsData.map(q => q.id));
+        
+      if (optionsError) {
+        toast({ 
+          title: "Error", 
+          description: `Failed to load question options: ${optionsError.message}`,
+          variant: "destructive" 
+        });
+        return;
+      }
+      
+      // Group options by question
+      const optionsByQuestion: Record<string, any[]> = {};
+      optionsData.forEach(option => {
+        if (!optionsByQuestion[option.question_id]) {
+          optionsByQuestion[option.question_id] = [];
+        }
+        optionsByQuestion[option.question_id].push(option);
+      });
+      
+      // Map questions with their options
+      const loadedQuestions = questionsData
+        .sort((a, b) => {
+          // First sort by module_type
+          if (a.module_type !== b.module_type) {
+            return (a.module_type || '').localeCompare(b.module_type || '');
+          }
+          // Then by question_number within module
+          const aNum = a.question_number != null ? Number(a.question_number) : null;
+          const bNum = b.question_number != null ? Number(b.question_number) : null;
+          if (aNum !== null && bNum !== null) {
+            return aNum - bNum;
+          }
+          // Fallback to question_order
+          return (a.question_order || 0) - (b.question_order || 0);
+        })
+        .map(question => ({
+          id: question.id,
+          test_id: question.test_id,
+          text: question.text,
+          explanation: question.explanation,
+          module_type: question.module_type as "reading_writing" | "math" | "english" | "reading" | "science" | "writing",
+          question_type: question.question_type as QuestionType,
+          image_url: question.image_url,
+          correct_answer: question.correct_answer,
+          passage_id: question.passage_id,
+          question_number: question.question_number,
+          options: (optionsByQuestion[question.id] || []).map(option => ({
+            id: option.id,
+            text: option.text,
+            is_correct: option.is_correct
+          })),
+          question_order: question.question_order
+        }));
+      
+      setQuestions(loadedQuestions);
+    } catch (error: any) {
+      toast({ 
+        title: "Error", 
+        description: `Failed to load questions: ${error.message}`,
+        variant: "destructive" 
+      });
+    } finally {
+      setLoading(false);
+    }
   }, [testId, toast]);
+
+  // Fetch questions from database
+  useEffect(() => {
+    fetchQuestions();
+  }, [fetchQuestions]);
 
   const handleSubmitQuestion = async (values: z.infer<typeof questionFormSchema>) => {
     try {
@@ -340,6 +340,7 @@ export const useQuestionManagement = (testId: string) => {
     loading,
     handleSubmitQuestion,
     handleDeleteQuestion,
-    handleReorderQuestions
+    handleReorderQuestions,
+    refetchQuestions: fetchQuestions
   };
 };

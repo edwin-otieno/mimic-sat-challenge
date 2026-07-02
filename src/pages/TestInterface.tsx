@@ -34,6 +34,20 @@ import Footer from "@/components/Footer";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 
+const isMiniSatTest = (test: { test_category?: string; test_variant?: string } | null | undefined): boolean =>
+  !!test && test.test_category === 'SAT' && (test.test_variant || 'full') === 'mini';
+
+const isActTest = (test: { test_category?: string; modules?: any[] } | null | undefined): boolean => {
+  if (!test) return false;
+  if (test.test_category === 'ACT') return true;
+  return Array.isArray(test.modules) &&
+    test.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type));
+};
+
+/** Full SAT tests split each module into Part 1 and Part 2; mini SAT and ACT do not. */
+const usesSatPartSplit = (test: { test_category?: string; test_variant?: string; modules?: any[] } | null | undefined): boolean =>
+  !!test && test.test_category === 'SAT' && !isMiniSatTest(test);
+
 const TestInterface = () => {
   const navigate = useNavigate();
   const { permalink } = useParams<{ permalink: string }>();
@@ -720,16 +734,11 @@ const TestInterface = () => {
     if (currentQuestionIndex < partEndIndex) {
       setCurrentQuestionIndex(currentQuestionIndex + 1);
     } else if (part === 1) {
-      // Check if this is an ACT test
-      const isACTTest = currentTest?.test_category === 'ACT' || 
-        (currentTest?.modules && Array.isArray(currentTest.modules) && 
-         currentTest.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type)));
-      
-      if (isACTTest) {
-        // For ACT tests, complete module directly (no part transition)
+      if (isActTest(currentTest) || isMiniSatTest(currentTest)) {
+        // ACT and mini SAT: complete module directly (no part transition)
         handleModuleCompletion();
       } else {
-        // For SAT tests, prompt for Part 2
+        // Full SAT: prompt for Part 2
         setShowPartTransition(true);
       }
     } else {
@@ -2132,12 +2141,12 @@ const TestInterface = () => {
     
     // Determine test category to set timer correctly
     const testCategory = currentTest?.test_category || 'SAT';
-    const isACTTest = testCategory === 'ACT';
+    const useFullModuleTime = isActTest(currentTest) || isMiniSatTest(currentTest);
     
     if (!hasUserAnswersForModule) {
       // New module - reset timer based on test category
-      if (isACTTest) {
-        // For ACT tests, use full module time
+      if (useFullModuleTime) {
+        // ACT and mini SAT: full module time
         const module = currentTest?.modules?.find((m: any) => m.type === moduleType);
         const moduleTimeInMinutes = module?.time || 0;
         const moduleTimeInSeconds = moduleTimeInMinutes * 60;
@@ -2148,9 +2157,9 @@ const TestInterface = () => {
         // Save to savedPartTimes
         const timeKey = permalink ? `${permalink}-${moduleType}-part-${partNumber}` : `${moduleType}-part-${partNumber}`;
         setSavedPartTimes(prev => ({ ...prev, [timeKey]: moduleTimeInSeconds }));
-        console.log(`🕐 Resetting timer for ${moduleType} (ACT) - new module, no answers yet. Time: ${moduleTimeInSeconds}s (${moduleTimeInMinutes} minutes)`);
+        console.log(`🕐 Resetting timer for ${moduleType} (${isMiniSatTest(currentTest) ? 'mini SAT' : 'ACT'}) - new module, no answers yet. Time: ${moduleTimeInSeconds}s (${moduleTimeInMinutes} minutes)`);
       } else {
-        // For SAT tests, use part time (already divided by 2 in partTimes)
+        // Full SAT: use part time (already divided by 2 in partTimes)
         const partTime = partTimes[moduleType] || 0;
         setCurrentPartTimeLeft(partTime);
         setCurrentModuleTimeLeft(partTime);
@@ -2886,11 +2895,11 @@ const TestInterface = () => {
     const testCategory = testData.test.test_category || 'SAT';
     
     Object.entries(grouped).forEach(([moduleType, qs]) => {
-      if (testCategory === 'ACT') {
-        // For ACT tests, keep each module as a single part
+      if (testCategory === 'ACT' || isMiniSatTest(testData.test)) {
+        // ACT and mini SAT: one part per module with all questions
         parts[moduleType] = [qs, []];
       } else {
-        // For SAT tests, split into two parts
+        // Full SAT tests: split into two parts
         const half = Math.ceil(qs.length / 2);
         parts[moduleType] = [qs.slice(0, half), qs.slice(half)];
       }
@@ -2953,11 +2962,11 @@ const TestInterface = () => {
     
     if (modules.length > 0) {
       modules.forEach((m: any) => {
-        if (testCategory === 'ACT') {
-          // For ACT tests, use full module time
+        if (testCategory === 'ACT' || isMiniSatTest(testData.test)) {
+          // ACT and mini SAT: full module time
           calculatedPartTimes[m.type] = (m.time || 0) * 60; // seconds
         } else {
-          // For SAT tests, split time in half
+          // Full SAT: split time in half per part
           calculatedPartTimes[m.type] = Math.floor((m.time || 0) * 60 / 2); // seconds
         }
       });
@@ -3267,25 +3276,20 @@ const TestInterface = () => {
     const getPartInfo = (moduleType: string) => {
       const module = currentTest?.modules?.find((m: any) => m.type === moduleType);
       const parts = moduleParts[moduleType];
+      const singlePartModule = isActTest(currentTest) || isMiniSatTest(currentTest);
       
-      // Check if this is an ACT test
-      const isACTTest = currentTest?.test_category === 'ACT' || 
-        (currentTest?.modules && Array.isArray(currentTest.modules) && 
-         currentTest.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type)));
-      
-      if (isACTTest) {
-        // For ACT tests, show only one part per module
+      if (singlePartModule) {
         const partQuestions = parts?.[0] || [];
         return [{
           partNumber: 1,
           questionCount: partQuestions.length,
-          timeMinutes: module?.time || 0, // Full module time for ACT
+          timeMinutes: module?.time || 0,
           moduleType,
           moduleName: module?.name || moduleType
         }];
       } else {
-        // For SAT tests, show two parts per module
-        const partTimes = module ? Math.floor((module.time || 0) / 2) : 0; // Half the module time in minutes
+        // Full SAT tests: two parts per module
+        const partTimesPerPart = module ? Math.floor((module.time || 0) / 2) : 0;
         
         if (!parts || parts.length < 1) {
           return [{
@@ -3300,7 +3304,7 @@ const TestInterface = () => {
         return parts.map((partQuestions, index) => ({
           partNumber: index + 1,
           questionCount: partQuestions.length,
-          timeMinutes: partTimes,
+          timeMinutes: partTimesPerPart,
           moduleType,
           moduleName: module?.name || moduleType
         }));
@@ -3323,9 +3327,9 @@ const TestInterface = () => {
         if (answeredQuestions.length > maxAnswers) {
           maxAnswers = answeredQuestions.length;
           savedModuleType = module.type;
-          // Find which part has the most answers
+          // Find which part has the most answers (full SAT only)
           const parts = moduleParts[module.type];
-          if (parts) {
+          if (parts && usesSatPartSplit(currentTest)) {
             const part1Answers = parts[0]?.filter(q => userAnswers[q.id]).length || 0;
             const part2Answers = parts[1]?.filter(q => userAnswers[q.id]).length || 0;
             savedPart = part1Answers >= part2Answers ? 1 : 2;
@@ -3343,11 +3347,8 @@ const TestInterface = () => {
     // Determine test category for conditional styling
     // Use testData if available, fallback to currentTest
     const testCategory = testData?.test?.test_category || currentTest?.test_category || 'SAT';
-    const isACTTest = testCategory === 'ACT' || 
-      (testData?.test?.modules && Array.isArray(testData.test.modules) && 
-       testData.test.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type))) ||
-      (currentTest?.modules && Array.isArray(currentTest.modules) && 
-       currentTest.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type)));
+    const isACTTest = isActTest(testData?.test || currentTest);
+    const showSatPartLabels = usesSatPartSplit(testData?.test || currentTest);
 
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -3363,13 +3364,7 @@ const TestInterface = () => {
                 {savedModuleType && savedPart && (
                   <span> You were working on <strong>
                     {getModuleDisplayName(savedModuleType)}
-                    {(() => {
-                      // Check if this is an ACT test
-                      const isACTTest = currentTest?.test_category === 'ACT' || 
-                        (currentTest?.modules && Array.isArray(currentTest.modules) && 
-                         currentTest.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type)));
-                      return isACTTest ? '' : ` Part ${savedPart}`;
-                    })()}
+                    {showSatPartLabels && savedPart ? ` Part ${savedPart}` : ''}
                   </strong>. </span>
                 )}
                 Your answers and progress are preserved. You can continue with the same module/part or start a different one.
@@ -3419,12 +3414,7 @@ const TestInterface = () => {
           
           <Card className="mb-8">
             <CardHeader>
-              <CardTitle>{(() => {
-                const isACTTest = currentTest?.test_category === 'ACT' || 
-                  (currentTest?.modules && Array.isArray(currentTest.modules) && 
-                   currentTest.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type)));
-                return isACTTest ? 'Select Section to Start' : 'Select Module Part to Start';
-              })()}</CardTitle>
+              <CardTitle>{isACTTest ? 'Select Section to Start' : showSatPartLabels ? 'Select Module Part to Start' : 'Select Module to Start'}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid gap-4">
@@ -3436,12 +3426,6 @@ const TestInterface = () => {
                   const moduleQuestions = questions.filter(q => q.module_type === module.type);
                   const answeredQuestionsInModule = moduleQuestions.filter(q => userAnswers[q.id]);
                   const hasProgressInModule = answeredQuestionsInModule.length > 0;
-                  
-                  // Determine if this is an ACT test
-                  const isACTTest = currentTest?.test_category === 'ACT' || 
-                    (currentTest?.modules && Array.isArray(currentTest.modules) && 
-                     currentTest.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type)));
-                  
                   const sectionOrModule = isACTTest ? 'Section' : 'Module';
                   
                   return (
@@ -3486,13 +3470,7 @@ const TestInterface = () => {
                             >
                               <div className="text-white w-full">
                                 <div className="font-medium">
-                                  {part.moduleName}{(() => {
-                                    // Check if this is an ACT test
-                                    const isACTTest = currentTest?.test_category === 'ACT' || 
-                                      (currentTest?.modules && Array.isArray(currentTest.modules) && 
-                                       currentTest.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type)));
-                                    return isACTTest ? '' : ` Part ${part.partNumber}`;
-                                  })()}: {part.questionCount} questions in {part.timeMinutes} minutes
+                                  {part.moduleName}{showSatPartLabels ? ` Part ${part.partNumber}` : ''}: {part.questionCount} questions in {part.timeMinutes} minutes
                                   {isSavedPart && answeredQuestions > 0 && (
                                     <span className="text-sm opacity-90"> (💾 {answeredQuestions} of {totalQuestions} answered)</span>
                                   )}
@@ -3707,11 +3685,9 @@ const TestInterface = () => {
   
   // Determine test category for conditional styling
   const testCategory = testData?.test?.test_category || currentTest?.test_category || 'SAT';
-  const isACTTest = testCategory === 'ACT' || 
-    (testData?.test?.modules && Array.isArray(testData.test.modules) && 
-     testData.test.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type))) ||
-    (currentTest?.modules && Array.isArray(currentTest.modules) && 
-     currentTest.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type)));
+  const isACTTest = isActTest(testData?.test || currentTest);
+  const showSatPartLabels = usesSatPartSplit(testData?.test || currentTest);
+  const useFullModuleTime = isACTTest || isMiniSatTest(testData?.test || currentTest);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -3776,13 +3752,7 @@ const TestInterface = () => {
                 const moduleType = selectedModule || getCurrentModuleType();
                 const moduleName = currentTest.modules?.find((m: any) => m.type === moduleType)?.name || 'Module';
                 const part = currentPart[moduleType] || 1;
-                
-                // Check if this is an ACT test
-                const isACTTest = currentTest?.test_category === 'ACT' || 
-                  (currentTest?.modules && Array.isArray(currentTest.modules) && 
-                   currentTest.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type)));
-                
-                return isACTTest ? moduleName : `${moduleName} - Part ${part}`;
+                return showSatPartLabels ? `${moduleName} - Part ${part}` : moduleName;
               })()}
             </div>
             <div className="text-sm text-center mb-2">
@@ -3790,33 +3760,22 @@ const TestInterface = () => {
                 const moduleType = selectedModule || getCurrentModuleType();
                 const part = currentPart[moduleType] || 1;
                 
-                // Check if this is an ACT test
-                const isACTTest = currentTest?.test_category === 'ACT' || 
-                  (currentTest?.modules && Array.isArray(currentTest.modules) && 
-                   currentTest.modules.some((m: any) => ['english', 'reading', 'science', 'writing'].includes(m.type)));
-                
-                // For ACT tests with passages, count questions from passages
-                // For ACT Math and Writing/Essay (which don't use passages), count from moduleParts
                 let questionsInPart = 0;
                 if (isACTTest) {
                   if (moduleType === 'math' || moduleType === 'writing') {
-                    // Math and Writing modules don't use passages, use moduleParts
                     questionsInPart = moduleParts[moduleType]?.[0]?.length || 0;
                   } else {
-                    // Other ACT modules use passages
-                  const allModuleQuestions = getAllModulePassageQuestions();
-                  questionsInPart = allModuleQuestions.length || 0;
+                    const allModuleQuestions = getAllModulePassageQuestions();
+                    questionsInPart = allModuleQuestions.length || 0;
                   }
                 } else {
                   questionsInPart = moduleParts[moduleType]?.[part - 1]?.length || 0;
                 }
                 
-                // For ACT tests, use full module time (not divided by part)
-                // For SAT tests, use partTimes which is already divided by 2
                 let totalTime = 0;
-                if (isACTTest) {
+                if (useFullModuleTime) {
                   const module = currentTest?.modules?.find((m: any) => m.type === moduleType);
-                  totalTime = module?.time || 0; // Already in minutes
+                  totalTime = module?.time || 0;
                 } else {
                   totalTime = partTimes[moduleType] ? Math.floor(partTimes[moduleType] / 60) : 0;
                 }
@@ -4129,6 +4088,7 @@ const TestInterface = () => {
                 onSaveStatusChange={setIsSaving}
                 showSubmitButton={showSubmitButton}
                 currentPart={currentPart[selectedModule || getCurrentModuleType()] || 1}
+                showModulePartLabel={showSatPartLabels}
                 crossOutMode={crossOutMode}
                 setCrossOutMode={setCrossOutMode}
                 isAnswerMasking={isAnswerMasking}

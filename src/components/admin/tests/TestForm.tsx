@@ -4,12 +4,18 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
 } from '@/components/ui/form';
 import { Button } from '@/components/ui/button';
 import { Test, ScaledScore, DEFAULT_MODULES, TestModule, getDefaultModules } from './types';
 import TestModulesDisplay from './TestModulesDisplay';
 import TestBasicInfoForm from './TestBasicInfoForm';
 import ModuleScaledScoring from './ModuleScaledScoring';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 // Form schema definition
 export const formSchema = z.object({
@@ -18,6 +24,8 @@ export const formSchema = z.object({
   description: z.string().min(10, { message: "Description must be at least 10 characters" }),
   is_active: z.boolean().default(true),
   test_category: z.enum(["SAT", "ACT"]),
+  test_variant: z.enum(["full", "mini"]).default("full"),
+  source_test_id: z.string().nullable().optional(),
   scaled_scoring: z.array(
     z.object({
       module_id: z.string().optional(),
@@ -38,16 +46,16 @@ export const formSchema = z.object({
 
 interface TestFormProps {
   currentTest: Test | null;
+  allTests: Test[];
   onSubmit: (values: z.infer<typeof formSchema>) => void;
   onCancel: () => void;
-  questionCount: number;
 }
 
 const TestForm: React.FC<TestFormProps> = ({ 
   currentTest, 
+  allTests,
   onSubmit,
-  onCancel,
-  questionCount
+  onCancel
 }) => {
   // Group scaled scores by module
   const initializeModuleScores = () => {
@@ -92,6 +100,8 @@ const TestForm: React.FC<TestFormProps> = ({
       description: currentTest?.description || '',
       is_active: currentTest?.is_active ?? true,
       test_category: currentTest?.test_category || currentTest?.category || 'SAT',
+      test_variant: currentTest?.test_variant || 'full',
+      source_test_id: currentTest?.source_test_id || null,
       scaled_scoring: currentTest?.scaled_scoring || [],
       modules: currentTest?.modules || getDefaultModules(currentTest?.test_category || currentTest?.category || 'SAT')
     }
@@ -107,6 +117,8 @@ const TestForm: React.FC<TestFormProps> = ({
         description: currentTest.description || '',
         is_active: currentTest.is_active ?? true,
         test_category: testCategory,
+        test_variant: currentTest.test_variant || 'full',
+        source_test_id: currentTest.source_test_id || null,
         scaled_scoring: currentTest.scaled_scoring || [],
         // Important: do not inject defaults here; keep DB modules untouched
         modules: currentTest.modules || []
@@ -116,6 +128,7 @@ const TestForm: React.FC<TestFormProps> = ({
 
   // Watch for test category changes and update modules accordingly
   const watchedTestCategory = form.watch('test_category');
+  const watchedTestVariant = form.watch('test_variant');
   const watchedModules = form.watch('modules');
   
   useEffect(() => {
@@ -137,6 +150,12 @@ const TestForm: React.FC<TestFormProps> = ({
       setModuleScores(newModuleScores);
     }
   }, [watchedTestCategory, form, currentTest]);
+
+  useEffect(() => {
+    if (watchedTestVariant !== 'mini') {
+      form.setValue('source_test_id', null);
+    }
+  }, [watchedTestVariant, form]);
 
   // Sync module scores when modules change
   useEffect(() => {
@@ -183,6 +202,7 @@ const TestForm: React.FC<TestFormProps> = ({
       ...values,
       id: currentTest?.id,
       scaled_scoring: allScores,
+      source_test_id: values.test_variant === 'mini' ? values.source_test_id || null : null,
       modules: values.modules // Remove the fallback that might be overriding values
     };
     
@@ -195,6 +215,67 @@ const TestForm: React.FC<TestFormProps> = ({
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-4 py-4">
         <TestBasicInfoForm form={form} onTestCategoryChange={handleTestCategoryChange} />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <FormField
+            control={form.control}
+            name="test_variant"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Test Variant</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select variant" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="full">Full Test</SelectItem>
+                    <SelectItem value="mini">Mini Test</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          {watchedTestVariant === 'mini' && (
+            <FormField
+              control={form.control}
+              name="source_test_id"
+              render={({ field }) => {
+                const matchingSourceTests = allTests
+                  .filter((test) => test.id !== currentTest?.id)
+                  .filter((test) => (test.test_category || 'SAT') === watchedTestCategory)
+                  .filter((test) => (test.test_variant || 'full') === 'full')
+                  .sort((a, b) => a.title.localeCompare(b.title));
+
+                return (
+                  <FormItem>
+                    <FormLabel>Source Full Test (same category)</FormLabel>
+                    <Select
+                      onValueChange={(value) => field.onChange(value === '__none' ? null : value)}
+                      value={field.value || '__none'}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Optional source test for question import" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="__none">No source test selected</SelectItem>
+                        {matchingSourceTests.map((test) => (
+                          <SelectItem key={test.id} value={test.id}>
+                            {test.title}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                );
+              }}
+            />
+          )}
+        </div>
         
         {/* Module time editing UI */}
         <div className="border rounded-lg p-4">

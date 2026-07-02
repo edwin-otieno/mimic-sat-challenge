@@ -16,6 +16,7 @@ interface TestDialogProps {
   onOpenChange: (open: boolean) => void;
   isEditing: boolean;
   currentTest: Test | null;
+  allTests: Test[];
   onSubmit: (values: z.infer<typeof formSchema>) => void;
 }
 
@@ -24,6 +25,7 @@ const TestDialog: React.FC<TestDialogProps> = ({
   onOpenChange, 
   isEditing, 
   currentTest, 
+  allTests,
   onSubmit
 }) => {
   
@@ -40,6 +42,7 @@ const TestDialog: React.FC<TestDialogProps> = ({
         <ScrollArea className="h-[calc(85vh-120px)] pr-4">
           <TestForm 
             currentTest={currentTest}
+            allTests={allTests}
             onSubmit={onSubmit}
             onCancel={handleCloseDialog}
           />
