@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Question, QuestionType } from './types';
 import QuestionDialog from './QuestionDialog';
 import QuestionList from './QuestionList';
@@ -7,7 +7,7 @@ import { useQuestionManagement } from './hooks/useQuestionManagement';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useTests } from '@/hooks/useTests';
-import { DEFAULT_SAT_MODULES, DEFAULT_ACT_MODULES } from '../tests/types';
+import { getModulesForTest } from '../tests/types';
 import PassageManager from '../passages/PassageManager';
 import { Button } from '@/components/ui/button';
 import { cloneQuestionsFromTest } from '@/services/testService';
@@ -32,7 +32,7 @@ const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
   const { tests } = useTests();
   const currentTest = tests.find(test => test.id === testId);
   const testCategory = currentTest?.test_category || 'SAT';
-  const availableModules = testCategory === 'ACT' ? DEFAULT_ACT_MODULES : DEFAULT_SAT_MODULES;
+  const availableModules = useMemo(() => getModulesForTest(currentTest), [currentTest]);
   const isMiniTest = (currentTest?.test_variant || 'full') === 'mini';
   const sourceTest = tests.find((test) => test.id === currentTest?.source_test_id);
 

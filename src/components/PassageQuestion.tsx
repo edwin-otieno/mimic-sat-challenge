@@ -12,6 +12,7 @@ import { renderFormattedText, normalizeParagraphWhitespace } from '@/lib/utils';
 import { Passage, PassageQuestion as PassageQuestionType } from '@/components/admin/passages/types';
 import { QuestionType } from '@/components/admin/questions/types';
 import { TextInputQuestion } from '@/components/student/TextInputQuestion';
+import { getActOptionLetters } from '@/lib/actOptionLetters';
 
 interface PassageQuestionProps {
   passage: Passage;
@@ -39,6 +40,7 @@ interface PassageQuestionProps {
   onToggleHighlighting?: () => void;
   onColorChange?: (color: string) => void;
   testCategory?: 'SAT' | 'ACT';
+  isMiniActTest?: boolean;
   allQuestions?: any[]; // All questions in the passage for QuestionNavigator
   onGoToQuestion?: (index: number) => void;
 }
@@ -69,6 +71,7 @@ const PassageQuestion: React.FC<PassageQuestionProps> = ({
   onToggleHighlighting,
   onColorChange,
   testCategory = 'ACT',
+  isMiniActTest = false,
   allQuestions,
   onGoToQuestion
 }) => {
@@ -113,15 +116,10 @@ const PassageQuestion: React.FC<PassageQuestionProps> = ({
   const isQuestionFlagged = currentQuestion ? flaggedQuestions.has(currentQuestion.id) : false;
   const questionCrossedOuts = currentQuestion ? crossedOutOptions[currentQuestion.id] || [] : [];
   
-  // For ACT tests, alternate between A/B/C/D and F/G/H/J based on sequential question number
-  // Odd question numbers (1, 3, 5...) use A/B/C/D, even (2, 4, 6...) use F/G/H/J
-  // Use the sequential question_number from allQuestions (which has sequential numbering across passages)
   const getOptionLetters = (questionNumber: number | undefined): string[] => {
     if (testCategory === 'ACT' && questionNumber !== undefined) {
-      // ACT alternates: odd = A/B/C/D, even = F/G/H/J
-      return questionNumber % 2 === 1 ? ['A', 'B', 'C', 'D'] : ['F', 'G', 'H', 'J'];
+      return getActOptionLetters(questionNumber, isMiniActTest);
     }
-    // Default: A, B, C, D, E
     return ['A', 'B', 'C', 'D', 'E'];
   };
   

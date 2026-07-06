@@ -266,8 +266,22 @@ const QuestionDetails = ({ availableModules }: QuestionDetailsProps) => {
             <FormLabel>Question Type</FormLabel>
             <FormControl>
               <RadioGroup
-                onValueChange={field.onChange}
-                defaultValue={field.value}
+                onValueChange={(value) => {
+                  field.onChange(value);
+                  if (value === QuestionType.TextInput) {
+                    setValue('options', undefined);
+                    setValue('correct_answer', '');
+                  } else {
+                    setValue('correct_answer', undefined);
+                    setValue('options', [
+                      { text: '', is_correct: false },
+                      { text: '', is_correct: false },
+                      { text: '', is_correct: false },
+                      { text: '', is_correct: false },
+                    ]);
+                  }
+                }}
+                value={field.value}
                 className="flex flex-col space-y-1"
               >
                 <div className="flex items-center space-x-2">

@@ -1,5 +1,6 @@
 import React, { useMemo } from "react";
 import Question, { QuestionData, QuestionType } from "@/components/Question";
+import { getActOptionLetter, shouldUseActMathAbcdOnly } from "@/lib/actOptionLetters";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -8,9 +9,10 @@ interface QuestionReviewProps {
   userAnswers: Record<string, string>;
   moduleType?: string; // Optional: filter questions by module type
   testCategory?: 'SAT' | 'ACT'; // Test category for ACT alternating lettering
+  isMiniActTest?: boolean;
 }
 
-const QuestionReview: React.FC<QuestionReviewProps> = React.memo(({ questions, userAnswers, moduleType, testCategory }) => {
+const QuestionReview: React.FC<QuestionReviewProps> = React.memo(({ questions, userAnswers, moduleType, testCategory, isMiniActTest = false }) => {
   console.log('🔍 QuestionReview received:', { 
     questionsLength: questions.length, 
     userAnswersKeys: Object.keys(userAnswers || {}).length,
@@ -96,17 +98,15 @@ const QuestionReview: React.FC<QuestionReviewProps> = React.memo(({ questions, u
     return { moduleGroups };
   }, [questions, moduleType]);
 
-  // Function to get option letters based on test category and question number
-  // For ACT tests with passage questions or Math questions: alternate between A/B/C/D (odd) and F/G/H/J (even) based on question number
-  // For other questions or SAT tests: always use A/B/C/D/E
   const getOptionLetter = (question: QuestionData, sequentialQuestionNumber: number, optionIndex: number): string => {
     if (testCategory === 'ACT' && (question.passage_id || question.module_type === 'math')) {
-      // Apply alternating lettering for passage questions and Math questions
-      // ACT alternates: odd = A/B/C/D, even = F/G/H/J
-      const letters = sequentialQuestionNumber % 2 === 1 ? ['A', 'B', 'C', 'D'] : ['F', 'G', 'H', 'J'];
-      return letters[optionIndex] || String.fromCharCode(65 + optionIndex);
+      const abcdOnly = shouldUseActMathAbcdOnly(
+        isMiniActTest,
+        question.module_type,
+        !!question.passage_id
+      );
+      return getActOptionLetter(sequentialQuestionNumber, optionIndex, abcdOnly);
     }
-    // Default: A, B, C, D, E (for other questions or SAT tests)
     return String.fromCharCode(65 + optionIndex);
   };
 
@@ -224,6 +224,7 @@ const QuestionReview: React.FC<QuestionReviewProps> = React.memo(({ questions, u
                   onAnswerChange={() => {}} // Read-only
                   showExplanation={true}
                   testCategory={testCategory}
+                  isMiniActTest={isMiniActTest}
                   sequentialQuestionNumber={index + 1}
                 />
               </div>
@@ -232,7 +233,7 @@ const QuestionReview: React.FC<QuestionReviewProps> = React.memo(({ questions, u
         </div>
       );
     };
-  }, [userAnswers, testCategory, questions]);
+  }, [userAnswers, testCategory, isMiniActTest, questions]);
 
   return (
     <div className="mb-6">

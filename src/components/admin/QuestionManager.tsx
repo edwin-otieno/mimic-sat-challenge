@@ -25,7 +25,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { DEFAULT_SAT_MODULES, DEFAULT_ACT_MODULES } from './tests/types';
+import { getModulesForTest } from './tests/types';
 import { useOptimizedTest } from '@/hooks/useTests';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -117,7 +117,7 @@ const QuestionManager = ({ testId, testTitle }: QuestionManagerProps) => {
   // Load test to determine category
   const { testData } = useOptimizedTest(testId);
   const testCategory = testData?.test?.test_category || testData?.test?.category || 'SAT';
-  const availableModules = testCategory === 'ACT' ? DEFAULT_ACT_MODULES : DEFAULT_SAT_MODULES;
+  const availableModules = getModulesForTest(testData?.test);
 
   const form = useForm<z.infer<typeof questionFormSchema>>({
     resolver: zodResolver(questionFormSchema),

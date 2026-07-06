@@ -421,7 +421,7 @@ export const cloneQuestionsFromTest = async (sourceTestId: string, targetTestId:
 
   const [{ data: sourceTest, error: sourceTestError }, { data: targetTest, error: targetTestError }] = await Promise.all([
     supabase.from('tests').select('id, category, test_category').eq('id', sourceTestId).single(),
-    supabase.from('tests').select('id, category, test_category').eq('id', targetTestId).single()
+    supabase.from('tests').select('id, category, test_category, test_variant').eq('id', targetTestId).single()
   ]);
 
   if (sourceTestError || !sourceTest) {
@@ -486,12 +486,19 @@ export const cloneQuestionsFromTest = async (sourceTestId: string, targetTestId:
     throw sourceQuestionsError;
   }
 
-  if (!sourceQuestions || sourceQuestions.length === 0) {
+  const isMiniActTarget =
+    targetCategory === 'ACT' && (targetTest.test_variant || 'full') === 'mini';
+  const questionsToClone = (sourceQuestions || []).filter((question) => {
+    if (!isMiniActTarget) return true;
+    return question.module_type !== 'writing' && question.module_type !== 'essay';
+  });
+
+  if (questionsToClone.length === 0) {
     return { questionsCloned: 0, optionsCloned: 0, passagesCloned: sourcePassages?.length || 0 };
   }
 
   const questionIdMap = new Map<string, string>();
-  const clonedQuestions = sourceQuestions.map((question) => {
+  const clonedQuestions = questionsToClone.map((question) => {
     const newId = generateUUID();
     questionIdMap.set(question.id, newId);
     return {
@@ -521,7 +528,7 @@ export const cloneQuestionsFromTest = async (sourceTestId: string, targetTestId:
   const { data: sourceOptions, error: sourceOptionsError } = await supabase
     .from('test_question_options')
     .select('*')
-    .in('question_id', sourceQuestions.map((q) => q.id));
+    .in('question_id', questionsToClone.map((q) => q.id));
 
   if (sourceOptionsError) {
     throw sourceOptionsError;
@@ -1283,6 +1290,10 @@ export const savePassage = async (passageData: PassagePayload): Promise<Passage>
       throw passageError;
     }
 
+    const submittedQuestionIds = passageData.questions
+      .map((question) => question.id)
+      .filter((id): id is string => !!id);
+
     // Then, save the questions
     for (const questionData of passageData.questions) {
       // Save the question
@@ -1338,6 +1349,24 @@ export const savePassage = async (passageData: PassagePayload): Promise<Passage>
         }
       }
     }
+
+    // Remove questions deleted from the passage editor
+    let deleteRemovedQuestionsQuery = supabase
+      .from('test_questions')
+      .delete()
+      .eq('passage_id', savedPassage.id);
+
+    if (submittedQuestionIds.length > 0) {
+      deleteRemovedQuestionsQuery = deleteRemovedQuestionsQuery.not('id', 'in', `(${submittedQuestionIds.join(',')})`);
+    }
+
+    const { error: deleteRemovedQuestionsError } = await deleteRemovedQuestionsQuery;
+    if (deleteRemovedQuestionsError) {
+      console.error('Error deleting removed passage questions:', deleteRemovedQuestionsError);
+      throw deleteRemovedQuestionsError;
+    }
+
+    clearTestCache(passageData.test_id);
 
     // Return the complete passage with questions
     return await getPassage(savedPassage.id);

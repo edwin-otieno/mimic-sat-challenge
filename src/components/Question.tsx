@@ -5,6 +5,7 @@ import { QuestionType } from '@/components/admin/questions/types';
 import { TextInputQuestion } from '@/components/student/TextInputQuestion';
 import { renderFormattedText } from '@/lib/utils';
 import TextHighlighter from '@/components/TextHighlighter';
+import { getActOptionLetters, shouldUseActMathAbcdOnly } from '@/lib/actOptionLetters';
 
 export { QuestionType };
 
@@ -51,6 +52,7 @@ interface QuestionProps {
   unmaskedAnswers?: Set<string>;
   onToggleUnmask?: (optionId: string) => void;
   sequentialQuestionNumber?: number; // Optional 1-based sequential question number for ACT Math
+  isMiniActTest?: boolean;
 }
 
 const Question: React.FC<QuestionProps> = ({
@@ -73,6 +75,7 @@ const Question: React.FC<QuestionProps> = ({
   unmaskedAnswers = new Set(),
   onToggleUnmask,
   sequentialQuestionNumber,
+  isMiniActTest = false,
 }) => {
   const shouldShowExplanation =
     !!question.explanation &&
@@ -131,22 +134,16 @@ const Question: React.FC<QuestionProps> = ({
     selection.removeAllRanges();
   };
   
-  // For ACT tests with passage questions or Math questions, alternate between A/B/C/D and F/G/H/J based on question number
-  // Odd question numbers (1, 3, 5...) use A/B/C/D, even (2, 4, 6...) use F/G/H/J
-  // Other questions always use A/B/C/D/E
   const getOptionLetters = (): string[] => {
     if (testCategory === 'ACT' && (question.passage_id || question.module_type === 'math')) {
-      // Apply alternating lettering for passage questions and Math questions
-      // Use sequentialQuestionNumber (passed prop), question_number (for passage questions), or question_order
-      // sequentialQuestionNumber is preferred as it's the most accurate (1-based sequential number)
       const qNum = sequentialQuestionNumber ?? question.question_number ?? question.question_order;
-      if (qNum !== undefined && qNum !== null) {
-        // ACT alternates: odd = A/B/C/D, even = F/G/H/J
-        // Use modulo 2 to determine if odd (1) or even (0)
-        return qNum % 2 === 1 ? ['A', 'B', 'C', 'D'] : ['F', 'G', 'H', 'J'];
-      }
+      const abcdOnly = shouldUseActMathAbcdOnly(
+        isMiniActTest,
+        question.module_type,
+        !!question.passage_id
+      );
+      return getActOptionLetters(qNum, abcdOnly);
     }
-    // Default: A, B, C, D, E (for other questions or SAT tests)
     return ['A', 'B', 'C', 'D', 'E'];
   };
   

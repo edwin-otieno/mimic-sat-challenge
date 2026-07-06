@@ -6,7 +6,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import Header from "@/components/Header";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTests } from "@/hooks/useTests";
-import { Test } from "@/components/admin/tests/types";
+import { Test, getModulesForTest } from "@/components/admin/tests/types";
 import Footer from "@/components/Footer";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
@@ -213,13 +213,14 @@ const Dashboard = () => {
     const isACT = test.test_category === 'ACT';
     const isMini = (test.test_variant || 'full') === 'mini';
     const isMiniSat = isMini && test.test_category === 'SAT';
-    const moduleCount = isACT
-      ? 5
-      : isMiniSat
-        ? (test.modules?.length || 2)
+    const effectiveModules = getModulesForTest(test);
+    const moduleCount = isMiniSat
+      ? effectiveModules.length
+      : isACT
+        ? effectiveModules.length
         : ((test.modules?.length || 2) * 2);
-    const moduleTypeDisplay = isMiniSat
-      ? (test.modules?.map((m) => m.name).join(', ') || 'Reading & Writing, Math')
+    const moduleTypeDisplay = isMiniSat || isACT
+      ? effectiveModules.map((m) => m.name).join(', ')
       : test.modules?.map((m) => m.type.split('_')[0]).join(', ');
     
     return (
@@ -295,7 +296,33 @@ const Dashboard = () => {
 
   const satFullTests = availableTests.filter(t => t.test_category === 'SAT' && (t.test_variant || 'full') !== 'mini');
   const actFullTests = availableTests.filter(t => t.test_category === 'ACT' && (t.test_variant || 'full') !== 'mini');
-  const comboCampTests = availableTests.filter(t => (t.test_variant || 'full') === 'mini');
+  const actMiniTests = availableTests.filter(t => t.test_category === 'ACT' && (t.test_variant || 'full') === 'mini');
+  const satMiniTests = availableTests.filter(t => t.test_category === 'SAT' && (t.test_variant || 'full') === 'mini');
+  const hasComboCampTests =
+    (selectedCategory !== 'SAT' && actMiniTests.length > 0) ||
+    (selectedCategory !== 'ACT' && satMiniTests.length > 0);
+
+  const renderComboCampSection = () => {
+    const actTests = selectedCategory === 'SAT' ? [] : actMiniTests;
+    const satTests = selectedCategory === 'ACT' ? [] : satMiniTests;
+
+    return (
+      <div className="space-y-8">
+        {actTests.length > 0 && (
+          <div>
+            <h4 className="text-lg font-semibold mb-4">ACT Mini Tests</h4>
+            {renderTestGrid(actTests)}
+          </div>
+        )}
+        {satTests.length > 0 && (
+          <div>
+            <h4 className="text-lg font-semibold mb-4">SAT Mini Tests</h4>
+            {renderTestGrid(satTests)}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const renderTestGrid = (sectionTests: Test[]) => (
     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 pt-2">
@@ -310,10 +337,10 @@ const Dashboard = () => {
     selectedCategory !== 'ACT' && satFullTests.length > 0
       ? { id: 'sat-tests', title: 'SAT Tests', tests: satFullTests }
       : null,
-    comboCampTests.length > 0
-      ? { id: 'combo-camp-tests', title: 'Combo Camp Tests', tests: comboCampTests }
+    hasComboCampTests
+      ? { id: 'combo-camp-tests', title: 'Combo Camp Tests', tests: [], isComboCamp: true }
       : null,
-  ].filter(Boolean) as Array<{ id: string; title: string; tests: Test[] }>;
+  ].filter(Boolean) as Array<{ id: string; title: string; tests: Test[]; isComboCamp?: boolean }>;
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -371,7 +398,7 @@ const Dashboard = () => {
                     {section.title}
                   </AccordionTrigger>
                   <AccordionContent>
-                    {renderTestGrid(section.tests)}
+                    {section.isComboCamp ? renderComboCampSection() : renderTestGrid(section.tests)}
                   </AccordionContent>
                 </AccordionItem>
               ))}

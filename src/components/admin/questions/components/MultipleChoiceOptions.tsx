@@ -10,18 +10,34 @@ import TextHighlighter from '@/components/TextHighlighter';
 import { Textarea } from '@/components/ui/textarea';
 import OptionImageUpload from './OptionImageUpload';
 
+const DEFAULT_MC_OPTIONS = [
+  { text: '', is_correct: false },
+  { text: '', is_correct: false },
+  { text: '', is_correct: false },
+  { text: '', is_correct: false },
+];
+
 interface MultipleChoiceOptionsProps {
-  // No additional props needed as we'll use useFormContext
+  syncKey?: string;
 }
 
-const MultipleChoiceOptions = ({}: MultipleChoiceOptionsProps) => {
+const MultipleChoiceOptions = ({ syncKey }: MultipleChoiceOptionsProps) => {
   const { toast } = useToast();
-  const { control, setValue } = useFormContext<QuestionFormValues>();
+  const { control, getValues, setValue } = useFormContext<QuestionFormValues>();
   
-  const { fields, append, remove } = useFieldArray({
+  const { fields, append, remove, replace } = useFieldArray({
     control,
     name: "options"
   });
+
+  // useFieldArray does not always sync after form.reset — remount fields when dialog/question changes
+  React.useEffect(() => {
+    if (!syncKey) return;
+    const options = getValues('options');
+    replace(
+      Array.isArray(options) && options.length > 0 ? options : DEFAULT_MC_OPTIONS
+    );
+  }, [syncKey, getValues, replace]);
 
   const addOption = () => {
     append({ text: '', is_correct: false });

@@ -78,10 +78,58 @@ export const DEFAULT_ACT_MODULES: TestModule[] = [
   }
 ];
 
+// Mini ACT tests omit the Essay section
+export const DEFAULT_MINI_ACT_MODULES: TestModule[] = DEFAULT_ACT_MODULES.filter(
+  (module) => module.id !== 'essay' && module.type !== 'writing'
+);
+
 // Legacy export for backward compatibility
 export const DEFAULT_MODULES = DEFAULT_SAT_MODULES;
 
-// Function to get default modules based on test category
-export const getDefaultModules = (testCategory: 'SAT' | 'ACT'): TestModule[] => {
-  return testCategory === 'ACT' ? DEFAULT_ACT_MODULES : DEFAULT_SAT_MODULES;
+export const isEssayModule = (module: { type?: string; id?: string }): boolean =>
+  module.type === 'writing' ||
+  module.type === 'essay' ||
+  module.id === 'essay' ||
+  module.id === 'writing';
+
+export const isMiniActTest = (
+  test: { test_category?: string; test_variant?: string } | null | undefined
+): boolean =>
+  !!test && test.test_category === 'ACT' && (test.test_variant || 'full') === 'mini';
+
+// Function to get default modules based on test category and variant
+export const getDefaultModules = (
+  testCategory: 'SAT' | 'ACT',
+  testVariant: 'full' | 'mini' = 'full'
+): TestModule[] => {
+  if (testCategory === 'ACT') {
+    return testVariant === 'mini' ? DEFAULT_MINI_ACT_MODULES : DEFAULT_ACT_MODULES;
+  }
+  return DEFAULT_SAT_MODULES;
+};
+
+export const getModulesForTest = (
+  test: {
+    test_category?: 'SAT' | 'ACT' | string;
+    test_variant?: 'full' | 'mini' | string;
+    modules?: TestModule[];
+  } | null | undefined
+): TestModule[] => {
+  if (!test) return DEFAULT_SAT_MODULES;
+
+  const category = test.test_category === 'ACT' ? 'ACT' : 'SAT';
+  const variant = test.test_variant === 'mini' ? 'mini' : 'full';
+  const modules = test.modules?.length ? test.modules : getDefaultModules(category, variant);
+
+  if (isMiniActTest(test)) {
+    if (!test.modules?.length) {
+      return DEFAULT_MINI_ACT_MODULES;
+    }
+    if (!modules.some(isEssayModule)) {
+      return modules;
+    }
+    return modules.filter((module) => !isEssayModule(module));
+  }
+
+  return modules;
 };

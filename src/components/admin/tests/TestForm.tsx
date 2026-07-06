@@ -11,7 +11,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Button } from '@/components/ui/button';
-import { Test, ScaledScore, DEFAULT_MODULES, TestModule, getDefaultModules } from './types';
+import { Test, ScaledScore, DEFAULT_MODULES, TestModule, getDefaultModules, isEssayModule } from './types';
 import TestModulesDisplay from './TestModulesDisplay';
 import TestBasicInfoForm from './TestBasicInfoForm';
 import ModuleScaledScoring from './ModuleScaledScoring';
@@ -60,7 +60,8 @@ const TestForm: React.FC<TestFormProps> = ({
   // Group scaled scores by module
   const initializeModuleScores = () => {
     const testCategory = currentTest?.test_category || 'SAT';
-    const modules = currentTest?.modules || getDefaultModules(testCategory);
+    const testVariant = currentTest?.test_variant || 'full';
+    const modules = currentTest?.modules || getDefaultModules(testCategory, testVariant);
     const allScores = currentTest?.scaled_scoring || [];
     
     // Create a map for each module
@@ -79,7 +80,8 @@ const TestForm: React.FC<TestFormProps> = ({
   const [moduleScores, setModuleScores] = useState<Map<string, ScaledScore[]>>(initializeModuleScores());
   
   const testCategory = currentTest?.test_category || 'SAT';
-  const defaultModules = currentTest?.modules || getDefaultModules(testCategory);
+  const testVariant = currentTest?.test_variant || 'full';
+  const defaultModules = currentTest?.modules || getDefaultModules(testCategory, testVariant);
 
   // If modules change (e.g. when editing a test), reinitialize the scores
   useEffect(() => {
@@ -103,7 +105,10 @@ const TestForm: React.FC<TestFormProps> = ({
       test_variant: currentTest?.test_variant || 'full',
       source_test_id: currentTest?.source_test_id || null,
       scaled_scoring: currentTest?.scaled_scoring || [],
-      modules: currentTest?.modules || getDefaultModules(currentTest?.test_category || currentTest?.category || 'SAT')
+      modules: currentTest?.modules || getDefaultModules(
+        currentTest?.test_category || currentTest?.category || 'SAT',
+        currentTest?.test_variant || 'full'
+      )
     }
   });
 
@@ -138,7 +143,10 @@ const TestForm: React.FC<TestFormProps> = ({
     const loadedCategory = currentTest?.test_category || currentTest?.category;
     const userChangedCategory = loadedCategory && watchedTestCategory !== loadedCategory;
     if (!currentTest || userChangedCategory) {
-      const newModules = getDefaultModules(watchedTestCategory);
+      const newModules = getDefaultModules(
+        watchedTestCategory,
+        watchedTestVariant === 'mini' ? 'mini' : 'full'
+      );
       form.setValue('modules', newModules);
       
       // Reset module scores for new modules
@@ -149,7 +157,20 @@ const TestForm: React.FC<TestFormProps> = ({
       });
       setModuleScores(newModuleScores);
     }
-  }, [watchedTestCategory, form, currentTest]);
+  }, [watchedTestCategory, watchedTestVariant, form, currentTest]);
+
+  useEffect(() => {
+    if (watchedTestCategory !== 'ACT' || watchedTestVariant !== 'mini') return;
+
+    const currentModules = form.getValues('modules') || [];
+    const filteredModules = currentModules.filter((module) => !isEssayModule(module));
+    if (filteredModules.length !== currentModules.length) {
+      form.setValue(
+        'modules',
+        filteredModules.length > 0 ? filteredModules : getDefaultModules('ACT', 'mini')
+      );
+    }
+  }, [watchedTestCategory, watchedTestVariant, form]);
 
   useEffect(() => {
     if (watchedTestVariant !== 'mini') {

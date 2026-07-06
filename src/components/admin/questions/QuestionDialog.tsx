@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
@@ -15,7 +15,7 @@ import { Question, QuestionType } from './types';
 import { questionFormSchema, QuestionFormValues } from './schema';
 import QuestionDetails from './components/QuestionDetails';
 import { useTests } from '@/hooks/useTests';
-import { DEFAULT_SAT_MODULES, DEFAULT_ACT_MODULES } from '../tests/types';
+import { getModulesForTest } from '../tests/types';
 import MultipleChoiceOptions from './components/MultipleChoiceOptions';
 import TextInputAnswer from './components/TextInputAnswer';
 import QuestionImageUpload from './components/QuestionImageUpload';
@@ -42,17 +42,8 @@ const QuestionDialog = ({
   // Load the test to determine category and available modules for the dropdown
   const { tests } = useTests();
   const currentTest = tests.find(test => test.id === testId);
-  const testCategory = currentTest?.test_category || 'SAT';
-  const availableModules = testCategory === 'ACT' ? DEFAULT_ACT_MODULES : DEFAULT_SAT_MODULES;
+  const availableModules = useMemo(() => getModulesForTest(currentTest), [currentTest]);
   const testDataLoading = false; // We have the test data from the tests list
-  
-  console.log('=== QUESTION DIALOG DEBUG ===');
-  console.log('testId:', testId);
-  console.log('currentTest:', currentTest);
-  console.log('testCategory:', testCategory);
-  console.log('availableModules:', availableModules);
-  console.log('=== END QUESTION DIALOG DEBUG ===');
-
   const [previewImage, setPreviewImage] = useState<string | null>(currentQuestion?.imageUrl || null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const { toast } = useToast();
@@ -77,89 +68,69 @@ const QuestionDialog = ({
 
   const questionType = form.watch('question_type');
   const moduleType = form.watch('module_type');
+  const optionsSyncKey = isOpen ? `${currentQuestion?.id || 'new'}-${testId}` : 'closed';
 
-  // Watch for question type changes
+  // Reset form with correct module type when opening dialog for a new question
   useEffect(() => {
-    const subscription = form.watch((value, { name }) => {
-      if (name === 'question_type') {
-        console.log('Question type changed to:', value.question_type);
-        // Reset options or correct_answer based on question type
-        if (value.question_type === QuestionType.TextInput) {
-          form.setValue('options', undefined);
-          form.setValue('correct_answer', '');
-        } else {
-          form.setValue('correct_answer', undefined);
-          form.setValue('options', [
-            { text: '', is_correct: false },
-            { text: '', is_correct: false }
-          ]);
-        }
-      }
+    if (!isOpen || currentQuestion || !availableModules.length) return;
+
+    const questionType = form.getValues('question_type') || QuestionType.MultipleChoice;
+    const defaultModuleType = availableModules[0].type;
+    form.reset({
+      test_id: testId,
+      text: '',
+      explanation: '',
+      module_type: defaultModuleType,
+      question_type: questionType,
+      id: undefined,
+      module_id: undefined,
+      correct_answer: questionType === QuestionType.TextInput ? '' : undefined,
+      image_url: null,
+      options: questionType === QuestionType.MultipleChoice ? [
+        { text: '', is_correct: false },
+        { text: '', is_correct: false }
+      ] : undefined
     });
-    return () => subscription.unsubscribe();
-  }, [form]);
-
-  // Reset form with correct module type when test data is available
-  useEffect(() => {
-    if (availableModules && availableModules.length > 0 && !currentQuestion) {
-      console.log('Test data available, resetting form with correct module type');
-      const questionType = form.getValues('question_type') || QuestionType.MultipleChoice;
-      const defaultModuleType = availableModules[0].type;
-      const defaultValues = {
-        test_id: testId,
-        text: '',
-        explanation: '',
-        module_type: defaultModuleType,
-        question_type: questionType,
-        id: undefined,
-        module_id: undefined,
-        correct_answer: questionType === QuestionType.TextInput ? '' : undefined,
-        image_url: null,
-        options: questionType === QuestionType.MultipleChoice ? [
-          { text: '', is_correct: false },
-          { text: '', is_correct: false }
-        ] : undefined
-      };
-      console.log('Resetting form with test data available:', defaultValues);
-      form.reset(defaultValues);
-    }
-  }, [availableModules, currentQuestion, testId, form]);
+  }, [isOpen, currentQuestion, testId, availableModules]);
 
   // Keep module dropdown aligned with test category
   useEffect(() => {
-    if (!availableModules || availableModules.length === 0) return;
+    if (!isOpen || !availableModules.length) return;
     const allowedTypes = new Set(availableModules.map(m => m.type));
     if (!moduleType || !allowedTypes.has(moduleType as any)) {
-      // Set to the first available module for this test category
-      console.log('Setting module_type to:', availableModules[0].type, 'for test category:', testCategory);
       form.setValue('module_type', availableModules[0].type as any, { shouldDirty: true });
     }
-  }, [availableModules, moduleType, form, testCategory]);
+  }, [isOpen, availableModules, moduleType]);
 
   // Reset form when currentQuestion changes
   useEffect(() => {
+    if (!isOpen) return;
+
     if (currentQuestion) {
-      console.log('Resetting form with current question:', currentQuestion);
       const formData = {
-        ...currentQuestion,
-        options: currentQuestion.question_type === QuestionType.MultipleChoice 
-          ? currentQuestion.options || [
-              { text: '', is_correct: false },
-              { text: '', is_correct: false }
-            ]
+        test_id: testId,
+        text: currentQuestion.text,
+        explanation: currentQuestion.explanation || '',
+        module_type: currentQuestion.module_type || availableModules[0]?.type || 'reading_writing',
+        question_type: currentQuestion.question_type,
+        image_url: currentQuestion.imageUrl || (currentQuestion as any).image_url || null,
+        options: currentQuestion.question_type === QuestionType.MultipleChoice
+          ? (currentQuestion.options?.length
+            ? currentQuestion.options
+            : [
+                { text: '', is_correct: false },
+                { text: '', is_correct: false },
+              ])
           : undefined,
         correct_answer: currentQuestion.correct_answer || '',
-        explanation: currentQuestion.explanation || ''
+        id: currentQuestion.id,
       };
       form.reset(formData);
       setPreviewImage(currentQuestion.imageUrl || null);
     } else {
-      console.log('Resetting form for new question');
-      // Let the other effect handle the form reset with correct module type
-      console.log('Test data available, letting other effect handle form reset');
       setPreviewImage(null);
     }
-  }, [currentQuestion, testId, form, availableModules]);
+  }, [isOpen, currentQuestion, testId, availableModules]);
 
   const handleSubmit = async (values: QuestionFormValues) => {
     try {
@@ -236,7 +207,9 @@ const QuestionDialog = ({
               }}
             />
             
-            {questionType === QuestionType.MultipleChoice && <MultipleChoiceOptions />}
+            {questionType === QuestionType.MultipleChoice && (
+              <MultipleChoiceOptions syncKey={optionsSyncKey} />
+            )}
             {questionType === QuestionType.TextInput && <TextInputAnswer />}
             
             <DialogFooter>

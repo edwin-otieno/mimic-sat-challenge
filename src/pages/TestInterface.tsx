@@ -6,7 +6,7 @@ import { useTestAutoSave } from '@/hooks/useTestAutoSave';
 import { useToast } from '@/hooks/use-toast';
 import { getTestQuestions, getTestPassagesByModule, fetchEssayGrade } from '@/services/testService';
 import { QuestionData } from '@/components/Question';
-import { TestModule } from '@/components/admin/tests/types';
+import { TestModule, getModulesForTest } from '@/components/admin/tests/types';
 import { ScaledScore } from '@/components/admin/tests/types';
 import { Passage } from '@/components/admin/passages/types';
 import TestContainer from '@/components/test/TestContainer';
@@ -2862,6 +2862,11 @@ const TestInterface = () => {
       console.warn('Modules is not an array:', modules);
       modules = [];
     }
+
+    modules = getModulesForTest({
+      ...testData.test,
+      modules,
+    });
     
     console.log('Parsed modules:', modules);
     

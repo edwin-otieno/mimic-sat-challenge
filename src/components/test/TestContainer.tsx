@@ -38,6 +38,7 @@ interface TestContainerProps {
   unmaskedAnswers: Set<string>;
   setUnmaskedAnswers: React.Dispatch<React.SetStateAction<Set<string>>>;
   testCategory?: 'SAT' | 'ACT';
+  isMiniActTest?: boolean;
 }
 
 export const TestContainer: React.FC<TestContainerProps> = ({
@@ -66,6 +67,7 @@ export const TestContainer: React.FC<TestContainerProps> = ({
   setUnmaskedAnswers,
   testCategory = 'SAT',
   showModulePartLabel = true,
+  isMiniActTest = false,
 }) => {
   const [showLineReader, setShowLineReader] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -435,6 +437,7 @@ export const TestContainer: React.FC<TestContainerProps> = ({
                             });
                           }}
                           sequentialQuestionNumber={sequentialQuestionNumber}
+                          isMiniActTest={isMiniActTest}
                         />
                       )}
                       

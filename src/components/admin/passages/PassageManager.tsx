@@ -55,6 +55,28 @@ const passageFormSchema = z.object({
   })).min(1, 'At least one question is required')
 });
 
+const DEFAULT_PASSAGE_MC_OPTIONS = [
+  { id: '', text: '', is_correct: false },
+  { id: '', text: '', is_correct: false },
+  { id: '', text: '', is_correct: false },
+  { id: '', text: '', is_correct: false },
+];
+
+const mapPassageQuestionOptions = (
+  questionType: QuestionType,
+  options?: Array<{ id?: string; text: string; is_correct: boolean }>
+) => {
+  if (questionType !== QuestionType.MultipleChoice) return undefined;
+  if (options && options.length > 0) {
+    return options.map((opt) => ({
+      id: opt.id,
+      text: opt.text,
+      is_correct: opt.is_correct,
+    }));
+  }
+  return DEFAULT_PASSAGE_MC_OPTIONS;
+};
+
 interface PassageManagerProps {
   testId: string;
   testTitle: string;
@@ -139,11 +161,7 @@ const PassageManager: React.FC<PassageManagerProps> = ({ testId, testTitle }) =>
         id: q.id,
         text: q.text,
         question_number: q.question_number,
-        options: q.options?.map(opt => ({
-          id: opt.id,
-          text: opt.text,
-          is_correct: opt.is_correct
-        })),
+        options: mapPassageQuestionOptions(q.question_type, q.options),
         explanation: q.explanation || '',
         imageUrl: q.imageUrl || '',
         question_type: q.question_type,
@@ -504,9 +522,17 @@ const PassageManager: React.FC<PassageManagerProps> = ({ testId, testTitle }) =>
                         <Label>Question Type</Label>
                         <Select
                           value={form.watch(`questions.${questionIndex}.question_type`)}
-                          onValueChange={(value) => 
-                            form.setValue(`questions.${questionIndex}.question_type`, value as QuestionType)
-                          }
+                          onValueChange={(value) => {
+                            form.setValue(`questions.${questionIndex}.question_type`, value as QuestionType);
+                            if (value === QuestionType.MultipleChoice) {
+                              const currentOptions = form.getValues(`questions.${questionIndex}.options`);
+                              if (!currentOptions || currentOptions.length === 0) {
+                                form.setValue(`questions.${questionIndex}.options`, DEFAULT_PASSAGE_MC_OPTIONS);
+                              }
+                            } else {
+                              form.setValue(`questions.${questionIndex}.options`, undefined);
+                            }
+                          }}
                         >
                           <SelectTrigger>
                             <SelectValue />
@@ -652,7 +678,8 @@ const PassageManager: React.FC<PassageManagerProps> = ({ testId, testTitle }) =>
                       </div>
                     </div>
 
-                    {question.question_type === QuestionType.MultipleChoice && (
+                    {(question.question_type === QuestionType.MultipleChoice ||
+                      form.watch(`questions.${questionIndex}.question_type`) === QuestionType.MultipleChoice) && (
                       <div>
                         <div className="flex justify-between items-center mb-2">
                           <Label>Answer Options</Label>
@@ -666,7 +693,10 @@ const PassageManager: React.FC<PassageManagerProps> = ({ testId, testTitle }) =>
                             Add Option
                           </Button>
                         </div>
-                        {question.options?.map((option, optionIndex) => (
+                        {(question.options?.length
+                          ? question.options
+                          : form.getValues(`questions.${questionIndex}.options`) || DEFAULT_PASSAGE_MC_OPTIONS
+                        ).map((option, optionIndex) => (
                           <div key={optionIndex} className="space-y-2 mb-4">
                             <div className="flex items-center gap-2">
                               <Textarea
